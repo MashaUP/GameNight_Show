@@ -74,7 +74,9 @@ export function memberRef(memberId) {
 /** Riferimento a un percorso dentro un gruppo (ludoteca, serate salvate). */
 /** Riferimento a un percorso qualsiasi (chiavi del gruppo, profili ricordati dal telefono). */
 export function dbRef(path) {
-  return ref(db, path);
+  // La radice del database (per gli aggiornamenti su più percorsi insieme): Firebase non accetta un percorso vuoto.
+  const p = String(path || '').replace(/^\/+|\/+$/g, '');
+  return p ? ref(db, p) : ref(db);
 }
 
 export function groupRef(groupId, path = '') {

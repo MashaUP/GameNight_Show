@@ -13,6 +13,7 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/fonts/fredoka-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-500.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
   <title>GameNight Show</title>
 </head>
@@ -65,16 +66,20 @@
       </button>
     </section>
 
-    <section class="card hub-sec" id="hubArmadi" hidden aria-labelledby="armTitle"></section>
-    <section class="card hub-sec" id="hubHistory" hidden aria-labelledby="histTitle"></section>
-    <section class="card hub-sec" id="hubGroups" hidden aria-labelledby="grpTitle"></section>
-    <section class="card hub-sec hub-app" id="hubApp" hidden></section>
-
-    <section class="card home-donate" aria-labelledby="donateTitle">
-      <h2 id="donateTitle">☕ Donazioni</h2>
-      <p>GameNight Show è gratis e senza pubblicità. Se le vostre serate sono più divertenti, potete offrirmi un caffè: aiuta a pagare il tempo per le prossime novità.</p>
-      <a class="btn kofi-btn" href="https://ko-fi.com/mashaup" target="_blank" rel="noopener noreferrer">❤️ <span>Sostienimi su Ko-fi</span></a>
-    </section>
+    <div class="hub-more">
+      <section class="card hub-sec" id="hubArmadi" hidden aria-labelledby="armTitle"></section>
+      <section class="card hub-sec" id="hubHistory" hidden aria-labelledby="histTitle"></section>
+      <section class="card hub-sec" id="hubGroups" hidden aria-labelledby="grpTitle"></section>
+    </div>
+    <div class="hub-extra">
+      <section class="card hub-sec hub-app" id="hubApp" hidden></section>
+  
+      <section class="card home-donate" aria-labelledby="donateTitle">
+        <h2 id="donateTitle">☕ Donazioni</h2>
+        <p>GameNight Show è gratis e senza pubblicità. Se le vostre serate sono più divertenti, potete offrirmi un caffè: aiuta a pagare il tempo per le prossime novità.</p>
+        <a class="btn kofi-btn" href="https://ko-fi.com/mashaup" target="_blank" rel="noopener noreferrer">❤️ <span>Sostienimi su Ko-fi</span></a>
+      </section>
+    </div>
 
     <footer class="hub-foot">
       <p class="credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>

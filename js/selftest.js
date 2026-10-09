@@ -26,12 +26,39 @@ const fail = (m) => { const e = new Error(m); e.user = true; throw e; };
 class Skip extends Error {}
 const manual = (m) => { throw new Skip(m); };
 
+/** Le verifiche sono raggruppate per area (Base, Stanza, Armadio…), ognuna con il suo conteggio. */
+function groupOf(area) {
+  let g = [...list.querySelectorAll('.st-group')].find((x) => x.dataset.area === area);
+  if (g) return g;
+  g = document.createElement('section');
+  g.className = 'card st-group';
+  g.dataset.area = area;
+  g.innerHTML = `<h2 class="st-group-head"><span>${esc(area)}</span><small class="st-count"></small></h2><ul class="checks"></ul>`;
+  list.appendChild(g);
+  return g;
+}
+function paintCounts() {
+  for (const g of list.querySelectorAll('.st-group')) {
+    const items = [...g.querySelectorAll('.check')];
+    const n = (c) => items.filter((x) => x.classList.contains(c)).length;
+    const ko = n('is-fail');
+    g.classList.toggle('has-fail', ko > 0);
+    g.querySelector('.st-count').textContent = [`${n('is-ok')}/${items.length} ✅`, ko ? `${ko} ❌` : '', n('is-skip') ? `${n('is-skip')} ✋` : ''].filter(Boolean).join(' · ');
+  }
+  if (!summary.classList.contains('summary-ok') && !summary.classList.contains('summary-fail')) {
+    const ok = results.filter((r) => r.status === 'ok').length;
+    const ko = results.filter((r) => r.status === 'fail').length;
+    const sk = results.filter((r) => r.status === 'skip').length;
+    summary.innerHTML = `<h2>Verifica in corso…</h2><p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p>`;
+  }
+}
 function row(area, title) {
   const li = document.createElement('li');
   li.className = 'check is-running';
-  li.innerHTML = `<span class="check-ico">…</span><div><small class="st-area">${esc(area)}</small><b>${esc(title)}</b><p class="muted"></p></div>`;
-  list.appendChild(li);
-  const set3 = (cls, ico, msg) => { li.className = `check ${cls}`; li.querySelector('.check-ico').innerHTML = ico; li.querySelector('p').textContent = msg; };
+  li.innerHTML = `<span class="check-ico">…</span><div><b>${esc(title)}</b><p class="muted"></p></div>`;
+  groupOf(area).querySelector('.checks').appendChild(li);
+  paintCounts();
+  const set3 = (cls, ico, msg) => { li.className = `check ${cls}`; li.querySelector('.check-ico').innerHTML = ico; li.querySelector('p').textContent = msg; setTimeout(paintCounts, 0); };
   return {
     ok(msg = '') { set3('is-ok', ICONS.check, msg); },
     fail(msg) { set3('is-fail', ICONS.x, msg); },
@@ -373,10 +400,12 @@ function done() {
   const ok = results.filter((r) => r.status === 'ok').length;
   const ko = results.filter((r) => r.status === 'fail').length;
   const sk = results.filter((r) => r.status === 'skip').length;
-  summary.className = `card ph-card ${ko ? 'summary-fail' : 'summary-ok'}`;
+  summary.className = `card ph-card st-summary ${ko ? 'summary-fail' : 'summary-ok'}`;
   summary.innerHTML = ko
     ? `<h2>Ci sono ${ko} ${ko === 1 ? 'problema' : 'problemi'} da sistemare</h2><p>Leggi i messaggi in rosso: di solito basta ricopiare le regole o attivare l'accesso anonimo (README, passo 2).</p><p class="muted small">${ok} verifiche riuscite, ${sk} da provare a mano.</p>`
     : `<h2>Tutto a posto!</h2><p>${ok} verifiche riuscite su Firebase vero. ${sk} cose si provano a mano (sono indicate con ✋).</p>`;
+  summary.insertAdjacentHTML('beforeend', `<p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p><a class="link-btn" href="#matrix">Vai alla matrice delle verifiche</a>`);
+  paintCounts();
   const m = $('#matrix');
   m.hidden = false;
   const label = { ok: '✅ Verificata', fail: '❌ Problema', skip: '✋ Da provare a mano' };

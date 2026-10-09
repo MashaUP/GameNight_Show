@@ -1,4 +1,4 @@
-# Verifica della versione 1.0.0
+# Verifica della versione 1.1.0
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
@@ -8,7 +8,18 @@ I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 16
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
 
-## Richieste di questa versione
+## Novità della 1.1.0
+
+| Richiesta | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Errore del tavolo di verifica "path argument was an invalid path" (Profilo personale) | ✅ | Il finto Firebase dei test ora rifiuta il percorso vuoto come quello vero; tavolo di verifica rieseguito con le regole vere. | Era un errore vero: con Firebase reale **anche la creazione del profilo dalla home falliva**. Corretto (`js/fb.js`, radice del database). Ora la verifica passa. |
+| Home che sfrutta lo spazio (desktop, tablet, telefono) | ✅ | Schermate a 412, 900, 1366 e 2000 px, con e senza profilo, con armadi e serate aperti. Controllo automatico: nessun elemento fuori schermo. | Telefono: una colonna (Entra, poi Crea). Tablet: Entra e Crea affiancati. Desktop: intestazione larga, Entra/Crea affiancati, profilo accanto ad armadi e serate, App e Donazioni in fondo affiancate. |
+| Carattere più leggibile | ✅ | Testi dell'interfaccia in **Atkinson Hyperlegible Next** (lettere ben distinte: I l 1, O 0). I titoli restano in Fredoka. Testi secondari più grandi (minimo ~15 px), interlinea più ampia, segnaposto più contrastati. Ricontrollato su TV (5 risoluzioni), regia sul telefono, home, resoconto e tavolo di verifica. | Il testo normale usa il peso medio, il grassetto quello pieno. Lo zero ha il taglio, per distinguerlo dalla O. |
+| Tavolo di verifica largo e ordinato | ✅ | 2000, 1280 e 412 px, con le regole vere. | Verifiche raggruppate per area, ognuna con il conteggio; 2-3 colonne su desktop; riepilogo con i conteggi in alto a destra; matrice e ritorno alla home sempre visibili. |
+| Barra in alto della TV con il nuovo carattere | ✅ | Misurata a 1024, 1280, 1366 e 1920 px. | Il logo non viene più coperto: il nome del gruppo è già nella sala d’attesa, e sotto i 1400 px l’orologio lascia spazio ai comandi. |
+| Resoconto e armadio sul telefono aperti dal PC | ✅ | 1366 e 412 px. | Su desktop non sono più una colonna stretta: classifica e premi affiancati, giochi in griglia. |
+
+## Richieste della 1.0.0
 
 | # | Richiesta | Stato | Come è stata provata | Risultato / limiti |
 |---|---|---|---|---|
@@ -25,7 +36,7 @@ Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · 
 | 11 | Soundboard | ✅ ⚠️ ✋ | Codice analizzato: sui **touch** l’audio si sbloccava solo con `pointerdown`, e una volta sola. Ma il browser dà il permesso quando il dito si alza (`pointerup`/`touchend`), quindi una TV touch restava muta per sempre. Corretto e provato: effetto dal telefono, avviso "tocca per attivare", due telefoni insieme, tocchi ripetuti, TV in silenzioso. | 7/7. I suoni creano davvero nodi audio. Due effetti partono uno dopo l’altro. Il fumetto dice perché un effetto non si sente. ⚠️ Il browser di test non riproduce il blocco dell’audio. ✋ L’ascolto vero va provato sulla TV. |
 | 12 | Tavolo di verifica completo | ✅ | `test.html` eseguito contro il database **con le regole vere**. | 27 verifiche reali verdi, 5 segnate ✋ da provare a mano (mai come riuscite). Usa solo codici nuovi; la pulizia viene ricontrollata (resta solo il codice regia di prova, che le regole non fanno cancellare). Matrice scaricabile. |
 
-## Richieste della versione precedente (in questa consegna)
+## Richieste precedenti alla 1.0.0
 
 | Richiesta | Stato | Come è stata provata | Risultato / limiti |
 |---|---|---|---|

@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261010a';
+const BUILD = '20261010b';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -62,7 +62,10 @@ const SHELL = [
   "assets/apple-touch-icon.png",
   "assets/fonts/fredoka-600.woff2",
   "assets/fonts/fredoka-700.woff2",
-  "assets/fonts/nunito.woff2"
+  "assets/fonts/nunito.woff2",
+  "assets/fonts/atkinson-400.woff2",
+  "assets/fonts/atkinson-500.woff2",
+  "assets/fonts/atkinson-700.woff2"
 ];
 
 self.addEventListener('install', (event) => {

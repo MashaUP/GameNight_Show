@@ -74,19 +74,19 @@ function renderRoom(code, r) {
     <main class="phone rs">
       ${head(code, meta.groupName || 'La serata', `${when(meta.createdAt)} · ${nPlayers} ${nPlayers === 1 ? 'giocatore' : 'giocatori'} · ${board.length} ${board.length === 1 ? 'gioco votato' : 'giochi votati'} · ${nVotes} voti`, status)}
       ${meta.demo ? '<p class="arm-ro">🧪 Serata di prova con giocatori finti.</p>' : ''}
-      <section class="card ph-card">
+      <section class="card ph-card rs-board-card">
         <h2>🏆 Classifica</h2>
         ${board.length ? `<ol class="rs-board">${board.map((b) => `
           <li><span class="rs-rank">${b.rank}${tie(b) ? '<small>pari</small>' : ''}</span>${gameImageHTML(b, 'game-img--thumb')}<span class="rs-name"><b>${esc(b.name)}</b><small>${b.stats.n} ${b.stats.n === 1 ? 'voto' : 'voti'}${b.closedEarly ? ' · votazione chiusa in anticipo' : ''}</small></span><span class="rs-avg">${fmt(b.stats.avg)}</span></li>`).join('')}</ol>`
           : '<p class="muted">Nessun gioco ha ricevuto voti: non c’è una classifica.</p>'}
       </section>
       <h2 class="rs-sec">🎲 Gioco per gioco</h2>
-      ${ordered.length ? ordered.map((g) => gameCard(g, rankBy[g.id], votes[g.id] || {}, players, crit, tie, g.scores)).join('') : '<p class="muted">Nessun gioco registrato in questa serata.</p>'}
-      ${trash.length ? `<section class="card ph-card"><h2>🗑️ Giochi annullati</h2><ul class="rs-list">${trash.map((t) => `<li><b>${esc(t.name || 'Gioco')}</b> — annullato${t.nv ? `: ${t.nv} ${t.nv === 1 ? 'voto ricevuto' : 'voti ricevuti'}, non conteggiati` : ', senza voti'}.</li>`).join('')}</ul></section>` : ''}
-      ${awards.length && ended ? `<section class="card ph-card"><h2>🎖️ Premi speciali</h2><ul class="rs-list">${awards.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.game ? a.game.name : (a.players || []).map((p) => p.name).join(' e '))} <span class="muted">(${esc(a.value || '')})</span></li>`).join('')}</ul></section>` : ''}
+      <div class="rs-games">${ordered.length ? ordered.map((g) => gameCard(g, rankBy[g.id], votes[g.id] || {}, players, crit, tie, g.scores)).join('') : '<p class="muted">Nessun gioco registrato in questa serata.</p>'}</div>
+      ${trash.length ? `<section class="card ph-card rs-trash"><h2>🗑️ Giochi annullati</h2><ul class="rs-list">${trash.map((t) => `<li><b>${esc(t.name || 'Gioco')}</b> — annullato${t.nv ? `: ${t.nv} ${t.nv === 1 ? 'voto ricevuto' : 'voti ricevuti'}, non conteggiati` : ', senza voti'}.</li>`).join('')}</ul></section>` : ''}
+      ${awards.length && ended ? `<section class="card ph-card rs-awards"><h2>🎖️ Premi speciali</h2><ul class="rs-list">${awards.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.game ? a.game.name : (a.players || []).map((p) => p.name).join(' e '))} <span class="muted">(${esc(a.value || '')})</span></li>`).join('')}</ul></section>` : ''}
       <section class="card ph-card rs-players"><h2>👥 Chi c’era</h2><div class="rs-people">${Object.entries(players).map(([uid, p]) => `<span class="rs-person">${avatarHTML(p, '2.2rem')}<span>${esc(p.name)}</span></span>`).join('') || '<span class="muted">—</span>'}</div></section>
-      <p class="muted small center">I voti sono quelli effettivamente inviati dai telefoni. “Pari” indica un pareggio nella media.</p>
-      <a class="btn-sec btn-block" href="index.html">🏠 Torna alla home</a>
+      <p class="muted small center rs-note">I voti sono quelli effettivamente inviati dai telefoni. “Pari” indica un pareggio nella media.</p>
+      <a class="btn-sec btn-block rs-home" href="index.html">🏠 Torna alla home</a>
     </main>`;
   bind();
 }

@@ -2,7 +2,7 @@
 
 Web app per le serate di party game da tavolo. Ognuno vota i giochi dal proprio telefono, la TV svela i voti con le carte che si girano, tiene la classifica e a fine serata fa la premiazione.
 
-Versione 1.0.0
+Versione 1.1.0
 
 > **Importante:** a ogni nuova versione ricopia `database.rules.json` in Firebase (passo 2.3) e pubblica: molte funzioni dipendono dalle regole del database.
 
@@ -670,4 +670,4 @@ GameNight Show è gratis e senza pubblicità. Se vi piace, potete offrire un caf
 - [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 di Kazuhiko Arase (MIT).
 - [jsQR](https://github.com/cozmo/jsQR) 1.4.0 di Cosmo Wolfe (Apache 2.0), lettore di QR dell'app Android.
 - [Capacitor](https://capacitorjs.com) 8.5 di Ionic (MIT), con i plugin Filesystem e Share.
-- Font Fredoka e Nunito (SIL Open Font License, testi in `assets/fonts`).
+- Font Atkinson Hyperlegible Next (testi dell’interfaccia), Fredoka (titoli e numeri) e Nunito (immagini da condividere): SIL Open Font License, testi in `assets/fonts`.
