@@ -12,7 +12,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const www = join(here, '..', 'www');
 
-const ITEMS = ['index.html', 'host.html', 'play.html', 'ludoteca.html', 'test.html', 'manifest.webmanifest', 'version.json', 'css', 'js', 'assets', 'vendor'];
+const ITEMS = ['index.html', 'host.html', 'play.html', 'ludoteca.html', 'resoconto.html', 'test.html', 'manifest.webmanifest', 'version.json', 'css', 'js', 'assets', 'vendor'];
 
 rmSync(www, { recursive: true, force: true });
 mkdirSync(www, { recursive: true });

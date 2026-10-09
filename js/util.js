@@ -203,9 +203,94 @@ function drawStandard(img) {
   return cv.toDataURL('image/jpeg', 0.8);
 }
 
-/** Foto di un gioco da file (scelto, incollato, scattato): sempre 640×480. */
-export async function gameImage(file) {
+// ---------------------------------------------------------------------------
+// Rotazione delle foto prima di salvarle (giochi, personaggio, ricordi, logo)
+// ---------------------------------------------------------------------------
+
+/**
+ * Foto girata di quarti di giro (1 = 90° in senso orario, -1 = antiorario).
+ * L'orientamento EXIF delle fotocamere è già applicato dal browser quando la foto viene letta,
+ * quindi la rotazione si somma a quello: quello che si vede in anteprima è quello che si salva.
+ */
+function rotatedCanvas(img, quarter, maxSide = 3000) {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const k = Math.min(1, maxSide / Math.max(iw, ih));
+  const w = Math.max(1, Math.round(iw * k)), h = Math.max(1, Math.round(ih * k));
+  const q = ((quarter % 4) + 4) % 4;
+  const cv = document.createElement('canvas');
+  cv.width = q % 2 ? h : w; cv.height = q % 2 ? w : h;
+  const c = cv.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  c.translate(cv.width / 2, cv.height / 2);
+  c.rotate(q * Math.PI / 2);
+  c.drawImage(img, -w / 2, -h / 2, w, h);
+  return cv;
+}
+
+/**
+ * Finestra "Ruota la foto": anteprima di come verrà salvata, ⟲ e ⟳ di 90°, Usa o Annulla.
+ * kind: 'game' (riquadro 4:3 standard), 'square' (personaggio), 'free' (ricordi, logo).
+ * Restituisce il file da usare (quello originale se non è stato ruotato) oppure lancia
+ * un errore con cancelled = true se si annulla.
+ */
+export async function editPhoto(file, kind = 'free') {
   if (!file || !String(file.type || '').startsWith('image/')) throw new Error('Il file scelto non è un’immagine.');
+  const url = URL.createObjectURL(file);
+  let img;
+  try { img = await loadAnyImage(url); } catch (err) { URL.revokeObjectURL(url); throw err; }
+  return new Promise((resolve, reject) => {
+    let q = 0;
+    const el = document.createElement('div');
+    el.className = 'overlay overlay--sheet photo-edit';
+    el.innerHTML = `
+      <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="peTitle">
+        <div class="panel-head"><h2 id="peTitle">Controlla la foto</h2><button type="button" class="icon-btn" data-pecancel aria-label="Annulla">✕</button></div>
+        <div class="pe-stage pe-stage--${kind}"><img id="peImg" alt="Anteprima della foto"></div>
+        <div class="pe-rot">
+          <button type="button" class="btn-sec" id="peLeft" aria-label="Ruota a sinistra di 90 gradi">⟲ <span>Sinistra</span></button>
+          <button type="button" class="btn-sec" id="peRight" aria-label="Ruota a destra di 90 gradi">⟳ <span>Destra</span></button>
+        </div>
+        <p class="muted small">${kind === 'game' ? 'Così comparirà nell’armadio e sulla TV.' : kind === 'square' ? 'Così comparirà il tuo personaggio.' : 'Se la foto è storta, girala prima di salvarla.'}</p>
+        <button type="button" class="btn btn-block" id="peOk">Usa la foto</button>
+      </div>`;
+    document.body.appendChild(el);
+    const prev = el.querySelector('#peImg');
+    const paint = () => {
+      const cv = rotatedCanvas(img, q, 900);
+      if (kind === 'game') prev.src = drawStandard(cv);
+      else if (kind === 'square') {
+        const s = Math.min(cv.width, cv.height);
+        const sq = document.createElement('canvas'); sq.width = sq.height = 320;
+        sq.getContext('2d').drawImage(cv, (cv.width - s) / 2, (cv.height - s) / 2, s, s, 0, 0, 320, 320);
+        prev.src = sq.toDataURL('image/jpeg', 0.85);
+      } else prev.src = cv.toDataURL('image/jpeg', 0.85);
+    };
+    const finish = (ok) => {
+      document.removeEventListener('keydown', onKey, true);
+      el.remove();
+      if (!ok) { URL.revokeObjectURL(url); reject(Object.assign(new Error(''), { cancelled: true })); return; }
+      if (!(q % 4)) { URL.revokeObjectURL(url); resolve(file); return; }
+      const cv = rotatedCanvas(img, q);
+      URL.revokeObjectURL(url);
+      cv.toBlob((b) => (b ? resolve(new File([b], 'foto.jpg', { type: 'image/jpeg' })) : resolve(file)), 'image/jpeg', 0.92);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
+    document.addEventListener('keydown', onKey, true);
+    el.addEventListener('click', (e) => {
+      if (e.target === el || e.target.closest('[data-pecancel]')) finish(false);
+      else if (e.target.closest('#peLeft')) { q--; paint(); }
+      else if (e.target.closest('#peRight')) { q++; paint(); }
+      else if (e.target.closest('#peOk')) finish(true);
+    });
+    paint();
+    el.querySelector('#peOk').focus({ preventScroll: true });
+  });
+}
+
+/** Foto di un gioco da file (scelto, incollato, scattato): sempre 640×480, dopo l'eventuale rotazione. */
+export async function gameImage(file, { edit = true } = {}) {
+  if (!file || !String(file.type || '').startsWith('image/')) throw new Error('Il file scelto non è un’immagine.');
+  if (edit) file = await editPhoto(file, 'game');
   const url = URL.createObjectURL(file);
   try { return drawStandard(await loadAnyImage(url)); } finally { URL.revokeObjectURL(url); }
 }
@@ -271,6 +356,7 @@ export function connectionStatus(online) {
 
 let toastTimer = null;
 export function toast(message, kind = 'info') {
+  if (!message) return; // per esempio: foto annullata dalla finestra "Controlla la foto"
   let el = $('#toast');
   if (!el) {
     el = document.createElement('div');
@@ -587,10 +673,14 @@ async function checkVersion() {
       // Nell'app la versione nuova si installa scaricando l'APK aggiornata (il sito si aggiorna da solo).
       const apk = isApp() ? apkUrl() : '';
       if (isApp() && !apk) return;
-      el.innerHTML = apk
+      try { if (sessionStorage.getItem('gnr_upd_hide') === version) return; } catch { /* niente */ }
+      el.innerHTML = (apk
         ? `<span>È uscita la versione ${esc(version)} dell'app.</span><a class="btn-sec btn-sec--sm" href="${esc(apk)}" target="_blank" rel="noopener">Scarica</a>`
-        : `<span>È disponibile una nuova versione dell'app.</span><button type="button" class="btn-sec btn-sec--sm">Aggiorna</button>`;
-      el.querySelector('button')?.addEventListener('click', () => location.reload());
+        : `<span>È disponibile una nuova versione dell'app.</span><button type="button" class="btn-sec btn-sec--sm" data-upd>Aggiorna</button>`)
+        + '<button type="button" class="upd-x" aria-label="Più tardi" title="Più tardi">✕</button>';
+      el.querySelector('[data-upd]')?.addEventListener('click', () => location.reload());
+      // "Più tardi": il pulsante non deve mai coprire i comandi (per esempio "Entra in partita").
+      el.querySelector('.upd-x').addEventListener('click', () => { try { sessionStorage.setItem('gnr_upd_hide', version); } catch { /* niente */ } el.remove(); });
       document.body.appendChild(el);
     }
   } catch { /* offline: si riprova più tardi */ }
@@ -661,14 +751,16 @@ export function toastUndo(message, onUndo, ms = 9000) {
   const el = document.createElement('div');
   el.className = 'undo-toast';
   el.setAttribute('role', 'status');
-  el.innerHTML = `<span></span><button type="button" class="btn-sec btn-sec--sm">Annulla</button>`;
+  el.innerHTML = `<span></span><button type="button" class="btn-sec btn-sec--sm" data-undo>Annulla</button><button type="button" class="undo-x" aria-label="Chiudi l’avviso (non annulla niente)" title="Chiudi l’avviso">✕</button>`;
   el.querySelector('span').textContent = message;
   const timer = setTimeout(() => el.remove(), ms);
-  el.querySelector('button').addEventListener('click', () => {
+  el.querySelector('[data-undo]').addEventListener('click', () => {
     clearTimeout(timer);
     el.remove();
     onUndo();
   });
+  // ✕ nasconde solo l'avviso: l'azione resta fatta.
+  el.querySelector('.undo-x').addEventListener('click', () => { clearTimeout(timer); el.remove(); });
   document.body.appendChild(el);
 }
 
@@ -697,7 +789,8 @@ export async function watchBattery() {
 }
 
 /** Foto ricordo: la più nitida possibile che stia sotto il limite di dimensione del database. */
-export async function compressPhoto(file, limit = 190000) {
+export async function compressPhoto(file, limit = 190000, { edit = true } = {}) {
+  if (edit) file = await editPhoto(file, 'free');
   let out = null;
   for (const max of [1100, 900, 720, 560]) {
     for (const q of [0.72, 0.6, 0.5]) {
@@ -707,3 +800,56 @@ export async function compressPhoto(file, limit = 190000) {
   }
   return out;
 }
+
+/** Foto quadrata 256×256 per il personaggio (selfie o galleria), sotto i 100 KB. */
+export async function squarePhoto(file, { edit = true } = {}) {
+  if (edit) file = await editPhoto(file, 'square');
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(img.naturalWidth, img.naturalHeight);
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, 256, 256);
+      URL.revokeObjectURL(url);
+      let q = 0.82, out = c.toDataURL('image/jpeg', q);
+      while (out.length > 100000 && q > 0.4) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Foto non leggibile')); };
+    img.src = url;
+  });
+}
+
+/** Le serate aperte su questo dispositivo (per ritrovare il resoconto dalla home). */
+export function rememberNight(room, info = {}) {
+  try {
+    const list = JSON.parse(localStorage.getItem('gnr_history') || '[]').filter((n) => n?.room !== room);
+    list.unshift({ room, at: Date.now(), group: info.group || '', gid: info.gid || '' });
+    localStorage.setItem('gnr_history', JSON.stringify(list.slice(0, 15)));
+  } catch { /* niente */ }
+}
+
+// ---------------------------------------------------------------------------
+// Votazione del prossimo gioco: uno o più voti a testa
+// ---------------------------------------------------------------------------
+
+/** Massimo di voti a testa nella votazione dei giochi (le regole del database lo impongono). */
+export const POLL_MAX_VOTES = 3;
+export const POLL_SLOTS = ['a', 'b', 'c'];
+
+/** I giochi scelti da un telefono: un codice (un voto) oppure { a, b, c } (più voti). Senza doppioni. */
+export function pollChoices(v, max = POLL_MAX_VOTES) {
+  const list = typeof v === 'string' ? [v] : v && typeof v === 'object' ? POLL_SLOTS.map((k) => v[k]).filter((x) => typeof x === 'string') : [];
+  return [...new Set(list)].slice(0, Math.max(1, Math.min(POLL_MAX_VOTES, Number(max) || 1)));
+}
+
+/** Valore da salvare per una lista di scelte: un codice se è una sola, altrimenti { a, b, c }. */
+export function pollValue(list) {
+  const l = [...new Set(list)].slice(0, POLL_MAX_VOTES);
+  if (!l.length) return null;
+  if (l.length === 1) return l[0];
+  return Object.fromEntries(l.map((id, i) => [POLL_SLOTS[i], id]));
+}
+

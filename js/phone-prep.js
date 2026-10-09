@@ -13,7 +13,12 @@ const MAX_WISH = 3;
 
 export function myTonight(lid) { return Boolean(P().tonight?.[lid]?.[P().uid]); }
 export function myWish(lid) { return Boolean(P().wish?.[P().uid]?.[lid]); }
-export function onTable() { return tableGames(P().tonight, P().next, P().library); }
+export function onTable() {
+  const t = tableGames(P().tonight, P().next, P().library);
+  // Giochi con la stellina "Stasera" scelti dalla TV per questa serata.
+  for (const id of Object.keys(P().pick || {})) if (P().library?.[id]?.name && !t[id]) t[id] = [];
+  return t;
+}
 
 export async function markTonight(lid, on = true) {
   const m = me();

@@ -3,6 +3,7 @@ import { isConfigured, connect, groupRef, armadioRef, dbRef, get, set, update, p
 import { $, esc, fmt, param, normalizeCode, gameImageHTML, libInfo, applyTheme, installImageFallback, showFatal, showNotConfigured, registerSW, themeSwitchHTML, ErrLog, gameImage, cleanName, nameKey, toast } from './util.js';
 ErrLog.install();
 import { searchLibrary, parseQuery, tagsOf, isAvailable, gameRecord, GAME_STATUS, GAME_MODES } from './stats.js';
+import { Person } from './person.js';
 
 const app = $('#app');
 const L = { gid: null, uid: null, info: null, identity: null, library: {}, nights: {}, query: '', quick: new Set(), open: null, canEdit: false, img: null };
@@ -30,10 +31,22 @@ async function boot() {
   app.innerHTML = '<div class="loading"><div class="loading-die" aria-hidden="true"><i></i><i></i><i></i></div><p>Apro l’armadio…</p></div>';
   try {
     L.uid = await connect();
+    Person.uid = L.uid;
+    await Person.load().catch(() => null);
     L.info = (await get(base('info'))).val();
   } catch (err) { showFatal(app, 'Impossibile collegarsi', explainError(err)); return; }
   if (!L.info) { showFatal(app, 'Armadio non trovato', 'Questo armadio non esiste più o il codice è sbagliato.'); return; }
   L.canEdit = await canEdit();
+  // L'armadio resta nel profilo personale (con la chiave, se questo telefono può modificarlo).
+  if (L.aid) {
+    let k = '';
+    try { k = localStorage.getItem(keyStore()) || ''; } catch { /* niente */ }
+    Person.linkArmadio(L.aid, L.info.name, L.canEdit ? k : '', L.info.ownerUid === L.uid).catch(() => {});
+    try {
+      const list = JSON.parse(localStorage.getItem('gnr_armadi') || '[]').filter((a) => a?.id !== L.aid);
+      localStorage.setItem('gnr_armadi', JSON.stringify([{ id: L.aid, name: L.info.name }, ...list].slice(0, 12)));
+    } catch { /* niente */ }
+  }
   mount();
   for (const key of L.aid ? ['library'] : ['library', 'nights', 'identity']) {
     onValue(base(key), (snap) => { L[key] = snap.val() || (key === 'identity' ? null : {}); paint(); }, () => {});
@@ -144,7 +157,7 @@ function bindAddForm() {
 function mount() {
   app.innerHTML = `
     <main class="phone lb">
-      <header class="ph-top"><button type="button" class="btn-sec btn-sec--sm ph-back" id="lbBack" aria-label="Indietro">←</button><span class="brand-row"><span class="ph-emblem" id="lbEmblem"></span><span class="brand brand--sm">GameNight <span class="logo-tag logo-tag--xs">Show</span></span></span><a class="ph-room" href="play.html">Entra in una serata</a></header>
+      <header class="ph-top"><button type="button" class="btn-sec btn-sec--sm ph-back" id="lbBack" aria-label="Indietro">←</button><span class="brand-row"><span class="ph-emblem" id="lbEmblem"></span><span class="brand brand--sm">GameNight <span class="logo-tag logo-tag--xs">Show</span></span></span><a class="ph-home" href="index.html" aria-label="Home" title="Home">🏠</a></header>
       <h1 class="ph-title">📦 Armadio dei giochi</h1>
       <p class="ph-lead" id="lbLead">${esc(L.info.name || '')}</p>
       ${addFormHTML()}
@@ -167,6 +180,7 @@ function mount() {
     paint();
   });
   bindAddForm();
+  window.addEventListener('gnr:back', (e) => { e.preventDefault(); $('#lbBack')?.click(); });
   $('#lbBack').addEventListener('click', () => {
     if (history.length > 1 && document.referrer && new URL(document.referrer).origin === location.origin) history.back();
     else location.href = 'index.html';

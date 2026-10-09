@@ -94,7 +94,9 @@ La configurazione si fa una volta sola e richiede circa 10 minuti.
 1. Nella pagina del Realtime Database apri la scheda **Regole**.
 2. Cancella tutto, incolla il contenuto del file `database.rules.json` di questo progetto e clicca **Pubblica**.
 
-Le regole fanno in modo che solo la TV che ha creato la stanza possa guidarla, che ognuno possa votare solo per sé e solo mentre la votazione è aperta, e che le serate salvate in un gruppo arrivino solo dalla TV che le ha guidate.
+Le regole fanno in modo che solo la TV che ha creato la stanza possa guidarla, che ognuno possa votare solo per sé e solo mentre la votazione è aperta, e che le serate salvate in un gruppo arrivino solo dalla TV che le ha guidate. Il profilo personale (`people`) lo leggono e lo modificano solo i dispositivi collegati con la sua chiave.
+
+**Ogni volta che il file `database.rules.json` cambia** (per esempio con una nuova versione), ricopialo in Firebase e premi **Pubblica**: altrimenti le funzioni nuove vengono rifiutate dal database.
 
 ### 2.4 Accesso anonimo
 
@@ -117,7 +119,15 @@ Le chiavi di `config.js` non sono password: per le app web Firebase sono pubblic
 
 ### 2.6 Verifica
 
-Dopo aver pubblicato il sito (passo 3), apri `https://TUO-UTENTE.github.io/GameNight_Show/test.html` (o il link **Verifica la configurazione di Firebase** in fondo alla pagina iniziale). La pagina prova accesso anonimo, regole e salvataggi con una stanza finta, poi la cancella. Se tutto è verde la serata può cominciare; se qualcosa è rosso, il messaggio dice cosa sistemare (di solito: ripubblicare le regole o attivare l'accesso anonimo).
+Dopo aver pubblicato il sito (passo 3), apri `https://TUO-UTENTE.github.io/GameNight_Show/test.html` (o il link **Verifica la configurazione di Firebase** in fondo alla pagina iniziale, o ⚙️ › **Verifica Firebase** nella home). È il **tavolo di verifica**: la pagina fa la TV e crea due “telefoni” di prova, poi prova davvero sul tuo Firebase:
+
+- stanza, codice regia segreto, ingresso, stanza chiusa e rientro, telefono rimosso;
+- votazione (solo per sé, bloccata dopo il reveal), timer del voto, pronostici solo nei primi 5 minuti, segnapunti, quiz (una risposta), soundboard con anti-spam, votazione dei giochi con più voti a testa;
+- armadio (permessi e chiave), giochi dell’armadio nella stanza (le stelline della serata non toccano la collezione), gruppo, serata salvata una volta sola, fine serata e resoconto, profilo personale su più dispositivi.
+
+Usa solo dati di prova con codici nuovi (controllati prima) e alla fine li cancella e ricontrolla: i tuoi dati non vengono toccati. Con **Prova anche un tuo armadio** controlla, in sola lettura, un tuo armadio vero (giochi, foto, stelline). Le cose che servono una persona davanti (audio della TV, telefono che si spegne, fotocamera, tasto Indietro dell’app, grafica della premiazione) sono segnate ✋ **da provare a mano**, mai come riuscite. In fondo c’è la **matrice delle verifiche** (funzione, stato, come è stata provata, risultato), che si può scaricare.
+
+Se tutto è verde la serata può cominciare; se qualcosa è rosso, il messaggio dice cosa sistemare (di solito: ripubblicare le regole o attivare l'accesso anonimo).
 
 ## 3. Pubblica con GitHub Pages
 
@@ -228,7 +238,11 @@ Su un telefono nuovo:
 - **Giochi salvati nei gruppi con le versioni precedenti:** quando crei un armadio nuovo per quel gruppo, vengono copiati da soli nell’armadio.
 - **Aggiungere un gioco:** nome, giocatori, durata e la foto: **scegli un file**, **trascinala**, **incollala** (Ctrl+V) oppure **incolla il link** di una foto trovata online.
 - **Dal telefono:** **📱 Aggiungi dal telefono** mostra un QR: il telefono apre l’armadio, fotografa la scatola e aggiunge il gioco. Il QR contiene la chiave dell’armadio: mostralo solo a chi vuoi. Durante la serata anche i telefoni dei giocatori possono aggiungere i giochi che hanno portato.
+- **Foto dritte:** dopo aver scelto o scattato una foto (giochi, personaggio, foto ricordo, logo del gruppo) compare **Controlla la foto** con l’anteprima e **⟲ / ⟳** per girarla di 90°: la rotazione vale per la foto salvata, non solo per l’anteprima. L’orientamento delle fotocamere (EXIF) è già applicato; **✕** annulla senza salvare niente.
 - **Foto tutte uguali:** ogni foto viene messa nello stesso formato (640×480): la scatola intera al centro e, intorno, la stessa foto sfocata. Anche le foto molto alte o molto larghe stanno nel riquadro, senza uscire e senza tagli. Le foto da link che il sito non permette di copiare sono mostrate nello stesso riquadro.
+- **Legato al tuo profilo:** gli armadi che crei o apri finiscono nel profilo personale, con la chiave per modificarli. Su un altro dispositivo collegato allo stesso profilo (per esempio l'app sul telefono) li ritrovi in **📦 I tuoi armadi** e puoi aggiungere giochi senza QR né chiave. Dalla home si crea anche un armadio nuovo (**➕ Nuovo**): sul telefono si apre la pagina per fotografare le scatole.
+- **L’armadio della serata:** in sala d’attesa il pulsante dell’armadio mostra quale armadio usa la serata (es. *I giochi di Andrea: 24 giochi · ⭐ 6*). Nel pannello dell’armadio, **🔁 Cambia armadio** (prima di iniziare o tra un gioco e l’altro) passa a un altro armadio. La stanza usa l’armadio **originale** (sempre aggiornato, niente copie da tenere allineate); le **stelline “Stasera” invece sono della serata**: alla creazione si copiano quelle preparate nell’armadio, e quello che cambiate durante la serata non tocca la collezione. Se l’armadio è vuoto, cancellato o il computer può solo consultarlo, il pannello lo dice.
+- **Prova con giocatori finti:** usa l’armadio scelto in **Giochi dall’armadio**, in sola lettura: si gioca con i vostri giochi ma la prova non aggiunge né modifica niente.
 - **⭐ Stasera:** con la stellina segni i giochi che portate stasera (i giochi nuovi la hanno già). Durante la serata **A caso**, **Ruota**, **Votazione** e **Consigli** scelgono solo tra quelli, e **mai un gioco già giocato**. Con **📦 Tutto l’armadio** si sceglie tra tutti i giochi; **Azzera** toglie tutte le stelline.
 - **Scegli il prossimo gioco** (schermata della TV tra un gioco e l’altro): 🎲 **A caso** (la TV fa lampeggiare i nomi e si ferma su uno), 🎡 **Ruota**, 📱 **Votazione** dai telefoni, 💡 **Consigli** in base ai gusti dei presenti, 📦 **Armadio**. Oppure tocca direttamente un gioco. I giochi già giocati finiscono in **Già giocati stasera**.
 
@@ -246,6 +260,12 @@ Chi inizia, la propria squadra e la clessidra restano sempre in vista sullo sche
 **Il reveal** gira le carte dei voti in **ordine casuale** (non più dal voto più basso al più alto): nessuno indovina il voto dalla posizione.
 
 **Pulsanti Indietro:** sulla TV **← Indietro** in alto a sinistra torna alla schermata precedente (gioco → sala d’attesa, classifica → prossimo gioco…); sui telefoni la freccia **←** nell’intestazione.
+
+### Fine serata e resoconto
+
+- **🏁 Fine serata** è sempre nella barra in alto della TV (e in fondo alla schermata del prossimo gioco): la serata si chiude quando volete, anche a votazione aperta. Prima compare una conferma che spiega cosa succede: quanti giochi sono in classifica, la votazione aperta (puoi **contarla con i voti già arrivati** oppure **lasciarla fuori**: il gioco va nel cestino e si può ripristinare), la partita non votata, la votazione del prossimo gioco che si chiude. Segnapunti, pronostici e quiz restano come sono. Un doppio tocco non chiude la serata due volte.
+- L’avviso **Serata terminata · Annulla** ha anche una **✕**: chiude solo l’avviso, la serata resta terminata (**Annulla** invece torna indietro).
+- **📋 Resoconto della serata:** gioco per gioco, posizione (con i pari merito), media, verdetto, consenso, criteri, vincitore, MVP, chi ha indovinato la media, segnapunti e i voti di ognuno (con i commenti). I giochi senza voti, le votazioni non completate e i giochi annullati sono indicati come tali: niente viene inventato. Se la serata è finita in anticipo, è scritto. Si apre dalla premiazione sulla TV, dai risultati sul telefono e, dopo, dalla home › **📋 Le tue serate**. Si può stampare (o salvare in PDF). Se la stanza è stata cancellata, mostra il riassunto salvato nel gruppo.
 
 ### Il pre-partita
 
@@ -291,7 +311,7 @@ Chi inizia, la propria squadra e la clessidra restano sempre in vista sullo sche
 
 ### La grafica da show
 
-- **Tema Show (solo TV, attivo di serie):** sfondo serale "materico" (viola profondo, blu notte, verde scuro con una grana leggera), accenti neon arancio, magenta e oro con bagliori, titoli con effetto 3D a strati e numeri da tabellone (font Bungee). Si cambia in **Strumenti › Tema e atmosfera** (Show, Giorno, Notte, Automatico): la TV ricorda la sua scelta, separata da quella dei telefoni.
+- **Tema Show (solo TV, attivo di serie):** sfondo serale "materico" (viola profondo, blu notte, verde scuro con una grana leggera), accenti neon arancio, magenta e oro con bagliori, titoli con effetto 3D a strati e numeri grandi e tondi (font Fredoka, scelto per la leggibilità anche da lontano e sui telefoni). Si cambia in **Strumenti › Tema e atmosfera** (Show, Giorno, Notte, Automatico): la TV ricorda la sua scelta, separata da quella dei telefoni.
 - **Palcoscenico animato:** con il tema Show lo schermo non è mai fermo: dadi a 20 facce, meeple, segnalini e carte olografiche sfocate galleggiano piano, con polvere luminosa e due fari da studio. Si può anche scegliere come atmosfera (🎲 Palcoscenico). Con Safe Mode, "Meno animazioni" o risparmio energetico resta fermo.
 - **Giocatori come carte vive** durante il voto: chi deve ancora votare **pulsa** con i puntini "sta pensando", chi vota fa un **lampo** di luce nel suo colore, e allo scadere del tempo chi manca **trema** con il bordo rosso.
 - **Timer del voto** (Strumenti › Timer del voto: spento, 45 s, 1, 1½, 2 o 3 minuti): sulla TV un **anello che si consuma** passando dal verde al giallo, all'arancione e al rosso scuro, con una scintilla in punta, il tic degli ultimi 10 secondi e la sirena di "Tempo!". Sui telefoni una **miccia** che si accorcia con fumo e scintille, e che vibra a 10 secondi e alla fine. Si ferma durante la pausa. Con **"Allo scadere rivela da sola"** il reveal parte da solo (se almeno uno ha votato); altrimenti decide l'host. Il conto usa l'ora del server, quindi è uguale su TV e telefoni.
@@ -319,6 +339,15 @@ Quando entri, oltre alle 9 proposte puoi:
 - scrivere un **motto**, che compare sotto il tuo nome sulla TV.
 
 Tutto resta salvato nel profilo personale. Dalla seconda serata del gruppo, sulla TV compaiono i **trofei**: corona per l'MVP della serata precedente, stella per l'MVP di sempre e il titolo vinto l'ultima volta (es. "Il critico").
+
+### Soundboard (effetti dai telefoni)
+
+Dal telefono **🔊 Suoni** fa partire un effetto sulla TV (applausi, rullo, trombetta…). Gli effetti sono generati dal browser (nessun file da scaricare). Cosa è stato sistemato:
+- i browser non suonano finché nessuno ha toccato la pagina: sui **touch** (tablet o telefono usati come TV) il tocco “vale” quando il dito si alza, e prima la TV aspettava il tocco sbagliato, restando muta per sempre. Ora l’audio si attiva al primo tocco, e se la TV è muta compare **🔇 Tocca qui per attivare l’audio della TV**;
+- se un effetto non si sente, il fumetto sulla TV dice perché (*TV in silenzioso*, *effetti spenti*, *Safe Mode*, *audio da attivare*);
+- due telefoni insieme: gli effetti partono uno dopo l’altro, non uno sopra l’altro;
+- anti-spam: un effetto ogni 4 secondi dal telefono, imposto anche dal database (3 secondi).
+Nell’app Android l’audio parte senza tocchi (l’app lo permette).
 
 ### Strumenti della TV
 
@@ -365,6 +394,10 @@ Tutto si regola da **Strumenti** sulla TV:
 - **Commentatore:** "Telecronista" celebrativo o "Roast" satirico (con affetto). Commenta ogni reveal e, alla premiazione, il gioco della serata; il pulsante **Resoconto** legge il riassunto di tutta la serata. Usa la voce italiana del browser (su Chrome e Edge di solito c'è); se manca, restano i sottotitoli.
 - **Intervallo:** il pulsante **Intervallo** (o il tasto **I**) nella schermata del prossimo gioco, oppure dalla regia sul telefono. Si chiude toccando lo schermo o premendo un tasto, e da solo quando si apre la votazione. Se l'opzione è attiva, parte da solo dopo 3 minuti senza toccare la TV. Anche la schermata di pausa mostra le curiosità a rotazione.
 
+### Votazione del prossimo gioco con più voti
+
+Con **📱 Votazione** (tra un gioco e l’altro) la TV propone i giochi e i telefoni scelgono. In alto a sinistra **Voti a testa: 1 · 2 · 3** decide quante scelte ha ognuno (si cambia solo prima che arrivi il primo voto). Sul telefono si tocca per aggiungere o togliere un gioco, fino al massimo; ogni gioco riceve al massimo un voto da ciascuno. Vince il gioco con più voti (in pareggio decide la sorte). Il limite è imposto anche dalle regole del database: un telefono modificato non può mandare più voti di quelli concessi né votare due volte lo stesso gioco.
+
 ### Pronostici
 
 Quando l'host preme **Inizia la partita** (dalla TV o dalla regia), sui telefoni compare **Chi vincerà?** con chi sta giocando. Si può cambiare idea fino all'apertura del voto; sulla TV si vede quanti pronostici ci sono. Al reveal la TV dice chi aveva indovinato, e il telefono di ognuno mostra com'è andata. I pronostici azzeccati danno 15 XP, contano per il traguardo **Veggente** (5 vincitori indovinati), per il premio della serata **Il veggente** e per il Wrapped.
@@ -404,11 +437,29 @@ GameNight Show è una web app installabile: non serve passare dagli store.
 - **Android:** c'è la vera app da installare (vedi sotto, **L'app Android**). In alternativa, in Chrome tocca **Installa** nella scheda "Installa l'app", oppure il menu ⋮ › **Installa app**.
 - **iPhone (Safari):** tocca **Condividi** › **Aggiungi alla schermata Home**.
 
-L'app si apre a schermo intero sulla schermata iniziale: mostra il tuo profilo e, quando l'host crea una serata del gruppo, il pulsante **Entra nella serata in corso**, senza bisogno del QR.
+L'app si apre sulla **home personale** (la stessa pagina iniziale del sito):
 
-**Il profilo personale.** La prima volta che entri in una serata viene creato il tuo profilo, con un **codice personale** di 6 caratteri (compare sul telefono e in **Il mio profilo**). Con il codice ritrovi nome, personaggio e statistiche su qualsiasi telefono; le statistiche di sempre (serate, partite votate, vittorie, voti MVP, gioco preferito) si legano al profilo e non al nome.
+- per primo **🎉 Entra nella stanza:** prima **📷 Inquadra il QR della TV**, sotto il codice da scrivere a mano; se eri già in una serata ancora aperta compare **Rientra nella serata K7Q2** (controllata: una serata cancellata non compare);
+- subito sotto **📺 Crea la stanza** (o **Torna alla regia** se ne stai già guidando una);
+- poi **il tuo profilo** (nome, personaggio, traguardi), modificabile anche senza essere in una serata, **📦 I tuoi armadi**, **📋 Le tue serate** (i resoconti) e **👥 I tuoi gruppi** con la serata in corso;
+- **⚙️** in alto a destra: tema, accessibilità, **Rivedi l’introduzione** (alla prima apertura compare una breve presentazione in 3 passi, che si può saltare).
 
-**Attenzione su iPhone:** l'app aggiunta alla Home ha una memoria separata da Safari. Al primo avvio dell'app inserisci il tuo codice personale per ritrovare il profilo.
+Nella stanza, sul telefono, la freccia **←** in alto a sinistra torna alla home: si esce dalla schermata, **non dalla serata** (voti e punti restano, e si rientra con un tocco). Per uscire davvero c’è **Esco dalla serata**, con conferma; per chiuderla, solo la TV ha **🏁 Fine serata**. Nelle schermate interne (profilo, aggiungi gioco) **←** torna alla stanza e **🏠** alla home. Nella regia c’è **🏠 Home** nella barra in alto. A fine serata, sotto i risultati, c’è **🏠 Torna alla home**.
+
+### Il profilo personale (uguale su sito, telefono e app)
+
+Il profilo si crea dalla home (**✨ Crea il profilo**) oppure da solo alla prima serata. Contiene nome, personaggio, colore, foto e motto, i profili dei gruppi in cui hai giocato (con livelli e traguardi) e i tuoi armadi dei giochi.
+
+**Usarlo su un altro dispositivo** (per esempio dal sito sul PC all'app sul telefono): sul dispositivo dove c'è già, **Il tuo profilo › 🔗 Dispositivi** mostra un QR e un codice tipo `ABC123-K7Q2XA9F`. Sull'altro dispositivo: **Il tuo profilo › Ce l’ho già** e inquadra il QR (o scrivi il codice). Il codice è come una password: chi lo ha può usare il profilo. Da **Sicurezza** puoi farne uno nuovo (i dispositivi già collegati restano collegati) o scollegare il dispositivo.
+
+**Se l'altro dispositivo aveva già un suo profilo**, i due si uniscono:
+- nome, personaggio e colore: resta la modifica **più recente**;
+- gruppi: si sommano; se nello stesso gruppo c'erano due profili, i **traguardi si sommano** (le serate non vengono contate due volte);
+- armadi: si sommano, con il permesso di modificarli.
+
+Quando cambi nome o personaggio dalla home, cambia anche nei gruppi. Entrando in una serata compare **Entra come Andrea**: un tocco e sei dentro.
+
+**Chi aveva un profilo con le versioni precedenti** (codice di 6 caratteri per gruppo) non deve fare niente: alla prima apertura della home il profilo personale viene creato da quello. Il vecchio codice si può ancora usare in **Ce l’ho già › Ho solo il codice personale di 6 caratteri**.
 
 **Dopo una pubblicazione:** il sito controlla sempre se i file sono cambiati, quindi basta ricaricare la pagina. Se una pagina resta ferma o compare **La pagina non si è caricata del tutto**, il browser aveva tenuto file vecchi: tocca **Ricarica** (sul computer, se serve, Ctrl+Shift+R).
 
@@ -417,6 +468,10 @@ L'app si apre a schermo intero sulla schermata iniziale: mostra il tuo profilo e
 ## L'app Android
 
 Nella cartella `android-app/` c'è l'app Android vera e propria (fatta con [Capacitor](https://capacitorjs.com)): contiene una copia del sito e usa lo stesso Firebase, quindi TV, telefoni con l'app e telefoni con il browser (iPhone compresi) giocano insieme nella stessa serata.
+
+### Dove si scarica
+
+Nella home del sito c'è il riquadro **📲 App per Android** con **Scarica l’app (APK)**: compare sul sito pubblicato su GitHub Pages, sia dal PC che dal telefono. Il file sta nella pagina **Releases** del repository (release **App Android**) e viene **rifatto da solo a ogni caricamento su GitHub**: non devi fare niente, basta aspettare 5-8 minuti dopo il push.
 
 ### Come si ottiene l'APK
 
@@ -446,8 +501,27 @@ Gli aggiornamenti si installano allo stesso modo, sopra la versione vecchia: pro
 - I QR e i link mostrati dall'app puntano sempre al sito pubblico su GitHub Pages, così chi non ha l'app entra dal browser.
 - Immagini, figurine e video si condividono con il pannello **Condividi** di Android (WhatsApp, Instagram, Drive…). Backup, registro errori e inviti al calendario si salvano in **Documenti/GameNight Show** (sui telefoni dove non si può, si apre **Condividi**).
 - Il resoconto in PDF dall'app si salva come pagina `.html`: aprila nel browser e stampala in PDF.
-- La memoria dell'app è separata da quella del browser: al primo avvio inserisci il tuo **codice personale** per ritrovare il profilo.
+- La memoria dell'app è separata da quella del browser: per avere lo stesso profilo del sito, sul sito apri **Il tuo profilo › 🔗 Dispositivi** e nell'app **Ce l’ho già › Inquadra il QR**.
+- **Tasto Indietro di Android:** chiude prima la finestra aperta (pannelli, armadio, quiz…), poi torna alla schermata precedente (nella regia fa come **← Indietro**, con le stesse conferme); dalle altre pagine torna alla home e dalla home riduce l'app a icona invece di chiuderla. Se stai votando e non hai ancora inviato il voto, chiede conferma.
+- **La regia sul telefono:** se apri **Crea la stanza** dall'app (o dal browser del telefono), tutte le schermate della TV si dispongono in colonna e la barra dei comandi in alto scorre di lato da sola: niente esce dallo schermo e la pagina non scorre più a destra. Ruota, squadre, clessidra, quiz, intervallo, scaletta, votazione dei giochi, reveal, classifica e premiazione funzionano come sulla TV.
+- La barra di stato di Android (orologio, batteria) non copre più i pulsanti in alto.
 - Su iPhone si continua a usare il sito nel browser (o aggiunto alla schermata Home).
+
+### Sito e app: cosa c'è dove
+
+| Funzione | Sito (browser) | App Android |
+|---|---|---|
+| Home personale, profilo, traguardi, armadi, gruppi | ✅ | ✅ identica |
+| Stesso profilo su più dispositivi (QR o codice) | ✅ | ✅ identica |
+| Entrare in una serata | QR con la fotocamera del telefono o codice | 📷 lettore di QR nell'app, poi codice |
+| Voto, pronostici, segnapunti, soundboard, time-out, squadre, quiz, figurine | ✅ | ✅ identica |
+| Regia (TV): lobby, ruota, tavolo, quiz, intervallo, scaletta, votazione dei giochi, reveal, classifica, premiazione | ✅ | ✅ adattata al telefono (in colonna, barra che scorre) |
+| Regia dal telefono di un giocatore (codice regia) | ✅ | ✅ identica |
+| Tasto Indietro di sistema | quello del browser | gestito (finestre → schermata → home) |
+| Condividere immagini, salvare backup e registro | download del browser | pannello Condividi e cartella Documenti |
+| Resoconto PDF | stampa del browser | file `.html` da stampare |
+| Schermo intero sulla TV | ✅ (tasto F) | — (l'app è già a tutto schermo) |
+| Installazione | "Aggiungi a Home" (anche iPhone) | APK dalla home del sito |
 
 ### Firebase
 
@@ -529,7 +603,7 @@ Poi apri `http://localhost:8000/host.html`. Per collegare i telefoni dalla stess
 ## Struttura dei file
 
 ```
-index.html            pagina iniziale: scegli TV o giocatore
+index.html            home personale: profilo, entra in una serata (QR o codice), armadi, gruppi, app Android
 host.html             schermata TV
 play.html             schermata telefono
 database.rules.json   regole di sicurezza da incollare in Firebase
@@ -562,15 +636,18 @@ js/commentary.js      commentatore: frasi e sintesi vocale
 js/report.js          resoconto stampabile (PDF) della serata
 ludoteca.html         armadio dei giochi sul telefono: sfogliarlo e aggiungere giochi con la foto (QR dalla TV)
 js/library.js         logica della pagina dell’armadio sul telefono
-js/selftest.js        verifica della configurazione (pagina test.html)
-test.html             pagina di verifica di Firebase e delle regole
+js/selftest.js        tavolo di verifica (pagina test.html): prove reali su Firebase e matrice dei risultati
+test.html             tavolo di verifica di Firebase e delle regole
+resoconto.html        resoconto della serata (giochi, voti, vincitori, premi), anche dopo la fine
+js/resoconto.js       logica del resoconto
 js/version.js         numero di versione (uguale a version.json e sw.js)
 version.json          versione pubblicata, per avvisare dei nuovi aggiornamenti
 sw.js                 service worker: app installabile e copia dei file per la rete instabile
 manifest.webmanifest  nome, icone e colori dell'app installabile
 js/avatars.js         personaggi DiceBear
 js/util.js            funzioni condivise e icone
-js/home.js            pagina iniziale
+js/home.js            home personale (profilo, collegamento dei dispositivi, armadi, gruppi, introduzione)
+js/person.js          profilo personale condiviso tra sito e app: collegamento con chiave, unione, armadi
 js/native.js          app Android: link pubblici, salvataggi e condivisione, lettore di QR
 js/site.js            indirizzi pubblici dell'app Android (vuoto sul sito, lo compila il workflow)
 android-app/          progetto dell'app Android (Capacitor): configurazione, icone, firma
@@ -593,4 +670,4 @@ GameNight Show è gratis e senza pubblicità. Se vi piace, potete offrire un caf
 - [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 di Kazuhiko Arase (MIT).
 - [jsQR](https://github.com/cozmo/jsQR) 1.4.0 di Cosmo Wolfe (Apache 2.0), lettore di QR dell'app Android.
 - [Capacitor](https://capacitorjs.com) 8.5 di Ionic (MIT), con i plugin Filesystem e Share.
-- Font Lilita One, Nunito e Bungee (SIL Open Font License, testi in `assets/fonts`).
+- Font Fredoka e Nunito (SIL Open Font License, testi in `assets/fonts`).

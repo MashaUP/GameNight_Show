@@ -7,7 +7,7 @@ import {
   $, esc, fmt, param, normalizeCode, sortedPlayers, activePlayers, compressImage, gameImage, gameImageHTML, toast,
   installImageFallback, showFatal, showNotConfigured, ICONS, PLAYER_COLORS, safeColor, nameKey, cleanName, asList, libInfo, libFits, connectionStatus,
   keepAwake, watchVersion, registerSW, randomCode, userError, applyTheme, themeSwitchHTML, watchBattery, compressPhoto, dbKey, qrSVG,
-  ErrLog, a11yHTML, voteTimer, timerColor, buzz
+  ErrLog, a11yHTML, voteTimer, timerColor, buzz, squarePhoto, rememberNight, pollChoices, pollValue
 } from './util.js';
 import { avatarHTML, avatarUri, avatarOptions, avatarParts } from './avatars.js';
 import {
@@ -23,9 +23,10 @@ import { bindPhone, knock, checkCohost, tableHTML, paintSand, scoreHTML, QuizPho
 import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from './share.js';
 import { SFX_META } from './sfx.js';
 import { setRoomSafeMode } from './safe.js';
+import { Person, lookOf } from './person.js';
 
 const app = $('#app');
-const WATCHED = ['meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows'];
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows'];
 const VOTE_KEYS = ['overall', 'coinv', 'sempl', 'rigioc', 'c1', 'c2', 'mvp', 'guess', 'comment'];
 const emptyVote = () => Object.fromEntries(VOTE_KEYS.map((k) => [k, null]));
 
@@ -149,7 +150,8 @@ function isIOS() {
 
 /** Nell'app: pulsante per inquadrare il QR della TV (la fotocamera del telefono aprirebbe il browser). */
 function qrScanButtonHTML() {
-  return isApp() && canScanQR() ? '<button type="button" class="btn-sec btn-block qr-scan-btn" data-scanqr>📷 Inquadra il QR della TV</button>' : '';
+  const touch = window.matchMedia?.('(pointer: coarse)').matches;
+  return canScanQR() && (isApp() || touch) ? '<button type="button" class="btn btn-block qr-scan-btn" data-scanqr>📷 Inquadra il QR della TV</button>' : '';
 }
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-scanqr]');
@@ -189,86 +191,6 @@ function bindInstall(root) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Schermata iniziale dell'app: profilo, serata in corso, codici
-// ---------------------------------------------------------------------------
-
-async function renderHome(error = '') {
-  const mine = Object.entries(profiles());
-  app.innerHTML = `
-    <main class="phone">
-      ${phoneTop('', 'index')}
-      <div id="homeNights" class="home-nights"></div>
-      <form class="card ph-card" id="codeForm" novalidate>
-        <h2>Entra con il codice della TV</h2>
-        <label class="sr-only" for="codeInput">Codice stanza</label>
-        <input class="input code-input" id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" value="${esc(normalizeCode(localStorage.getItem('gnr_room')))}">
-        <p class="form-error" role="alert">${esc(error)}</p>
-        <button class="btn btn-block" type="submit">Entra</button>
-        ${qrScanButtonHTML()}
-      </form>
-      <form class="card ph-card" id="memberForm" novalidate>
-        <h2>${mine.length ? 'Un altro profilo?' : 'Hai già un profilo?'}</h2>
-        <p class="muted">Scrivi il tuo codice personale di 6 caratteri per ritrovare nome, personaggio e statistiche.</p>
-        <label class="sr-only" for="memberInput">Codice personale</label>
-        <input class="input code-input code-input--6" id="memberInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123">
-        <p class="form-error" id="memberErr" role="alert"></p>
-        <button class="btn-sec" type="submit">Ritrova il profilo</button>
-      </form>
-      ${installHintHTML()}
-      <section class="card ph-card"><h2>Tema</h2>${themeSwitchHTML('homeTheme')}</section>
-      <section class="card ph-card"><h2>Accessibilità</h2>${a11yHTML('homeA11y')}</section>
-    </main>`;
-  bindInstall(app);
-  const input = $('#codeInput');
-  input.addEventListener('input', () => { input.value = normalizeCode(input.value); });
-  $('#codeForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const code = normalizeCode(input.value);
-    if (code.length !== 4) { $('#codeForm .form-error').textContent = 'Il codice ha 4 caratteri.'; return; }
-    location.search = `?room=${code}`;
-  });
-  $('#memberInput').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
-  $('#memberForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const id = normalizeCode($('#memberInput').value, 6);
-    try {
-      const m = await loadMember(id);
-      if (!m) { $('#memberErr').textContent = 'Nessun profilo con questo codice.'; return; }
-      saveProfile(m.groupId, m.id);
-      toast(`Ciao, ${m.name}!`);
-      renderHome();
-    } catch (err) {
-      $('#memberErr').textContent = explainError(err);
-    }
-  });
-
-  // Una scheda per ogni profilo: si aggiorna da sola quando l'host crea la serata.
-  const box = $('#homeNights');
-  for (const [gid, mid] of mine) {
-    const card = document.createElement('article');
-    card.className = 'card home-night';
-    card.innerHTML = '<p class="muted">Carico il profilo…</p>';
-    box.appendChild(card);
-    const [m, info] = await Promise.all([loadMember(mid).catch(() => null), get(groupRef(gid, 'info')).then((s) => s.val()).catch(() => null)]);
-    if (!m) { card.remove(); forgetProfile(gid); continue; }
-    onValue(groupRef(gid, 'current'), async (snap) => {
-      const cur = snap.val();
-      let live = null;
-      if (cur?.room) {
-        const [meta, state] = await Promise.all([get(roomRef(cur.room, 'meta')), get(roomRef(cur.room, 'state'))]).catch(() => [null, null]);
-        if (meta?.exists()) live = { room: cur.room, done: state?.val()?.phase === 'awards' && state?.val()?.done };
-      }
-      card.innerHTML = `
-        <div class="home-me">${avatarHTML(m, '3.6rem', 'avatar--shadow')}<div><b class="home-name">Ciao, ${esc(m.name)}!</b><span class="muted">${esc(info?.name || 'Il tuo gruppo')}</span></div></div>
-        ${live
-          ? `<a class="btn btn-block" href="play.html?room=${esc(live.room)}">${live.done ? 'Vedi i risultati della serata' : `Entra nella serata in corso (${esc(live.room)})`}</a>`
-          : '<p class="muted">Nessuna serata in corso: quando l’host ne crea una, compare qui.</p>'}
-        <p class="muted small">Il tuo codice personale: <b>${esc(m.id)}</b></p>`;
-    }, () => {});
-  }
-}
-
 async function boot() {
   if (!isConfigured) { showNotConfigured(app); return; }
   const code = normalizeCode(param('room'));
@@ -280,12 +202,16 @@ async function boot() {
     showFatal(app, 'Impossibile collegarsi', explainError(err));
     return;
   }
-  // Link (o QR) del profilo personale: collega il profilo a questo telefono.
+  // Senza stanza: la pagina iniziale è la home personale (index.html), con profilo, armadi e gruppi.
   const prof = normalizeCode(param('profilo'), 6);
+  if (code.length !== 4) { location.replace(`index.html${prof.length === 6 ? `?profilo=${prof}` : ''}`); return; }
+  Person.uid = P.uid;
+  await Person.load().catch(() => null);
+  // Link (o QR) del profilo personale: collega il profilo a questo telefono.
   if (prof.length === 6) {
     try {
       const m = await loadMember(prof);
-      if (m) { saveProfile(m.groupId, m.id); toast(`Profilo di ${m.name} collegato a questo telefono`); }
+      if (m) { saveProfile(m.groupId, m.id); Person.linkGroup(m.groupId, m.id).catch(() => {}); toast(`Profilo di ${m.name} collegato a questo telefono`); }
       else toast('Nessun profilo con questo codice.', 'warn');
     } catch (err) { toast(explainError(err), 'error'); }
     const url = new URL(location.href);
@@ -293,13 +219,12 @@ async function boot() {
     history.replaceState(null, '', url.pathname + url.search);
   }
   await syncDeviceProfiles();
-  if (code.length !== 4) { renderHome(); return; }
 
   if (param('foto') === '1') { renderPhotoMode(code); return; }
 
   try {
     const meta = (await get(roomRef(code, 'meta'))).val();
-    if (!meta) { renderHome('Stanza non trovata: controlla il codice sulla TV.'); return; }
+    if (!meta) { renderCodeEntry(`La stanza ${code} non esiste (o è stata chiusa): controlla il codice sulla TV.`, ''); return; }
   } catch (err) {
     showFatal(app, 'Impossibile leggere la stanza', explainError(err));
     return;
@@ -331,18 +256,34 @@ function paintPhoneIdentity() {
 function phoneTop(code = P.code, back = '') {
   return `
     <header class="ph-top">
-      ${back ? `<button type="button" class="btn-sec btn-sec--sm ph-back" data-phback="${esc(back)}" aria-label="Indietro">←</button>` : ''}
+      ${back ? `<button type="button" class="btn-sec btn-sec--sm ph-back" data-phback="${esc(back)}" aria-label="Indietro">←</button>`
+        : code ? '<button type="button" class="btn-sec btn-sec--sm ph-back" data-phhome aria-label="Indietro: torna alla home (resti nella serata)" title="Torna alla home: resti nella serata e rientri quando vuoi">←</button>' : ''}
       <span class="brand-row"><span class="ph-emblem" data-emblem>${phoneEmblemHTML()}</span><span class="brand brand--sm">GameNight <span class="logo-tag logo-tag--xs">Show</span></span></span>
-      <span class="ph-right">${code ? `<span class="ph-room">Stanza ${esc(code)}</span>` : ''}${code ? '<button type="button" class="net-pill" data-netpill aria-live="polite"></button>' : ''}</span>
+      <span class="ph-right">${code ? `<span class="ph-room">Stanza ${esc(code)}</span>` : ''}${code ? '<button type="button" class="net-pill" data-netpill aria-live="polite"></button>' : ''}${back && !['index', 'home'].includes(back) ? '<button type="button" class="ph-home" data-phhome aria-label="Home: profilo, armadi e altre serate" title="Home">🏠</button>' : ''}</span>
     </header>`;
 }
 
+// Tasto Indietro di Android (app): prima le schermate interne (profilo, aggiungi gioco), poi la home.
+window.addEventListener('gnr:back', (e) => {
+  const back = document.querySelector('[data-phback]');
+  const to = back?.dataset.phback || '';
+  if (to && !['index', 'home'].includes(to)) { e.preventDefault(); back.click(); return; }
+  if (P.code) { e.preventDefault(); goHome(); }
+});
+
+/** Home: si esce dalla schermata, non dalla serata (si rientra con un tocco dalla home). */
+function goHome() {
+  const voting = P.state?.phase === 'voting' && P.players?.[P.uid] && !P.votes?.[P.state?.gameId]?.[P.uid] && document.querySelector('#sendVote');
+  if (voting && !confirm('Non hai ancora inviato il voto. Tornare alla home? Puoi rientrare e votare finché la votazione è aperta.')) return;
+  location.href = 'index.html';
+}
 document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-phhome]')) { goHome(); return; }
   const b = e.target.closest('[data-phback]');
   if (!b) return;
   const to = b.dataset.phback;
   if (to === 'index') { location.href = 'index.html'; return; }
-  if (to === 'home') { location.href = 'play.html'; return; }
+  if (to === 'home') { location.href = 'index.html'; return; }
   if (to.startsWith('room:')) { location.href = `play.html?room=${encodeURIComponent(to.slice(5))}`; return; }
   if (to === 'addgame') { P.addingGame = false; render(); return; }
   if (to === 'profile') { P.showProfile = false; render(); return; }
@@ -446,13 +387,13 @@ function renderCodeEntry(error = '', value = '') {
     <main class="phone phone--center">
       ${phoneTop('', 'home')}
       <h1 class="ph-title">Entra nella serata</h1>
-      <p class="ph-lead">Scrivi il codice di 4 caratteri che vedi sulla TV, oppure inquadra il QR.</p>
+      <p class="ph-lead">Inquadra il QR sulla TV, oppure scrivi il codice di 4 caratteri.</p>
+      <p class="form-error" role="alert">${esc(error)}</p>
+      ${qrScanButtonHTML()}
       <form class="code-form" id="codeForm" novalidate>
-        <label class="sr-only" for="codeInput">Codice stanza</label>
+        <label class="hub-or" for="codeInput">Codice della stanza</label>
         <input class="input code-input" id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" value="${esc(last)}">
-        <p class="form-error" role="alert">${esc(error)}</p>
-        <button class="btn btn-block" type="submit">Entra</button>
-        ${qrScanButtonHTML()}
+        <button class="btn-sec btn-block" type="submit">Entra con il codice</button>
       </form>
     </main>`;
   const input = $('#codeInput');
@@ -461,7 +402,7 @@ function renderCodeEntry(error = '', value = '') {
     e.preventDefault();
     const code = normalizeCode(input.value);
     if (code.length !== 4) {
-      app.querySelector('.form-error').textContent = 'Il codice ha 4 caratteri.';
+      app.querySelector('.form-error').textContent = 'Il codice ha 4 caratteri: lo trovi sulla TV.';
       return;
     }
     location.search = `?room=${code}`;
@@ -657,6 +598,7 @@ async function openNightSheet(n, gid) {
 
 function render() {
   if (!WATCHED.every((k) => P.loaded.has(k))) return;
+  if (P.meta && P.rememberedRoom !== P.code) { P.rememberedRoom = P.code; rememberNight(P.code, { group: P.meta.groupName, gid: P.meta.groupId }); }
   watchGroup();
   watchArmadio();
   flushOutbox();
@@ -1205,25 +1147,6 @@ function clearDrafts() {
 }
 
 /** Foto profilo: ritaglio quadrato al centro, 256 px, compressa (selfie o galleria). */
-function squarePhoto(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const s = Math.min(img.naturalWidth, img.naturalHeight);
-      const c = document.createElement('canvas');
-      c.width = c.height = 256;
-      c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, 256, 256);
-      URL.revokeObjectURL(url);
-      let q = 0.82, out = c.toDataURL('image/jpeg', q);
-      while (out.length > 100000 && q > 0.4) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
-      resolve(out);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Foto non leggibile')); };
-    img.src = url;
-  });
-}
-
 function numOptions(max, emptyLabel) {
   return `<option value="">${emptyLabel}</option>` + Array.from({ length: max }, (_, i) => `<option value="${i + 1}">${i + 1} giocatori</option>`).join('');
 }
@@ -1372,15 +1295,22 @@ SCREENS.poll = {
       <main class="phone">
         ${phoneTop()}
         <h1 class="ph-title">Cosa giochiamo adesso?</h1>
-        <p class="ph-lead">Tocca il gioco che vuoi fare. Puoi cambiare idea finché la TV non chiude la scelta.</p>
-        <div class="poll-pick" id="pollPick" role="radiogroup" aria-label="Giochi proposti"></div>
+        <p class="ph-lead" id="pollLead">Tocca il gioco che vuoi fare. Puoi cambiare idea finché la TV non chiude la scelta.</p>
+        <div class="poll-pick" id="pollPick" role="group" aria-label="Giochi proposti"></div>
         <p class="muted center" id="pollMine" aria-live="polite"></p>
       </main>`;
     $('#pollPick', el).addEventListener('click', async (e) => {
       const b = e.target.closest('[data-opt]');
       if (!b) return;
+      const max = Math.max(1, Number(P.poll?.max) || 1);
+      const id = b.dataset.opt;
+      let mine = pollChoices(P.poll?.votes?.[P.uid], max);
+      if (max === 1) mine = [id];
+      else if (mine.includes(id)) mine = mine.filter((x) => x !== id);
+      else if (mine.length >= max) { toast(`Puoi scegliere al massimo ${max} giochi: togline uno prima di aggiungerne un altro.`, 'warn'); return; }
+      else mine = [...mine, id];
       try {
-        await Net.track('Scelta del gioco', set(roomRef(P.code, `poll/votes/${P.uid}`), b.dataset.opt));
+        await Net.track('Scelta del gioco', set(roomRef(P.code, `poll/votes/${P.uid}`), pollValue(mine)));
         if (navigator.vibrate) navigator.vibrate(20);
       } catch (err) {
         toast(explainError(err), 'error');
@@ -1391,21 +1321,29 @@ SCREENS.poll = {
     const poll = P.poll;
     if (!poll?.open) return;
     const opts = asList(poll.options).filter((id) => P.library?.[id]);
-    const mine = poll.votes?.[P.uid] || null;
-    const sig = JSON.stringify([opts, mine, opts.map((id) => (P.library[id].image || '').length)]);
+    const max = Math.max(1, Number(poll.max) || 1);
+    const mine = pollChoices(poll.votes?.[P.uid], max).filter((id) => P.library?.[id]);
+    const sig = JSON.stringify([opts, mine, max, opts.map((id) => (P.library[id].image || '').length)]);
     if (sig === this.sig) return;
     this.sig = sig;
+    $('#pollLead').textContent = max > 1
+      ? `Puoi scegliere fino a ${max} giochi: tocca per aggiungere o togliere. Si cambia idea finché la TV non chiude la scelta.`
+      : 'Tocca il gioco che vuoi fare. Puoi cambiare idea finché la TV non chiude la scelta.';
     $('#pollPick').innerHTML = opts.map((id) => {
       const it = P.library[id];
+      const on = mine.includes(id);
       return `
-        <button type="button" class="poll-opt" role="radio" aria-checked="${mine === id}" data-opt="${esc(id)}">
+        <button type="button" class="poll-opt" aria-pressed="${on}" aria-checked="${on}" data-opt="${esc(id)}">
           ${gameImageHTML(it, 'game-img--opt')}
           <span class="poll-opt-name">${esc(it.name)}</span>
           ${libInfo(it) ? `<span class="poll-opt-meta">${esc(libInfo(it))}</span>` : ''}
-          ${mine === id ? `<span class="poll-opt-check">${ICONS.check}</span>` : ''}
+          ${on ? `<span class="poll-opt-check">${max > 1 ? mine.indexOf(id) + 1 : ICONS.check}</span>` : ''}
         </button>`;
     }).join('');
-    $('#pollMine').textContent = mine && P.library?.[mine] ? `Hai scelto ${P.library[mine].name}.` : 'Non hai ancora scelto.';
+    const names = mine.map((id) => P.library[id].name);
+    $('#pollMine').textContent = names.length
+      ? `Hai scelto ${names.join(', ')}${max > 1 ? ` (${names.length} su ${max})` : ''}.`
+      : (max > 1 ? `Non hai ancora scelto: hai ${max} voti.` : 'Non hai ancora scelto.');
   }
 };
 
@@ -1459,6 +1397,17 @@ function reclaimable() {
 
 /** "Entra come Andrea" se il telefono ha già un profilo per questo gruppo. */
 function profileJoinHTML() {
+  const person = Person.data?.info;
+  if (person && !P.skipProfile && (!P.member || P.member.id === Person.data.groups?.[P.meta?.groupId])) {
+    const look = person;
+    const back = P.member && Object.values(P.players).some((p) => p.memberId === P.member.id);
+    return `
+      <section class="card profile-join">
+        <div class="home-me">${avatarHTML(look, '3.6rem', 'avatar--shadow')}<div><b class="home-name">Ciao, ${esc(look.name)}!</b><span class="muted">Il tuo profilo è pronto: un tocco ed entri.</span></div></div>
+        <button type="button" class="btn btn-block" id="joinPerson">${back ? 'Rientra' : 'Entra'} come ${esc(look.name)}</button>
+        <button type="button" class="link-btn" id="notMe">Entra con un altro nome</button>
+      </section>`;
+  }
   if (!P.meta?.groupId) return '';
   if (P.member && !P.skipProfile) {
     return `
@@ -1483,6 +1432,12 @@ function profileJoinHTML() {
 function bindProfileJoin(root) {
   root.addEventListener('click', async (e) => {
     if (e.target.closest('#notMe')) { P.skipProfile = true; $('#profileBox').innerHTML = profileJoinHTML(); return; }
+    if (e.target.closest('#joinPerson')) {
+      const b = e.target.closest('#joinPerson');
+      b.disabled = true;
+      try { await joinAsPerson(); } catch (err) { toast(err.user ? err.message : explainError(err), 'error'); b.disabled = false; render(); }
+      return;
+    }
     if (e.target.closest('#joinMember')) {
       e.target.closest('#joinMember').disabled = true;
       try { await joinAsMember(P.member); } catch (err) { toast(explainError(err), 'error'); render(); }
@@ -1495,6 +1450,7 @@ function bindProfileJoin(root) {
         if (!m) { $('#pcErr').textContent = 'Nessun profilo con questo codice.'; return; }
         if (m.groupId !== P.meta.groupId) { $('#pcErr').textContent = 'Questo profilo è di un altro gruppo.'; return; }
         saveProfile(m.groupId, m.id);
+        Person.linkGroup(m.groupId, m.id).catch(() => {});
         P.member = m;
         P.skipProfile = false;
         $('#profileBox').innerHTML = profileJoinHTML();
@@ -1504,6 +1460,39 @@ function bindProfileJoin(root) {
     }
   });
   root.addEventListener('input', (e) => { if (e.target.id === 'pcInput') e.target.value = normalizeCode(e.target.value, 6); });
+}
+
+/**
+ * Entra con il profilo personale: nel gruppo della stanza usa (o crea) il profilo di gruppo collegato,
+ * così classifica di sempre e traguardi continuano da dove erano.
+ */
+async function joinAsPerson() {
+  const look = lookOf(Person.data.info);
+  const gid = P.meta?.groupId;
+  if (!gid) {
+    if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(look.name))) throw userError(`C’è già un ${look.name} nella stanza: entra con un altro nome.`);
+    const active = activePlayers(P.players);
+    if (!P.players[P.uid] && active.length >= (P.meta.maxPlayers || 8)) throw userError('La stanza è piena.');
+    const taken = new Set(active.filter((p) => p.uid !== P.uid).map((p) => p.color));
+    const color = taken.has(look.color) ? (PLAYER_COLORS.find((c) => !taken.has(c)) || look.color) : look.color;
+    await set(roomRef(P.code, `players/${P.uid}`), { name: look.name, style: look.style, seed: look.seed, color, opts: look.opts || null, photo: look.photo || null, motto: look.motto || null, memberId: null, joinedAt: P.players[P.uid]?.joinedAt || serverTimestamp() });
+    localStorage.setItem('gnr_name', look.name);
+    return;
+  }
+  let mid = Person.data.groups?.[gid] || profiles()[gid] || null;
+  let m = mid ? await loadMember(mid).catch(() => null) : null;
+  if (m && m.groupId !== gid) m = null;
+  if (!m) {
+    mid = await createMember({ ...look, groupId: gid, opts: look.opts || null, photo: look.photo || null, motto: look.motto || null });
+    m = { id: mid, ...look, groupId: gid };
+  } else {
+    await Person.pushLookToMember(m.id, gid).catch(() => {});
+    m = { ...m, ...look };
+  }
+  saveProfile(gid, m.id);
+  await Person.linkGroup(gid, m.id).catch(() => {});
+  P.member = m;
+  await joinAsMember(m);
 }
 
 /** Entra nella stanza con il profilo salvato (o rientra al proprio posto se c'era già). */
@@ -1658,14 +1647,16 @@ SCREENS.join = {
     if (!P.form) {
       const options = avatarOptions(9);
       if (me) options[0] = { style: me.style, seed: me.seed };
+      const pi = !me ? Person.data?.info : null;
+      if (pi) options[0] = { style: pi.style, seed: pi.seed };
       P.form = {
-        name: me?.name || localStorage.getItem('gnr_name') || '',
+        name: me?.name || pi?.name || localStorage.getItem('gnr_name') || '',
         options,
         pick: 0,
-        color: me?.color || null,
-        opts: me?.opts ? { ...me.opts } : {},
-        photo: me?.photo || null,
-        motto: me?.motto || ''
+        color: me?.color || pi?.color || null,
+        opts: me?.opts ? { ...me.opts } : pi?.opts ? { ...pi.opts } : {},
+        photo: me?.photo || pi?.photo || null,
+        motto: me?.motto || pi?.motto || ''
       };
     }
     el.innerHTML = `
@@ -1724,6 +1715,7 @@ SCREENS.join = {
         const m = await loadMember(id);
         if (!m || m.groupId !== P.meta.groupId) { $('#snErr').textContent = 'Codice non valido per questo gruppo.'; return; }
         saveProfile(m.groupId, m.id);
+        Person.linkGroup(m.groupId, m.id).catch(() => {});
         P.member = m;
         P.skipProfile = false;
         const box = $('#profileBox');
@@ -1783,7 +1775,7 @@ SCREENS.join = {
       try {
         P.form.photo = await squarePhoto(f);
         this.paintPreview();
-      } catch (err) { toast(err.message || 'Foto non leggibile', 'error'); }
+      } catch (err) { if (!err.cancelled) toast(err.message || 'Foto non leggibile', 'error'); }
     };
     $('#selfieIn', el).addEventListener('change', (e) => takePhoto(e.target));
     $('#galleryIn', el).addEventListener('change', (e) => takePhoto(e.target));
@@ -1939,10 +1931,20 @@ SCREENS.join = {
             memberId = await createMember(data);
             saveProfile(P.meta.groupId, memberId);
             P.member = { id: memberId, ...data };
-            P.newCode = memberId;
+            P.newCode = Person.local() ? null : memberId;
           }
         } catch (e) { console.warn('Profilo non salvato', e); }
       }
+      // Il profilo personale segue: si crea al primo ingresso e si aggiorna quando lo modifichi.
+      const look = { name, style: o.style, seed: o.seed, color: P.form.color, ...avatarExtras() };
+      const linked = !Person.local() || !memberId || Person.data?.groups?.[P.meta.groupId] === memberId;
+      (async () => {
+        if (!Person.local()) await Person.create(look, memberId && P.meta.groupId ? { groups: { [P.meta.groupId]: memberId } } : {});
+        else if (linked && (me || !P.meta.groupId || !Person.data?.groups?.[P.meta.groupId])) {
+          if (memberId && P.meta.groupId) await Person.linkGroup(P.meta.groupId, memberId);
+          if (me) await Person.saveLook(look);
+        }
+      })().catch((e) => console.warn('Profilo personale non aggiornato', e));
       await set(roomRef(P.code, `players/${P.uid}`), {
         name,
         style: o.style,
@@ -2643,6 +2645,8 @@ SCREENS.awards = {
         ${items ? `<div class="p-awards"><h2>Premi speciali</h2><ol class="p-award-list">${items}</ol></div>` : ''}
         ${myUnlockedHTML()}
         ${P.meta.groupId && Object.keys(P.nights || {}).length > 1 ? `<div class="p-awards"><h2>Classifica di sempre</h2>${allTimeHTML(5)}</div>` : ''}
+        <a class="btn-sec btn-block" href="resoconto.html?room=${esc(P.code)}${P.meta.groupId ? `&g=${esc(P.meta.groupId)}` : ''}">📋 <span>Resoconto completo della serata</span></a>
+        <a class="btn-sec btn-block end-home" href="index.html">🏠 <span>Torna alla home</span></a>
       </main>`;
     $('#shareBtn', el).addEventListener('click', async (e) => {
       const btn = e.currentTarget;

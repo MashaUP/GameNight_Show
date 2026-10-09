@@ -18,25 +18,25 @@ export function reportHTML(d) {
   const critHeads = [...new Set(d.rows.flatMap((r) => Object.keys(r.crit || {})))];
   return `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(`GameNight Show · ${d.group || 'Serata'} · ${d.date}`)}</title>
 <style>
-@font-face { font-family: 'Lilita One'; src: url('${font('lilita-one.woff2')}') format('woff2'); }
+@font-face { font-family: 'Fredoka'; src: url('${font('fredoka-600.woff2')}') format('woff2'); }
 @font-face { font-family: 'Nunito'; src: url('${font('nunito.woff2')}') format('woff2'); font-weight: 200 1000; }
 @page { size: A4; margin: 14mm 13mm; }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Nunito, system-ui, sans-serif; font-weight: 700; color: #1F1A3D; font-size: 10.5pt; line-height: 1.35; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-h1, h2, h3 { font-family: 'Lilita One', Nunito, sans-serif; font-weight: 400; margin: 0; }
+h1, h2, h3 { font-family: 'Fredoka', Nunito, sans-serif; font-weight: 400; margin: 0; }
 .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12pt; border-bottom: 3pt solid #1F1A3D; padding-bottom: 8pt; margin-bottom: 12pt; }
-.brand { font-family: 'Lilita One', sans-serif; font-size: 13pt; }
+.brand { font-family: 'Fredoka', sans-serif; font-size: 13pt; }
 .brand span { background: ${color}; border: 1.5pt solid #1F1A3D; border-radius: 4pt; padding: 0 4pt; }
 h1 { font-size: 26pt; line-height: 1; margin-top: 4pt; }
 .sub { color: #4A4468; font-size: 11pt; margin-top: 3pt; }
-.num { font-family: 'Lilita One', sans-serif; font-size: 15pt; background: ${color}; border: 2pt solid #1F1A3D; border-radius: 999px; padding: 2pt 10pt; white-space: nowrap; }
+.num { font-family: 'Fredoka', sans-serif; font-size: 15pt; background: ${color}; border: 2pt solid #1F1A3D; border-radius: 999px; padding: 2pt 10pt; white-space: nowrap; }
 h2 { font-size: 15pt; margin: 14pt 0 6pt; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 4pt 5pt; border-bottom: 0.8pt solid #CFC8E6; vertical-align: top; }
 th { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #4A4468; border-bottom: 1.5pt solid #1F1A3D; }
 td.r, th.r { text-align: right; }
 tr.first td { background: #FFF3C4; }
-.avg { font-family: 'Lilita One', sans-serif; font-size: 13pt; }
+.avg { font-family: 'Fredoka', sans-serif; font-size: 13pt; }
 .small { font-size: 8.5pt; color: #4A4468; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6pt 14pt; }
 .award { border: 1.2pt solid #1F1A3D; border-radius: 6pt; padding: 5pt 8pt; break-inside: avoid; }

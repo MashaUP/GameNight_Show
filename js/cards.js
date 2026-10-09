@@ -69,7 +69,7 @@ function rr(c, x, y, w, h, r) {
 
 /** Disegna la figurina su un canvas 900×1260 e restituisce il PNG. */
 export async function renderCardImage(card, player, groupName = '') {
-  try { await document.fonts?.load?.('80px "Lilita One"'); await document.fonts?.load?.('60px "Bungee"'); } catch { /* niente */ }
+  try { await document.fonts?.load?.('80px "Fredoka"'); await document.fonts?.load?.('700 60px "Fredoka"'); } catch { /* niente */ }
   const W = 900, H = 1260;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
@@ -89,8 +89,8 @@ export async function renderCardImage(card, player, groupName = '') {
   c.save(); c.globalAlpha = 0.18; c.translate(W / 2, 420);
   for (let i = 0; i < 24; i++) { c.rotate(Math.PI / 12); c.fillStyle = '#FFFFFF'; c.beginPath(); c.moveTo(0, 0); c.lineTo(-40, -700); c.lineTo(40, -700); c.closePath(); c.fill(); }
   c.restore();
-  const DISPLAY = '"Lilita One", "Nunito", sans-serif';
-  const NUM = '"Bungee", "Lilita One", sans-serif';
+  const DISPLAY = '"Fredoka", "Nunito", sans-serif';
+  const NUM = '"Fredoka", "Nunito", sans-serif';
   c.fillStyle = '#1F1A3D';
   c.font = `52px ${NUM}`; c.textAlign = 'left'; c.fillText(`LV ${card.level}`, 100, 150);
   c.textAlign = 'right'; c.fillText(`#${card.number}`, W - 100, 150);

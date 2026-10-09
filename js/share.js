@@ -6,7 +6,7 @@ const C = {
   cream: '#FFF4DE', paper: '#FFFFFF', ink: '#1F1A3D', soft: '#4A4468',
   sun: '#FFC93C', teal: '#2EC4B6', pink: '#FF8FB1', tomato: '#FF5A4E', violet: '#7B5CFA'
 };
-const DISPLAY = '"Lilita One", "Nunito", "Arial Rounded MT Bold", sans-serif';
+const DISPLAY = '"Fredoka", "Nunito", "Arial Rounded MT Bold", sans-serif';
 const BODY = 'Nunito, system-ui, sans-serif';
 const W = 1080;
 const PAD = 64;

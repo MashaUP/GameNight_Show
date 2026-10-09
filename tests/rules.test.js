@@ -197,5 +197,49 @@ check('armadio: il proprietario registra i membri', armBase(), 'owner', 'set', `
 check('armadio: campi sconosciuti rifiutati', armBase(), 'owner', 'set', `${A}/boh`, 1, false);
 check('stanza collegata a un armadio', base(), 'host', 'update', `${R}/meta`, { armadioId: 'ARM001', armadioName: 'Giochi di casa' }, true);
 check('stanza: codice armadio non valido', base(), 'host', 'update', `${R}/meta`, { armadioId: '<x>' }, false);
+
+// Profilo personale (lo stesso su sito, telefono e app): solo i dispositivi collegati lo leggono e lo modificano
+const ME = (uid = 'dev1', extra = {}) => ({ name: 'Andrea', style: 'adventurer', seed: 'abc', color: '#FF5A4E', ownerUid: uid, updatedAt: 1, ...extra });
+const personBase = () => { const d = base(); d.people = { PER001: { info: ME(), uids: { dev1: 1 }, groups: { GRP123: 'MEM001' } } }; d.personKeys = { PER001: 'KEY98765' }; return d; };
+check('profilo: si crea con il primo dispositivo', base(), 'dev1', 'update', '/', { 'people/PER002/info': ME(), 'people/PER002/uids/dev1': 1 }, true);
+check('profilo: non a nome di un altro dispositivo', base(), 'dev1', 'update', '/', { 'people/PER002/info': ME('altro'), 'people/PER002/uids/dev1': 1 }, false);
+check('profilo: un estraneo non si aggiunge', personBase(), 'zz', 'set', '/people/PER001/uids/zz', 1, false);
+check('profilo: con la chiave giusta si collega un altro dispositivo', (() => { const d = personBase(); d.personKeyClaims = { PER001: { app2: 'KEY98765' } }; return d; })(), 'app2', 'set', '/people/PER001/uids/app2', 1, true);
+check('profilo: chiave sbagliata', (() => { const d = personBase(); d.personKeyClaims = { PER001: { app2: 'WRONG123' } }; return d; })(), 'app2', 'set', '/people/PER001/uids/app2', 1, false);
+check('profilo: con la chiave non si collega qualcun altro', (() => { const d = personBase(); d.personKeyClaims = { PER001: { app2: 'KEY98765' } }; return d; })(), 'app2', 'set', '/people/PER001/uids/zz', 1, false);
+check('profilo: lo legge un dispositivo collegato', personBase(), 'dev1', 'read', '/people/PER001', null, true);
+check('profilo: un estraneo NON lo legge', personBase(), 'zz', 'read', '/people/PER001', null, false);
+check('profilo: un estraneo non lo modifica', personBase(), 'zz', 'set', '/people/PER001/info', ME('dev1', { name: 'Hacker' }), false);
+check('profilo: il dispositivo collegato cambia nome', personBase(), 'dev1', 'set', '/people/PER001/info', ME('dev1', { name: 'Andy', updatedAt: 2 }), true);
+check('profilo: il proprietario non si cambia', personBase(), 'dev1', 'set', '/people/PER001/info', ME('altro', { updatedAt: 2 }), false);
+check('profilo: colore non valido', personBase(), 'dev1', 'set', '/people/PER001/info', ME('dev1', { color: 'red' }), false);
+check('profilo: collega un gruppo', personBase(), 'dev1', 'set', '/people/PER001/groups/GRP999', 'MEM002', true);
+check('profilo: collega un armadio con la chiave', personBase(), 'dev1', 'set', '/people/PER001/armadi/ARM001', { name: 'Giochi di casa', key: 'KN75MK8G', own: true, at: 5 }, true);
+check('profilo: chiave armadio non valida', personBase(), 'dev1', 'set', '/people/PER001/armadi/ARM001', { name: 'Giochi', key: '<x>' }, false);
+check('profilo: unisce un vecchio profilo dello stesso gruppo', personBase(), 'dev1', 'set', '/people/PER001/alts/GRP123/MEM009', true, true);
+check('profilo: si crea insieme ai gruppi e agli armadi', base(), 'dev1', 'update', '/', { 'people/PER003/info': ME(), 'people/PER003/uids/dev1': 1, 'people/PER003/groups/GRP123': 'MEM001', 'people/PER003/armadi/ARM001': { name: 'Casa', key: 'KN75MK8G' } }, true);
+check('profilo: un estraneo non aggiunge gruppi', personBase(), 'zz', 'set', '/people/PER001/groups/GRP999', 'MEM002', false);
+check('profilo: un estraneo non aggiunge armadi', personBase(), 'zz', 'set', '/people/PER001/armadi/ARM001', { name: 'X' }, false);
+check('profilo: un estraneo non si aggiunge insieme a un gruppo', personBase(), 'zz', 'update', '/', { 'people/PER001/uids/zz': 1, 'people/PER001/groups/GRP999': 'MEM002' }, false);
+check('profilo: la chiave la scrive solo un dispositivo collegato', personBase(), 'zz', 'set', '/personKeys/PER001', 'HACK1234', false);
+check('profilo: un dispositivo collegato rinnova la chiave', personBase(), 'dev1', 'set', '/personKeys/PER001', 'NEWK1234', true);
+check('profilo: la chiave non si legge', personBase(), 'dev1', 'read', '/personKeys/PER001', null, false);
+check('profilo: campi sconosciuti rifiutati', personBase(), 'dev1', 'set', '/people/PER001/boh', 1, false);
+
+// Stelline "Stasera" della serata (non toccano l'armadio) e votazione dei giochi con più voti a testa
+check('serata: la TV sceglie i giochi di stasera', base(), 'host', 'set', `${R}/pick/L1`, true, true);
+check('serata: un giocatore non cambia le stelline della TV', base(), 'p1', 'set', `${R}/pick/L1`, true, false);
+check('serata: stellina non booleana', base(), 'host', 'set', `${R}/pick/L1`, 'si', false);
+const pollBase = (max) => { const d = base(); d.rooms.ABCD.state = { phase: 'poll' }; d.rooms.ABCD.poll = { open: true, options: ['L1', 'L2', 'L3', 'L4'], ...(max ? { max } : {}) }; return d; };
+check('giochi: un voto (come prima)', pollBase(), 'p1', 'set', `${R}/poll/votes/p1`, 'L1', true);
+check('giochi: due voti se la TV ne concede 2', pollBase(2), 'p1', 'set', `${R}/poll/votes/p1`, { a: 'L1', b: 'L2' }, true);
+check('giochi: il secondo voto NO se la TV ne concede 1', pollBase(1), 'p1', 'set', `${R}/poll/votes/p1`, { a: 'L1', b: 'L2' }, false);
+check('giochi: il terzo voto NO se la TV ne concede 2', pollBase(2), 'p1', 'set', `${R}/poll/votes/p1`, { a: 'L1', b: 'L2', c: 'L3' }, false);
+check('giochi: tre voti se la TV ne concede 3', pollBase(3), 'p1', 'set', `${R}/poll/votes/p1`, { a: 'L1', b: 'L2', c: 'L3' }, true);
+check('giochi: due voti allo stesso gioco NO', pollBase(3), 'p1', 'set', `${R}/poll/votes/p1`, { a: 'L1', b: 'L1' }, false);
+check('giochi: casella sconosciuta NO', pollBase(3), 'p1', 'set', `${R}/poll/votes/p1`, { z: 'L1' }, false);
+check('giochi: si vota solo per sé', pollBase(2), 'p1', 'set', `${R}/poll/votes/p2`, { a: 'L1' }, false);
+check('giochi: massimo voti a testa oltre 3 NO', pollBase(), 'host', 'set', `${R}/poll/max`, 5, false);
+check('giochi: la TV imposta 2 voti a testa', pollBase(), 'host', 'set', `${R}/poll/max`, 2, true);
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

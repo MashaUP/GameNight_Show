@@ -124,10 +124,50 @@ function bindStatusBar() {
   else later();
 }
 
+// ---------------------------------------------------------------------------
+// Tasto "Indietro" di Android: prima chiude la finestra aperta, poi chiede alla pagina
+// (evento "gnr:back", che la pagina può gestire con preventDefault), infine torna alla home.
+// Dalla home riduce l'app a icona invece di chiuderla.
+// ---------------------------------------------------------------------------
+
+const OVERLAYS = '.overlay, .dock-sheet:not([hidden]), .tour-pop, .stale-banner';
+function topOverlay() {
+  const list = [...document.querySelectorAll(OVERLAYS)].filter((el) => el.isConnected && el.getClientRects().length && !el.classList.contains('stale-banner'));
+  return list[list.length - 1] || null;
+}
+function closeOverlay(el) {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  setTimeout(() => {
+    if (!el.isConnected || !el.getClientRects().length) return;
+    const btn = el.querySelector('[data-close], [data-sheetclose], .sheet-x, [aria-label^="Chiudi"], [id$="Close"], .tour-skip');
+    if (btn) { btn.click(); return; }
+    // Ultima possibilità: un tocco sullo sfondo (quasi tutte le finestre si chiudono così).
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }, 80);
+}
+/** Gestisce il tasto Indietro come lo farebbe l'utente con i pulsanti a schermo. */
+export function handleBack() {
+  const ov = topOverlay();
+  if (ov) { closeOverlay(ov); return 'overlay'; }
+  const ev = new CustomEvent('gnr:back', { cancelable: true });
+  window.dispatchEvent(ev);
+  if (ev.defaultPrevented) return 'page';
+  const page = location.pathname.split('/').pop() || 'index.html';
+  if (page !== 'index.html') { location.href = 'index.html'; return 'home'; }
+  nativeCall('App', 'minimizeApp').catch(() => nativeCall('App', 'exitApp').catch(() => {}));
+  return 'minimize';
+}
+function bindBackButton() {
+  const cap = window.Capacitor;
+  if (typeof cap?.addListener !== 'function' || !cap.isPluginAvailable?.('App')) return;
+  try { cap.addListener('App', 'backButton', () => handleBack()); } catch { /* plugin assente: comportamento di Android */ }
+}
+
 if (isApp()) {
   document.documentElement.classList.add('in-app');
   bindLinks();
   bindStatusBar();
+  bindBackButton();
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +275,10 @@ export function routeFromQR(text) {
     const q = keep(['room']);
     const h = /^#?[\w=&-]{1,200}$/.test(u.hash) ? u.hash : '';
     return q ? `host.html?${q}${h}` : null;
+  }
+  if (page === 'index.html' || page === '') {
+    const m = /^#collega=([A-Za-z0-9]{6}-[A-Za-z0-9]{8})$/.exec(u.hash);
+    return m ? `index.html#collega=${m[1]}` : null;
   }
   if (page === 'ludoteca.html') {
     const q = keep(['a', 'g', 'add']);

@@ -3,7 +3,7 @@
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
 const VERSION = '1.0.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261009b';
+const BUILD = '20261010a';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -14,6 +14,8 @@ const SHELL = [
   "manifest.webmanifest",
   "css/style.css",
   "ludoteca.html",
+  "resoconto.html",
+  "js/resoconto.js",
   "js/atmo.js",
   "js/fx.js",
   "js/extras.js",
@@ -38,6 +40,7 @@ const SHELL = [
   "js/config.js",
   "js/fb.js",
   "js/home.js",
+  "js/person.js",
   "js/host.js",
   "js/play.js",
   "js/selftest.js",
@@ -57,9 +60,9 @@ const SHELL = [
   "assets/icon-192.png",
   "assets/icon-512.png",
   "assets/apple-touch-icon.png",
-  "assets/fonts/lilita-one.woff2",
-  "assets/fonts/nunito.woff2",
-  "assets/fonts/bungee.woff2"
+  "assets/fonts/fredoka-600.woff2",
+  "assets/fonts/fredoka-700.woff2",
+  "assets/fonts/nunito.woff2"
 ];
 
 self.addEventListener('install', (event) => {

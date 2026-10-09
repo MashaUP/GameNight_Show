@@ -5,17 +5,24 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="theme-color" content="#FFF4DE">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Verifica della configurazione – GameNight Show</title>
+  <title>Tavolo di verifica – GameNight Show</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="is-phone">
   <main class="phone selftest">
-    <h1 class="ph-title">Verifica della configurazione</h1>
-    <p class="ph-lead">Controllo Firebase e le regole del database con una stanza di prova, che poi cancello.</p>
+    <a class="btn-sec btn-sec--sm ph-back st-back" href="index.html" aria-label="Torna alla home">← <span>Home</span></a>
+    <h1 class="ph-title">Tavolo di verifica</h1>
+    <p class="ph-lead">Provo davvero Firebase e le regole del database: questa pagina fa la TV e crea due “telefoni” di prova. Uso solo stanze, armadi e profili di prova con codici nuovi, e alla fine li cancello: i tuoi dati non vengono toccati.</p>
+    <details class="card ph-card st-own">
+      <summary><b>Prova anche un tuo armadio</b> (facoltativo, solo lettura)</summary>
+      <p class="muted small">Scrivi il codice di 6 caratteri: leggo i giochi e controllo foto e stelline senza modificare niente.</p>
+      <div class="hub-code-row"><label class="sr-only" for="stArm">Codice dell’armadio</label><input class="input code-input code-input--6" id="stArm" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123"><button type="button" class="btn-sec" id="stArmGo">Controlla</button></div>
+    </details>
     <p class="muted small" id="info"></p>
     <ul class="checks" id="checks"></ul>
     <section class="card ph-card" id="summary"><p class="muted">Verifica in corso…</p></section>
+    <section class="card ph-card st-matrix" id="matrix" hidden></section>
     <a class="link-btn" href="index.html">Torna alla pagina iniziale</a>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

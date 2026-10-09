@@ -6,8 +6,8 @@ import { fmt, safeColor } from './util.js';
 const W = 1080;
 const H = 1920;
 const FPS = 30;
-const DISPLAY = '"Lilita One", "Nunito", sans-serif';
-const NUM = '"Bungee", "Lilita One", sans-serif';
+const DISPLAY = '"Fredoka", "Nunito", sans-serif';
+const NUM = '"Fredoka", "Nunito", sans-serif';
 const BODY = 'Nunito, system-ui, sans-serif';
 const NEON = ['#FF8A3D', '#FF3DCB', '#FFD34D', '#3DF5E0', '#9B7BFF'];
 
@@ -189,7 +189,7 @@ function background(c, t, conf) {
 /** Registra il video; onProgress(0..1). Restituisce { blob, type, seconds }. */
 export async function makeRecapVideo(data, onProgress = () => {}) {
   if (!videoSupported()) throw new Error('Questo browser non sa registrare video (serve Chrome, Edge o Firefox recenti).');
-  try { await document.fonts?.load?.('80px "Lilita One"'); await document.fonts?.load?.('60px "Bungee"'); } catch { /* niente */ }
+  try { await document.fonts?.load?.('80px "Fredoka"'); await document.fonts?.load?.('700 60px "Fredoka"'); } catch { /* niente */ }
   const list = await scenes(data);
   const total = list.reduce((a, s) => a + s.d, 0);
   const cv = document.createElement('canvas');

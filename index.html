@@ -12,43 +12,63 @@
   <meta name="apple-mobile-web-app-title" content="GameNight">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/fonts/lilita-one.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/fredoka-600.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
   <title>GameNight Show</title>
 </head>
-<body>
-  <main class="home">
-    <header class="home-stage">
+<body class="hub-body">
+  <main class="home hub" id="hub">
+    <header class="hub-stage">
       <i class="stage-beam stage-beam--l" aria-hidden="true"></i><i class="stage-beam stage-beam--r" aria-hidden="true"></i>
-      <img class="home-mark" src="assets/logo-mark.svg" alt="" width="180" height="180">
-      <h1 class="logo logo--home">GameNight <span class="logo-tag">Show</span></h1>
+      <img class="hub-mark" src="assets/logo-mark.svg" alt="" width="96" height="96">
+      <div class="hub-title">
+        <h1 class="logo logo--hub">GameNight <span class="logo-tag">Show</span></h1>
+        <p class="hub-lead">Votate i party game dal telefono: la TV svela i voti e premia il gioco migliore.</p>
+      </div>
+      <button type="button" class="hub-gear" id="hubSettings" aria-label="Impostazioni" title="Impostazioni">⚙️</button>
     </header>
-    <p class="home-lead">Votate i party game della serata dal telefono. La TV svela i voti, fa la classifica e premia il gioco migliore.</p>
 
-    <div class="home-choices">
-      <a class="card home-card home-card--tv" href="host.html">
-        <h2>Sono la TV</h2>
-        <p>Apri questa pagina sul portatile collegato alla TV: crei la stanza e guidi la serata.</p>
-        <span class="btn">Crea la stanza</span>
-      </a>
-
-      <a class="card home-card home-card--back" id="backCard" href="#" hidden>
-        <h2>Torna alla serata</h2>
-        <p id="backText">Rientra nell'ultima serata aperta su questo telefono.</p>
-        <span class="btn">Torna alla serata</span>
-      </a>
-
-      <form class="card home-card" id="joinForm" novalidate>
-        <h2>Sono un giocatore</h2>
-        <p>Inquadra il QR sulla TV oppure scrivi il codice della stanza.</p>
-        <label class="sr-only" for="homeCode">Codice stanza</label>
-        <input class="input code-input" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2">
+    <section class="card hub-join" aria-labelledby="joinTitle">
+      <h2 id="joinTitle">🎉 Entra nella stanza</h2>
+      <div id="backBox" class="hub-back" hidden></div>
+      <button type="button" class="btn btn-block hub-scan" id="scanBtn" hidden>📷 <span>Inquadra il QR della TV</span></button>
+      <form id="joinForm" class="hub-code" novalidate>
+        <label class="hub-or" for="homeCode" id="codeLabel">Scrivi il codice che vedi sulla TV</label>
+        <div class="hub-code-row">
+          <input class="input code-input" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" inputmode="text">
+          <button class="btn" type="submit" id="joinGo">Entra</button>
+        </div>
         <p class="form-error" id="homeErr" role="alert"></p>
-        <button class="btn" type="submit">Entra</button>
       </form>
-    </div>
+    </section>
 
-    <p class="home-foot home-arm"><a href="host.html?armadio=1">📦 Prepara l’armadio dei giochi prima della serata</a></p>
+    <section class="card hub-join hub-create" aria-labelledby="createTitle" id="tileHost">
+      <h2 id="createTitle">📺 Crea la stanza</h2>
+      <p class="muted small" id="createTxt">Sul PC collegato alla TV (o da qui): crei la stanza, compare il QR e guidi lo show.</p>
+      <a class="btn btn-block hub-create-btn" href="host.html" id="createGo">Crea la stanza</a>
+    </section>
+
+    <section class="card hub-me" id="hubMe" aria-live="polite">
+      <p class="muted">Carico il tuo profilo…</p>
+    </section>
+
+    <section class="hub-tiles" aria-label="Le tue cose">
+      <button type="button" class="card hub-tile" id="tileArm">
+        <span class="hub-ico" aria-hidden="true">📦</span>
+        <b>I tuoi armadi</b>
+        <small id="tileArmTxt">I giochi con la foto, pronti per ogni serata.</small>
+      </button>
+      <button type="button" class="card hub-tile" id="tileHist">
+        <span class="hub-ico" aria-hidden="true">📋</span>
+        <b>Le tue serate</b>
+        <small id="tileHistTxt">Resoconti con voti e vincitori.</small>
+      </button>
+    </section>
+
+    <section class="card hub-sec" id="hubArmadi" hidden aria-labelledby="armTitle"></section>
+    <section class="card hub-sec" id="hubHistory" hidden aria-labelledby="histTitle"></section>
+    <section class="card hub-sec" id="hubGroups" hidden aria-labelledby="grpTitle"></section>
+    <section class="card hub-sec hub-app" id="hubApp" hidden></section>
 
     <section class="card home-donate" aria-labelledby="donateTitle">
       <h2 id="donateTitle">☕ Donazioni</h2>
@@ -56,9 +76,13 @@
       <a class="btn kofi-btn" href="https://ko-fi.com/mashaup" target="_blank" rel="noopener noreferrer">❤️ <span>Sostienimi su Ko-fi</span></a>
     </section>
 
-    <p class="credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>
-        <p class="home-foot"><a href="test.html">Verifica la configurazione di Firebase</a></p>
-    </main>
+    <footer class="hub-foot">
+      <p class="credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>
+      <p><a href="test.html">Verifica la configurazione di Firebase</a> · <span id="hubVer"></span></p>
+    </footer>
+  </main>
+  <noscript>Per usare GameNight Show serve JavaScript attivo.</noscript>
+  <script src="vendor/qrcode.js"></script>
   <script src="js/stale.js"></script>
   <script type="module" src="js/home.js"></script>
 </body>

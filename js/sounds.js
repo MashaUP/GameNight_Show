@@ -78,15 +78,37 @@ function audio() {
   if (!soundsOn() || isMuted() || isSafeMode()) return null;
   return audioCtx();
 }
-// Il browser permette l'audio solo dopo un gesto: alla prima interazione si sblocca.
+// Il browser permette l'audio solo dopo un gesto. Sugli schermi touch (tablet, telefono, TV touch)
+// il gesto "vale" solo quando il dito si alza (pointerup/touchend/click), non quando appoggia:
+// prima si ascoltava solo pointerdown, una volta sola, e sui touch l'audio restava bloccato per sempre.
+// Ora si riprova a ogni gesto finché l'audio non parte davvero.
+const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'];
 const unlock = () => {
   const a = audioCtx();
   if (!a) return;
-  const done = () => window.dispatchEvent(new Event('gnr-audio'));
+  const done = () => {
+    if (a.state !== 'running') return;
+    GESTURES.forEach((ev) => document.removeEventListener(ev, unlock, true));
+    window.dispatchEvent(new Event('gnr-audio'));
+  };
   if (a.state === 'running') done(); else a.resume().then(done).catch(() => {});
 };
-document.addEventListener('pointerdown', unlock, { once: true });
-document.addEventListener('keydown', unlock, { once: true });
+GESTURES.forEach((ev) => document.addEventListener(ev, unlock, true));
+
+/** L'audio della TV è pronto? (false finché nessuno ha toccato lo schermo, o se il dispositivo non ha audio) */
+export function audioBlocked() {
+  if (!soundsOn() || isMuted() || isSafeMode()) return false;
+  try { return !ctx || ctx.state !== 'running'; } catch { return true; }
+}
+/** Perché un effetto non si sente: '' se si sente. */
+export function audioStatus() {
+  if (isSafeMode()) return 'Safe Mode attiva';
+  if (isMuted()) return 'TV in silenzioso';
+  if (!soundsOn()) return 'effetti spenti negli Strumenti';
+  if (!(window.AudioContext || window.webkitAudioContext)) return 'questo dispositivo non ha l’audio';
+  if (!ctx || ctx.state !== 'running') return 'audio da attivare';
+  return '';
+}
 
 function noiseBuffer(a) {
   if (noiseBuf) return noiseBuf;

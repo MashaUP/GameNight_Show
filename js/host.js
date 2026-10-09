@@ -9,7 +9,7 @@ import {
   toastUndo, applyTheme, themeSwitchHTML, isShowTheme, dbKey, compressPhoto, qrSVG,
   isImageSource, gameImageHTML, toast, confetti, installImageFallback, showFatal,
   showNotConfigured, downloadFile, ICONS, PLAYER_COLORS, MIN_PLAYERS, MAX_PLAYERS, DEFAULT_PLAYERS,
-  ErrLog, a11yHTML, prefersReducedMotion, voteTimer, timerColor
+  ErrLog, a11yHTML, prefersReducedMotion, voteTimer, timerColor, editPhoto, rememberNight, pollChoices, POLL_MAX_VOTES
 } from './util.js';
 import { avatarHTML, avatarOptions } from './avatars.js';
 import { runTour, resetTours, tourOpen } from './tour.js';
@@ -23,7 +23,7 @@ import {
 import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from './share.js';
 import {
   ding, pop, drumroll, fanfare, joinSound, soundsOn, setSounds, whistle, achievementSound, victory, sadTrombone,
-  newGameSound, endNightSound, isMuted, setMuted, getVolume, setVolume, SFX, playSfx, cymbal,
+  newGameSound, endNightSound, isMuted, setMuted, getVolume, setVolume, SFX, playSfx, cymbal, audioStatus, audioBlocked, audioCtx,
   clockTick, timeUp, fireworkSound, stepUp
 } from './sounds.js';
 import { fireworks, confettiBurst } from './fx.js';
@@ -33,6 +33,7 @@ import {
 } from './tv-extras.js';
 import { Lite } from './lite.js';
 import { publicUrl, isApp } from './native.js';
+import { Person } from './person.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
 import { Music, MUSIC_MODES, MOOD_LABEL } from './music.js';
 import { Atmo, ATMOS, atmoForGame } from './atmo.js';
@@ -45,7 +46,7 @@ import { trophies, affinities, lastPlayed, freshnessLabel, personKey } from './s
 
 const app = $('#app');
 const STORE_KEY = 'gnr_host_room';
-const WATCHED = ['meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows'];
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows'];
 // Quanto la TV aspetta un telefono che si scollega durante la votazione.
 const GRACE_MS = 60000;
 const GROUPS_KEY = 'gnr_groups';
@@ -164,6 +165,10 @@ async function boot() {
     return;
   }
 
+  // Profilo personale: porta su questo computer gli armadi (con le chiavi) usati sugli altri dispositivi.
+  Person.uid = S.uid;
+  await Person.load().catch(() => null);
+
   const fromUrl = normalizeCode(param('room'));
   // Regia trasferita con il QR: il codice regia arriva nell'indirizzo (dopo #, non va al server).
   const hashRegia = normalizeCode((location.hash.match(/regia=([A-Za-z0-9-]+)/) || [])[1] || '', 8);
@@ -182,6 +187,12 @@ async function boot() {
   localStorage.removeItem(STORE_KEY);
   // Mai dritti alla schermata iniziale se c'è una serata interrotta da riprendere.
   const sess = (await Vault.sessions().catch(() => []))[0];
+  const armParam = normalizeCode(param('armadio') || '', 6);
+  if (armParam.length === 6 && !sess) {
+    renderCreate();
+    openArmadioById(armParam).catch((err) => toast(explainError(err), 'error'));
+    return;
+  }
   renderCreate({ ...(sess ? { recover: sess } : {}), armadio: param('armadio') === '1' && !sess });
 }
 
@@ -289,31 +300,59 @@ function saveArmadioKey(aid, k) { try { localStorage.setItem(akKey(aid), k); } c
 async function ensureArmadioAdmin(aid, keyIn = '') {
   const info = (await get(armadioRef(aid, 'info'))).val();
   if (!info) return false;
+  // L'armadio finisce nel profilo personale: lo ritrovi (e lo modifichi) anche dagli altri tuoi dispositivi.
+  const remember = () => Person.linkArmadio(aid, info.name, armadioKey(aid), info.ownerUid === S.uid).catch(() => {});
   if (info.ownerUid === S.uid) {
     if (!armadioKey(aid)) {
       const k = randomCode(8);
       try { await set(dbRef(`armadioKeys/${aid}`), k); saveArmadioKey(aid, k); } catch { /* niente */ }
     }
+    remember();
     return true;
   }
-  if ((await get(armadioRef(aid, `admins/${S.uid}`)).catch(() => null))?.val() === true) return true;
+  if ((await get(armadioRef(aid, `admins/${S.uid}`)).catch(() => null))?.val() === true) { remember(); return true; }
   const key = normalizeCode(keyIn, 8) || armadioKey(aid);
-  if (!key) return false;
+  if (!key) { Person.linkArmadio(aid, info.name).catch(() => {}); return false; }
   try {
     await set(dbRef(`armadioKeyClaims/${aid}/${S.uid}`), key);
     await set(armadioRef(aid, `admins/${S.uid}`), true);
     saveArmadioKey(aid, key);
+    remember();
     return true;
   } catch { return false; }
 }
 
 /** Nella stanza: i giochi arrivano dall'armadio collegato; i giocatori diventano membri (possono aggiungere giochi). */
 function watchArmadio() {
-  const aid = S.meta?.armadioId;
-  if (!aid || S.armadioWatching === aid) return;
+  const aid = S.meta?.armadioId || null;
+  if (S.armadioWatching === aid) return;
+  // Cambio di armadio durante la serata: si smette di seguire il vecchio.
+  try { S.armadioStop?.(); } catch { /* niente */ }
+  S.armadioStop = null;
   S.armadioWatching = aid;
-  onValue(armadioRef(aid, 'library'), (snap) => { S.library = snap.val() || {}; render(); }, (err) => toast(explainError(err), 'error'));
+  S.armMissing = false;
+  if (!aid) return;
+  S.armadioStop = onValue(armadioRef(aid, 'library'), (snap) => { S.library = snap.val() || {}; LibPanel.sig = ''; render(); }, (err) => toast(explainError(err), 'error'));
+  get(armadioRef(aid, 'info')).then((s) => {
+    S.armMissing = !s.exists();
+    if (S.armMissing) toast('L’armadio di questa serata non esiste più: scegline un altro da Armadio › Cambia armadio.', 'warn');
+    LibPanel.sig = ''; LibPanel.update();
+  }).catch(() => {});
+  if (armReadOnly()) { S.armAdmin = false; LibPanel.sig = ''; LibPanel.update(); return; }
   ensureArmadioAdmin(aid).then((ok) => { S.armAdmin = ok; registerMembers(); LibPanel.sig = ''; LibPanel.update(); }).catch(() => { S.armAdmin = false; });
+}
+/** Serata di prova: l'armadio si consulta ma non si modifica. */
+function armReadOnly() { return Boolean(S.meta?.armadioReadOnly); }
+
+/** Cambia l'armadio della serata (prima di iniziare o tra un gioco e l'altro). */
+async function switchArmadio(id) {
+  const info = (await get(armadioRef(id, 'info'))).val();
+  if (!info) throw userError('Nessun armadio con questo codice.');
+  await update(roomRef(S.code, 'meta'), { armadioId: id, armadioName: info.name, armadioReadOnly: S.meta?.demo ? true : null });
+  const n = await copyPicks(S.code, id);
+  rememberArmadio({ id, name: info.name });
+  logEvent(`Armadio della serata: ${info.name}`, '📦');
+  toast(`📦 Ora la serata usa “${info.name}”${n ? ` (⭐ ${n} per stasera)` : ''}`);
 }
 
 function loadingHTML(text) {
@@ -577,7 +616,15 @@ async function createDemo() {
   let code = null;
   for (let i = 0; i < 12 && !code; i++) { const c = randomCode(); if (!(await get(roomRef(c, 'meta'))).exists()) code = c; }
   if (!code) throw new Error('nessun codice libero');
-  await set(roomRef(code, 'meta'), { hostUid: S.uid, maxPlayers: 8, createdAt: serverTimestamp(), demo: true });
+  // La prova usa l'armadio scelto (solo in lettura: la prova non cambia la collezione).
+  const armSel = $('#armSel')?.value || '';
+  let arm = null;
+  if (/^[A-Z0-9]{6}$/.test(armSel)) {
+    const info = (await get(armadioRef(armSel, 'info')).catch(() => null))?.val();
+    if (info) arm = { id: armSel, name: info.name };
+  }
+  await set(roomRef(code, 'meta'), { hostUid: S.uid, maxPlayers: 8, createdAt: serverTimestamp(), demo: true, ...(arm ? { armadioId: arm.id, armadioName: arm.name, armadioReadOnly: true } : {}) });
+  if (arm) await copyPicks(code, arm.id);
   const regia = randomCode(8);
   await set(secretRef(code), regia).catch(() => {});
   localStorage.setItem(regiaKey(code), regia);
@@ -797,6 +844,8 @@ async function createRoom() {
       groupId: group.id, groupName: group.name, soundboard: true,
       armadioId: arm.id, armadioName: arm.name
     });
+    // Le stelline "Stasera" preparate nell'armadio diventano la scelta di questa serata.
+    await copyPicks(code, arm.id);
     const regia = randomCode(8);
     await set(secretRef(code), regia);
     localStorage.setItem(regiaKey(code), regia);
@@ -2038,7 +2087,7 @@ const IdentityPanel = {
       const f = e.target.files[0];
       e.target.value = '';
       if (!f) return;
-      try { this.logo = await compressImage(f, 240, 0.8); this.mark(); } catch (err) { toast(err.message, 'error'); }
+      try { this.logo = await compressImage(await editPhoto(f, 'square'), 240, 0.8); this.mark(); } catch (err) { toast(err.message, 'error'); }
     });
   },
   mark() {
@@ -2095,7 +2144,7 @@ const AlbumPanel = {
       try {
         const data = await compressPhoto(f);
         await set(push(groupRef(S.meta.groupId, `photos/${this.room}`)), { data, uid: S.uid, by: 'TV', at: serverTimestamp() });
-      } catch (err) { toast(explainError(err), 'error'); }
+      } catch (err) { if (!err.cancelled) toast(explainError(err), 'error'); }
     });
     if (room !== S.code) {
       const snap = await get(groupRef(S.meta.groupId, `photos/${room}`)).catch(() => null);
@@ -2444,6 +2493,8 @@ const Ticker = {
 /** Effetti della soundboard chiesti dai telefoni (o dalla regia). */
 const doneSfx = new Set();
 const sfxLast = {};
+const sfxQueue = [];
+let sfxBusyUntil = 0;
 function processSfx() {
   for (const [id, x] of Object.entries(S.sfx || {})) {
     if (doneSfx.has(id)) continue;
@@ -2453,10 +2504,45 @@ function processSfx() {
     if (!S.meta?.soundboard && !x.regia) continue;
     if (Date.now() - (sfxLast[x.by] || 0) < 2500) continue;
     sfxLast[x.by] = Date.now();
-    const s = playSfx(x.k);
-    if (s) sfxBubble(`${s.icon} ${S.players[x.by]?.name || 'Qualcuno'}: ${s.label}`);
+    // Uno alla volta: se due telefoni premono insieme, il secondo parte subito dopo (al massimo 2 in attesa).
+    if (sfxQueue.length < 2) sfxQueue.push(x);
   }
+  playNextSfx();
 }
+function playNextSfx() {
+  if (!sfxQueue.length) return;
+  const wait = sfxBusyUntil - Date.now();
+  if (wait > 0) { clearTimeout(playNextSfx.t); playNextSfx.t = setTimeout(playNextSfx, wait + 20); return; }
+  const x = sfxQueue.shift();
+  const why = audioStatus();
+  if (why === 'audio da attivare') audioCtx();
+  const s = playSfx(x.k);
+  sfxBusyUntil = Date.now() + 1400;
+  if (s) {
+    const who = S.players[x.by]?.name || (x.regia ? 'Regia' : 'Qualcuno');
+    const st = audioStatus();
+    sfxBubble(`${s.icon} ${who}: ${s.label}${st ? ` · 🔇 ${st}` : ''}`);
+    if (st === 'audio da attivare') AudioHint.show();
+  }
+  if (sfxQueue.length) playNextSfx();
+}
+
+/** Avviso "Tocca per attivare l'audio": i browser non suonano finché nessuno ha toccato la pagina. */
+const AudioHint = {
+  el: null,
+  show() {
+    if (this.el || !audioBlocked()) return;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'audio-hint';
+    el.innerHTML = '🔇 <span>Tocca qui per attivare l’audio della TV (soundboard, applausi, reveal)</span>';
+    el.addEventListener('click', () => { audioCtx(); setTimeout(() => this.hide(), 200); });
+    document.body.appendChild(el);
+    this.el = el;
+  },
+  hide() { this.el?.remove(); this.el = null; }
+};
+window.addEventListener('gnr-audio', () => AudioHint.hide());
 function sfxBubble(text) {
   const el = document.createElement('div');
   el.className = 'sfx-bubble';
@@ -2721,6 +2807,9 @@ const ExportPanel = {
 function render() {
   if (!WATCHED.every((k) => S.loaded.has(k))) return;
   if (S.meta && S.meta.hostUid !== S.uid) { renderLostRegia(); return; }
+  if (S.meta && S.rememberedRoom !== S.code) { S.rememberedRoom = S.code; rememberNight(S.code, { group: S.meta.groupName, gid: S.meta.groupId }); }
+  // Dopo un ricaricamento il browser tiene l'audio bloccato finché qualcuno non tocca la TV: lo diciamo.
+  if (S.meta?.soundboard && !S.audioHintChecked) { S.audioHintChecked = true; audioCtx(); setTimeout(() => { if (audioBlocked()) AudioHint.show(); }, 1500); }
   watchGroup();
   watchArmadio();
   trackOffline();
@@ -2832,11 +2921,13 @@ function shellHTML(phase) {
           ${S.meta?.groupName ? `<span class="topbar-group">${esc(S.meta.groupName)}</span>` : ''}
         </div>
         <div class="topbar-right">
+          <a class="chip chip-btn hdr-home" id="hdrHome" href="index.html" title="Home: profilo, armadi, altre serate (la serata resta aperta)">🏠 <span>Home</span></a>
           <span class="chip chip--clock" id="hdrClock" title="Ora e durata della serata"></span>
           ${S.meta?.demo ? '<span class="chip chip--demo" title="Modalità prova: i giocatori finti votano da soli, niente viene salvato">🧪 Prova</span>' : ''}
           <button class="chip chip-btn chip--safe" type="button" id="hdrSafe" hidden title="Safe Mode attiva: tocca per spegnerla">🚨 <span>Safe Mode</span></button>
           <span class="chip">Stanza <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="Stanza chiusa" hidden> 🔒</span></span>
           <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="Giocatori e posti (tasto G)">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
+          <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="Termina la serata adesso (anche a votazione aperta) e passa alla premiazione">🏁 <span>Fine serata</span></button>
           <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="Strumenti: pausa, tema, cestino, copie">${ICONS.edit}<span>Strumenti</span></button>
           ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="Armadio (tasto L)">${ICONS.books}<span>Armadio</span></button>` : ''}
           <button class="icon-btn" type="button" id="fsBtn" aria-label="Schermo intero" title="Schermo intero (tasto F)">${ICONS.expand}</button>
@@ -2869,12 +2960,19 @@ async function goBack() {
   } catch (err) { toast(explainError(err), 'error'); }
 }
 
+// Tasto Indietro di Android (app): nella serata fa come "← Indietro" in alto, nell'armadio torna alla creazione.
+window.addEventListener('gnr:back', (e) => {
+  if (S.screenKey === 'armadio' && $('#armBack')) { e.preventDefault(); $('#armBack').click(); return; }
+  if (S.code && S.state && document.getElementById('hdrBack')) { e.preventDefault(); goBack(); }
+});
+
 function bindShell() {
   $('#hdrBack').addEventListener('click', goBack);
   $('#fsBtn').addEventListener('click', toggleFullscreen);
   $('#hdrPlayers').addEventListener('click', () => Panel.open());
   $('#hdrLib')?.addEventListener('click', () => LibPanel.open());
   $('#hdrTools')?.addEventListener('click', () => ToolsPanel.open());
+  $('#hdrEnd')?.addEventListener('click', () => endNight());
   $('#newNightBtn').addEventListener('click', newNight);
   $('#hdrSafe').addEventListener('click', () => { if (confirm('Spegnere la Safe Mode e riaccendere animazioni, musica ed effetti?')) applySafeMode(false); });
 }
@@ -3601,13 +3699,70 @@ async function runCommand(c) {
   }
 }
 
-function endNight() {
-  if (!confirm('Terminare la serata e passare alla premiazione?')) return;
-  guarded('Prima della premiazione', () => toAwards(true));
+/**
+ * Termina la serata in qualsiasi momento (anche a votazione aperta), dopo una conferma che spiega
+ * cosa succede a voti, punteggi e attività in corso. Un doppio tocco non la chiude due volte.
+ */
+async function endNight() {
+  if (S.ending || document.getElementById('endDialog')) return;
+  const ph = S.state?.phase;
+  if (ph === 'awards') { toast('La serata è già terminata: la premiazione è sullo schermo.'); return; }
+  const board = buildBoard(S.games, S.votes);
+  const gid = S.state?.gameId;
+  const g = ph === 'voting' ? S.games?.[gid] : null;
+  const nv = g ? Object.keys(S.votes?.[gid] || {}).length : 0;
+  const total = activePlayers(S.players).length;
+  const playing = ph === 'idle' && S.state?.playStart && S.state?.playName ? S.state.playName : '';
+  const choice = await new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'overlay';
+    el.id = 'endDialog';
+    el.innerHTML = `
+      <div class="card panel end-dialog" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+        <div class="panel-head"><h2 id="edTitle">🏁 Terminare la serata?</h2><button type="button" class="icon-btn" data-edno aria-label="Continua a giocare">${ICONS.x}</button></div>
+        <ul class="end-list">
+          <li>${board.length ? `🏆 <b>${board.length} ${board.length === 1 ? 'gioco' : 'giochi'}</b> in classifica, con i voti ricevuti: si passa alla premiazione.` : '🏆 Nessun gioco votato: la premiazione sarà vuota, ma il resoconto della serata resta.'}</li>
+          ${g ? `<li>🗳️ La votazione di <b>${esc(g.name)}</b> è aperta: <b>${nv} ${nv === 1 ? 'voto' : 'voti'} su ${total}</b>. Scegli qui sotto se contarla con i voti già arrivati o lasciarla fuori (va nel cestino, si può ripristinare).</li>` : ''}
+          ${playing ? `<li>⏱️ La partita a <b>${esc(playing)}</b> non è stata votata: non entra in classifica.</li>` : ''}
+          ${ph === 'poll' ? '<li>📱 La votazione del prossimo gioco viene chiusa senza scegliere.</li>' : ''}
+          <li>🧮 Segnapunti, pronostici e quiz restano come sono; nessun dato viene cancellato.</li>
+          <li>📋 Dopo, il <b>resoconto della serata</b> si apre dalla premiazione e dalla home di ogni telefono.</li>
+          <li>↩️ Per qualche secondo compare <b>Annulla</b> per tornare indietro.</li>
+        </ul>
+        <div class="end-acts">
+          ${g && nv ? `<button type="button" class="btn" data-edgo="count">Termina e conta ${nv === 1 ? 'l’unico voto' : `i ${nv} voti`} di ${esc(g.name)}</button>` : ''}
+          <button type="button" class="${g && nv ? 'btn-sec' : 'btn'}" data-edgo="${g ? 'drop' : 'end'}">${g ? `Termina senza ${esc(g.name)}` : 'Termina la serata'}</button>
+          <button type="button" class="btn-sec" data-edno>Continua a giocare</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    const done = (v) => { document.removeEventListener('keydown', onKey, true); el.remove(); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    el.addEventListener('click', (e) => {
+      if (e.target === el || e.target.closest('[data-edno]')) { done(null); return; }
+      const b = e.target.closest('[data-edgo]');
+      if (b) done(b.dataset.edgo);
+    });
+    el.querySelector('[data-edgo]').focus();
+  });
+  if (!choice || S.ending || S.state?.phase === 'awards') return;
+  S.ending = true;
+  try {
+    await guarded('Prima della fine anticipata della serata', async () => {
+      if (g) {
+        if (choice === 'count' && nv) await update(roomRef(S.code, `games/${gid}`), { status: 'revealed', revealedAt: serverTimestamp(), closedEarly: true });
+        else await trashGame(gid);
+      }
+      if (ph === 'poll') await remove(roomRef(S.code, 'poll')).catch(() => {});
+      await toAwards(true);
+    });
+  } finally { S.ending = false; }
 }
 
 /** Passa alla premiazione: istantanea, riassunto nel gruppo, eventuale backup automatico del gruppo. */
 async function toAwards(withUndo = false) {
+  if (S.state?.phase === 'awards') return;
   const back = S.state?.phase === 'board' ? 'board' : 'idle';
   await Save.snap('Prima della premiazione', 'phase');
   saveNight();
@@ -3669,7 +3824,7 @@ function findLibrary(name) {
  * aggiorna giocatori e durata indicati. Restituisce l'id.
  */
 async function addToLibrary(name, image, by = 'TV', extra = {}) {
-  if (!hasLib()) return null;
+  if (!hasLib() || armReadOnly()) return null;
   const info = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== null && v !== undefined));
   const existing = findLibrary(name);
   if (existing) {
@@ -3724,9 +3879,27 @@ function armadioPhoneUrl() {
   return url.href;
 }
 
-/** Giochi scelti per stasera nell'armadio (stellina "Stasera"). */
+/**
+ * Stellina "Stasera": prima della serata (pagina dell'armadio) si salva nell'armadio come proposta;
+ * nella stanza invece è una scelta della serata (rooms/<codice>/pick), copiata dall'armadio alla creazione.
+ * Così quello che si decide durante la serata non cambia la collezione personale.
+ */
+function inRoom() { return Boolean(S.code && S.state); }
+function isSel(it) { return inRoom() ? S.pick?.[it?.id] === true : it?.sel === true; }
 function selectedIds() {
-  return Object.entries(S.library || {}).filter(([, it]) => it?.name && it.sel === true).map(([id]) => id);
+  return Object.entries(S.library || {}).filter(([id, it]) => it?.name && isSel({ ...it, id })).map(([id]) => id);
+}
+/** Scrive la stellina dove serve (stanza o armadio). ids: { id: true|null } */
+function writeSel(ids) {
+  if (inRoom()) return update(roomRef(S.code, 'pick'), ids);
+  return update(libRef(), Object.fromEntries(Object.entries(ids).map(([id, v]) => [`${id}/sel`, v])));
+}
+/** Copia nella stanza le stelline "Stasera" preparate nell'armadio. */
+async function copyPicks(code, aid) {
+  const lib = (await get(armadioRef(aid, 'library')).catch(() => null))?.val() || {};
+  const picks = Object.fromEntries(Object.entries(lib).filter(([, it]) => it?.name && it.sel === true).map(([id]) => [id, true]));
+  await set(roomRef(code, 'pick'), Object.keys(picks).length ? picks : null).catch(() => {});
+  return Object.keys(picks).length;
 }
 
 /**
@@ -3754,8 +3927,12 @@ const LibPanel = {
       <div class="card panel panel--wide armadio" role="${this.inline ? 'region' : 'dialog'}" ${this.inline ? '' : 'aria-modal="true"'} aria-labelledby="lpTitle">
         <div class="panel-head">
           <h2 id="lpTitle">📦 Armadio dei giochi</h2>
+          ${inRoom() && ['lobby', 'idle'].includes(S.state?.phase) ? '<button type="button" class="btn-sec btn-sec--sm" id="lpSwitchBtn" aria-expanded="false" aria-controls="lpSwitch">🔁 <span>Cambia armadio</span></button>' : ''}
           ${this.inline ? '' : `<button type="button" class="icon-btn" id="lpClose" aria-label="Chiudi">${ICONS.x}</button>`}
         </div>
+        <div class="arm-switch" id="lpSwitch" hidden></div>
+        ${armReadOnly() ? '<p class="arm-ro">🧪 <b>Serata di prova:</b> i giochi di questo armadio si usano ma non si modificano. Le stelline ⭐ valgono solo per questa prova.</p>' : ''}
+        <p class="arm-ro arm-missing" id="lpMissing" hidden>⚠️ Questo armadio non esiste più (forse è stato cancellato). Scegline un altro con <b>Cambia armadio</b>.</p>
         <p class="panel-note"><b>${esc(armadioName())}</b>: i vostri giochi, conservati per tutte le serate e per qualsiasi gruppo. Conviene caricarli <b>prima</b> della serata (si possono aggiungere anche durante): la foto viene messa sempre nello stesso formato.
           ${S.meta.armadioId ? `Codice dell’armadio: <span class="code-chip code-chip--sm">${esc(S.meta.armadioId)}</span> (con il codice anche un’altra TV lo consulta)` : `Codice del gruppo: <span class="code-chip code-chip--sm">${esc(S.meta.groupId)}</span>`}</p>
         <div class="arm-key" id="lpKey"></div>
@@ -3820,6 +3997,10 @@ const LibPanel = {
       if (e.target.closest('#lpCancel')) { this.resetForm(); return; }
       if (e.target.closest('#lpSelClear')) { this.clearSel(); return; }
       if (e.target.closest('#lpKeyGo')) { this.useKey(); return; }
+      if (e.target.closest('#lpSwitchBtn')) { this.paintSwitch(); return; }
+      const sw = e.target.closest('[data-armswitch]');
+      if (sw) { this.doSwitch(sw.dataset.armswitch); return; }
+      if (e.target.closest('#lpSwitchGo')) { this.doSwitch(normalizeCode($('#lpSwitchIn', this.el).value, 6)); return; }
       if (e.target.closest('#lpSelAll')) { this.selAll(); return; }
       const sel = e.target.closest('[data-sel]');
       if (sel) { this.toggleSel(sel.dataset.sel); return; }
@@ -3891,22 +4072,47 @@ const LibPanel = {
     if (kb.dataset.sig !== html) { kb.dataset.sig = html; kb.innerHTML = html; kb.hidden = !html; }
   },
 
+  /** Elenco degli armadi per cambiare quello della serata. */
+  paintSwitch() {
+    const box = $('#lpSwitch', this.el);
+    const btn = $('#lpSwitchBtn', this.el);
+    if (!box) return;
+    box.hidden = !box.hidden;
+    btn?.setAttribute('aria-expanded', String(!box.hidden));
+    if (box.hidden) return;
+    const list = recentArmadi().filter((a) => a.id !== S.meta?.armadioId);
+    box.innerHTML = `
+      <p class="muted small">La serata usa i giochi dell’armadio scelto (sempre aggiornati). Le stelline ⭐ di stasera ripartono da quelle preparate nel nuovo armadio.</p>
+      ${list.length ? `<div class="arm-list">${list.map((a) => `<button type="button" class="arm-open-btn" data-armswitch="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('')}</div>` : ''}
+      <div class="arm-inline"><label class="sr-only" for="lpSwitchIn">Codice dell’armadio</label><input class="input input--sm" id="lpSwitchIn" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="Codice di un altro armadio (6 caratteri)"><button type="button" class="btn-sec btn-sec--sm" id="lpSwitchGo">Usa</button></div>
+      <p class="form-error" id="lpSwitchErr" role="alert"></p>`;
+  },
+  async doSwitch(id) {
+    const err = $('#lpSwitchErr', this.el);
+    if (!/^[A-Z0-9]{6}$/.test(id || '')) { if (err) err.textContent = 'Il codice dell’armadio ha 6 caratteri.'; return; }
+    if (id === S.meta?.armadioId) return;
+    try {
+      await switchArmadio(id);
+      this.close();
+    } catch (e) { if (err) err.textContent = explainError(e); }
+  },
+
   toggleSel(id) {
     const it = S.library?.[id];
     if (!it) return;
-    update(libRef(id), { sel: it.sel === true ? null : true }).catch((e) => toast(explainError(e), 'error'));
+    writeSel({ [id]: isSel({ ...it, id }) ? null : true }).catch((e) => toast(explainError(e), 'error'));
   },
 
   clearSel() {
     const ids = selectedIds();
     if (!ids.length || !confirm('Togliere la stellina “Stasera” a tutti i giochi?')) return;
-    update(libRef(), Object.fromEntries(ids.map((id) => [`${id}/sel`, null]))).catch((e) => toast(explainError(e), 'error'));
+    writeSel(Object.fromEntries(ids.map((id) => [id, null]))).catch((e) => toast(explainError(e), 'error'));
   },
 
   selAll() {
-    const ids = libraryItems().filter((it) => isAvailable(it) && it.sel !== true).map((it) => it.id);
+    const ids = libraryItems().filter((it) => isAvailable(it) && !isSel(it)).map((it) => it.id);
     if (!ids.length) return;
-    update(libRef(), Object.fromEntries(ids.map((id) => [`${id}/sel`, true]))).catch((e) => toast(explainError(e), 'error'));
+    writeSel(Object.fromEntries(ids.map((id) => [id, true]))).catch((e) => toast(explainError(e), 'error'));
   },
 
   close() {
@@ -3997,7 +4203,7 @@ const LibPanel = {
       } else {
         if (same && !this.img && !Object.values(extra).some(Boolean)) { err.textContent = 'Questo gioco è già nell’armadio: premi la matita per modificarlo.'; return; }
         const id = await addToLibrary(name, this.img, 'TV', extra);
-        if (id && $('#lpSel', this.el).checked) await update(libRef(id), { sel: true });
+        if (id && $('#lpSel', this.el).checked) await writeSel({ [id]: true });
         toast(`${name} nell’armadio${$('#lpSel', this.el).checked ? ' ⭐ per stasera' : ''}`);
       }
       this.resetForm();
@@ -4015,9 +4221,12 @@ const LibPanel = {
   update() {
     if (!this.el) return;
     this.paintKey();
+    const miss = $('#lpMissing', this.el);
+    if (miss) miss.hidden = !S.armMissing;
+    this.el.querySelector('.armadio')?.classList.toggle('armadio--ro', armReadOnly());
     const all = libraryItems();
     const played = playedTonight();
-    const sig = JSON.stringify([all.map((i) => [i.id, i.name, i.addedBy, (i.image || '').length, libInfo(i), i.status, i.loanTo, tagsOf(i), i.baseId, i.mode, i.weight, i.sel]), [...played], this.query]);
+    const sig = JSON.stringify([all.map((i) => [i.id, i.name, i.addedBy, (i.image || '').length, libInfo(i), i.status, i.loanTo, tagsOf(i), i.baseId, i.mode, i.weight, isSel(i)]), [...played], this.query]);
     if (sig === this.sig) return;
     this.sig = sig;
     // Ricerca: parole chiave + filtri capiti dalla frase
@@ -4030,7 +4239,7 @@ const LibPanel = {
     const items = all.filter((it) => ids.has(it.id));
     $('#lpChips', this.el).innerHTML = q ? `${filterChips(f).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}<span class="muted">${items.length} su ${all.length}</span>` : '';
     const baseName = (id) => S.library?.[id]?.name;
-    const nSel = all.filter((it) => it.sel === true).length;
+    const nSel = all.filter((it) => isSel(it)).length;
     $('#lpSelBar', this.el).innerHTML = all.length ? `
       <span class="arm-sel-n">⭐ <b>${nSel}</b> ${nSel === 1 ? 'gioco scelto' : 'giochi scelti'} per stasera</span>
       <span class="muted small">${nSel >= 2 ? 'Ruota, “A caso”, consigli e votazione scelgono tra questi (e mai uno già giocato).' : 'Tocca ⭐ sui giochi che portate stasera: la scelta del prossimo gioco userà solo quelli.'}</span>
@@ -4040,9 +4249,9 @@ const LibPanel = {
       const status = !isAvailable(it) ? esc(awayLabel(it)) : '';
       const note = isPlayed ? 'Giocato stasera' : (it.owner ? `Di ${esc(it.owner)}` : it.addedBy && it.addedBy !== 'TV' ? `Portato da ${esc(it.addedBy)}` : '');
       return `
-        <li class="lib-tile ${isPlayed ? 'is-played' : ''} ${status ? 'is-away' : ''} ${it.sel === true ? 'is-sel' : ''}">
+        <li class="lib-tile ${isPlayed ? 'is-played' : ''} ${status ? 'is-away' : ''} ${isSel(it) ? 'is-sel' : ''}">
           ${gameImageHTML(it, 'game-img--lib')}
-          <button type="button" class="lib-sel" data-sel="${esc(it.id)}" aria-pressed="${it.sel === true}" title="${it.sel === true ? 'Scelto per stasera: tocca per toglierlo' : 'Scegli per stasera'}">${it.sel === true ? '✓' : '☆'}<span>Stasera</span></button>
+          <button type="button" class="lib-sel" data-sel="${esc(it.id)}" aria-pressed="${isSel(it)}" title="${isSel(it) ? 'Scelto per stasera: tocca per toglierlo' : 'Scegli per stasera'}">${isSel(it) ? '✓' : '☆'}<span>Stasera</span></button>
           ${status ? `<span class="lib-status">${status}</span>` : ''}
           <span class="lib-name">${esc(it.name)}</span>
           ${it.baseId && baseName(it.baseId) ? `<span class="lib-exp">Espansione di ${esc(baseName(it.baseId))}</span>` : ''}
@@ -4163,7 +4372,8 @@ SCREENS.lobby = {
     const libTxt = $('#lobbyLibTxt');
     if (libTxt) {
       const nLib = libraryItems().length;
-      libTxt.textContent = nLib ? `Armadio: ${nLib} ${nLib === 1 ? 'gioco' : 'giochi'}` : 'Prepara l’armadio';
+      const nSel = selectedIds().length;
+      libTxt.textContent = nLib ? `${armadioName()}: ${nLib} ${nLib === 1 ? 'gioco' : 'giochi'}${nSel ? ` · ⭐ ${nSel}` : ''}` : `${armadioName()}: vuoto, aggiungi i giochi`;
     }
     const hint = $('#lobbyHint');
     const btn = $('#startBtn');
@@ -4257,7 +4467,7 @@ SCREENS.idle = {
             <button type="button" class="btn-sec" id="openTable" title="Chi inizia, squadre e clessidra (tasto T)">🎲 <span>Tavolo</span></button>
             ${S.meta.groupId ? '<button type="button" class="btn-sec" id="openPlan" title="Ordine dei giochi per il tempo che avete">🗓️ <span>Scaletta</span></button>' : ''}
             <button type="button" class="btn-sec" id="openQuiz" title="Quiz del gruppo dai telefoni (tasto Q)">🧠 <span>Quiz</span></button>
-            ${board.length ? '<button type="button" class="btn-sec" id="endNight">Termina la serata</button>' : ''}
+            <button type="button" class="btn-sec" id="endNight">🏁 <span>Termina la serata</span></button>
           </div>
         </aside>
       </section>`;
@@ -4426,7 +4636,7 @@ SCREENS.idle = {
     const w = wishes();
     const pool = poolIds();
     const nTable = Object.keys(table).length;
-    const sig = JSON.stringify([items.map((i) => [i.id, i.name, (i.image || '').length, i.minPlayers, i.maxPlayers, i.status, i.loanTo, i.sel]), [...played], S.draft.libraryId, activePlayers(S.players).length, Object.keys(table), w, S.plan, S.poolAll]);
+    const sig = JSON.stringify([items.map((i) => [i.id, i.name, (i.image || '').length, i.minPlayers, i.maxPlayers, i.status, i.loanTo, isSel(i)]), [...played], S.draft.libraryId, activePlayers(S.players).length, Object.keys(table), w, S.plan, S.poolAll, armadioName()]);
     if (!force && sig === this.libSig) return;
     this.libSig = sig;
     const n = activePlayers(S.players).length;
@@ -4453,7 +4663,7 @@ SCREENS.idle = {
     const playedItems = items.filter((it) => played.has(nameKey(it.name)));
     box.innerHTML = `
       <div class="lib-pick-head">
-        <span class="field-label">Scegli il prossimo gioco <span class="muted">(${fit.length} ${fit.length === 1 ? 'disponibile' : 'disponibili'}, mai uno già giocato)</span></span>
+        <span class="field-label">Scegli il prossimo gioco <span class="muted">(${fit.length} ${fit.length === 1 ? 'disponibile' : 'disponibili'} in 📦 ${esc(armadioName())}, mai uno già giocato)</span></span>
         ${nTable >= 2 ? `<span class="pool-switch" role="group" aria-label="Tra quali giochi scegliere">
           <button type="button" class="pool-opt" data-pool="tonight" aria-pressed="${!S.poolAll}">⭐ Stasera (${nTable})</button>
           <button type="button" class="pool-opt" data-pool="all" aria-pressed="${Boolean(S.poolAll)}">📦 Tutto l’armadio</button></span>` : ''}
@@ -5513,7 +5723,8 @@ SCREENS.awards = {
     if (stagesBox && stages.length > 1) stagesBox.innerHTML = `<div class="seg seg--stage" role="group" aria-label="Cosa mostrare">${stages.map(([k, l]) => `<button type="button" data-stage="${k}" aria-pressed="${this.stage === k}">${l}</button>`).join('')}</div>`;
     box.innerHTML = `
       <button type="button" class="btn-sec" id="shareImg">${ICONS.share}<span>Condividi</span></button>
-      <button type="button" class="btn-sec" id="recapBtn" title="Il commentatore legge il resoconto della serata">🎙️ <span>Resoconto</span></button>
+      <button type="button" class="btn-sec" id="recapBtn" title="Il commentatore legge il riassunto della serata">🎙️ <span>Commento</span></button>
+      <a class="btn-sec" id="reportLink" href="resoconto.html?room=${esc(S.code)}${S.meta.groupId ? `&g=${esc(S.meta.groupId)}` : ''}" target="_blank" rel="noopener" title="Giochi, voti, vincitori e premi: si può riaprire anche dopo">📋 <span>Resoconto</span></a>
       ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openAlbum">📸 <span>Album${photoList(S.photos).length ? ` (${photoList(S.photos).length})` : ''}</span></button>` : ''}
       ${S.meta.groupId ? `<button type="button" class="btn-sec" id="toAllTime">${ICONS.star}<span>Di sempre</span></button>` : ''}
       <button type="button" class="btn" id="newNight2">Nuova serata</button>`;
@@ -5620,23 +5831,33 @@ async function startPoll() {
     return;
   }
   try {
-    await set(roomRef(S.code, 'poll'), { options, open: true, at: serverTimestamp() });
+    // Voti a testa: scelti dalla TV (1, 2 o 3; mai più dei giochi proposti meno uno).
+    const max = Math.min(pollMaxPref(), options.length - 1);
+    await set(roomRef(S.code, 'poll'), { options, open: true, max: Math.max(1, max), at: serverTimestamp() });
     await setPhase('poll');
   } catch (err) {
     toast(explainError(err), 'error');
   }
 }
 
+/** Conteggio della votazione dei giochi: con più voti a testa, ogni gioco scelto riceve un voto (mai due dalla stessa persona). */
 function pollTally(poll) {
   const active = expectedVoters(poll?.votes || {});
   const ids = new Set(active.map((p) => p.uid));
+  const opts = new Set(asList(poll?.options));
   const tally = {};
-  for (const [uid, id] of Object.entries(poll?.votes || {})) {
-    if (ids.has(uid) && S.library?.[id]) tally[id] = (tally[id] || 0) + 1;
+  let voted = 0;
+  let cast = 0;
+  for (const [uid, v] of Object.entries(poll?.votes || {})) {
+    if (!ids.has(uid)) continue;
+    const mine = pollChoices(v, poll?.max).filter((id) => S.library?.[id] && opts.has(id));
+    if (mine.length) voted++;
+    cast += mine.length;
+    for (const id of mine) tally[id] = (tally[id] || 0) + 1;
   }
-  const voted = active.filter((p) => poll?.votes?.[p.uid] && S.library?.[poll.votes[p.uid]]).length;
-  return { tally, voted, total: active.length };
+  return { tally, voted, total: active.length, cast };
 }
+const pollMaxPref = () => { try { return Math.min(POLL_MAX_VOTES, Math.max(1, Number(localStorage.getItem('gnr_poll_max')) || 1)); } catch { return 1; } };
 
 SCREENS.poll = {
   mount(el) {
@@ -5650,7 +5871,8 @@ SCREENS.poll = {
         <div class="poll-head">
           <div>
             <h1>Cosa giochiamo adesso?</h1>
-            <p class="lead-line">Scegliete dal telefono: vince il gioco più votato.</p>
+            <p class="lead-line" id="pollLead">Scegliete dal telefono: vince il gioco più votato.</p>
+            <div class="poll-max" id="pollMax"></div>
             <p class="muted poll-excluded" id="pollExcluded"></p>
           </div>
           <span class="chip chip-lg" id="pollCount" aria-live="polite"></span>
@@ -5668,6 +5890,13 @@ SCREENS.poll = {
       remove(roomRef(S.code, 'poll')).catch(() => {});
     });
     $('#pollClose', el).addEventListener('click', () => this.close());
+    $('#pollMax', el).addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-pmax]');
+      if (!b || b.disabled) return;
+      const v = Number(b.dataset.pmax);
+      try { localStorage.setItem('gnr_poll_max', String(v)); } catch { /* niente */ }
+      await update(roomRef(S.code, 'poll'), { max: v }).catch((err) => toast(explainError(err), 'error'));
+    });
   },
 
   update() {
@@ -5675,8 +5904,16 @@ SCREENS.poll = {
     if (!poll) return;
     if (!poll.open) { this.showWinner(); return; }
     const opts = asList(poll.options).filter((id) => S.library?.[id]);
-    const { tally, voted, total } = pollTally(poll);
+    const { tally, voted, total, cast } = pollTally(poll);
     const max = Math.max(0, ...Object.values(tally));
+    const pm = Math.max(1, Number(poll.max) || 1);
+    const limit = Math.min(POLL_MAX_VOTES, opts.length - 1);
+    const pmSig = JSON.stringify([pm, cast > 0, limit]);
+    if ($('#pollMax').dataset.sig !== pmSig) {
+      $('#pollMax').dataset.sig = pmSig;
+      $('#pollMax').innerHTML = limit >= 2 ? `<span class="field-label">Voti a testa</span><span class="seg" role="group" aria-label="Voti a testa">${Array.from({ length: limit }, (_, i) => i + 1).map((v) => `<button type="button" data-pmax="${v}" aria-pressed="${pm === v}" ${cast > 0 && pm !== v ? 'disabled' : ''}>${v}</button>`).join('')}</span>${cast > 0 ? '<small class="muted">(si cambia solo prima dei voti)</small>' : ''}` : '';
+      $('#pollLead').textContent = pm > 1 ? `Ognuno sceglie fino a ${pm} giochi dal telefono: vince il gioco con più voti.` : 'Scegliete dal telefono: vince il gioco più votato.';
+    }
     const sig = JSON.stringify([opts, tally, opts.map((id) => (S.library[id].image || '').length)]);
     if (sig !== this.sig) {
       this.sig = sig;

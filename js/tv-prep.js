@@ -14,7 +14,9 @@ const fail = (err) => toast(C.explainError(err), 'error');
 /** Giochi sul tavolo stasera { id: [nomi] }: quelli portati dai telefoni e quelli con la stellina "Stasera" nell'armadio. */
 export function onTable() {
   const t = tableGames(S().tonight, S().next, S().library);
-  for (const [id, it] of Object.entries(S().library || {})) if (it?.name && it.sel === true && !t[id]) t[id] = [];
+  // Nella stanza le stelline sono della serata (pick); senza stanza quelle dell'armadio.
+  const room = Boolean(S().code && S().state);
+  for (const [id, it] of Object.entries(S().library || {})) if (it?.name && (room ? S().pick?.[id] === true : it.sel === true) && !t[id]) t[id] = [];
   return t;
 }
 

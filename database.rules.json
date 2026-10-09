@@ -33,6 +33,9 @@
           },
           "armadioName": {
             ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "armadioReadOnly": {
+            ".validate": "newData.isBoolean()"
           }
         },
         "state": {
@@ -78,8 +81,14 @@
           "votes": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid && root.child('rooms').child($code).child('players').child($uid).exists() && root.child('rooms').child($code).child('state').child('phase').val() === 'poll' && root.child('rooms').child($code).child('poll').child('open').val() === true",
-              ".validate": "newData.isString() && newData.val().length <= 40"
+              ".validate": "(newData.isString() && newData.val().length <= 40) || newData.hasChildren()",
+              "$slot": {
+                ".validate": "newData.isString() && newData.val().length <= 40 && (($slot === 'a' && newData.val() !== newData.parent().child('b').val() && newData.val() !== newData.parent().child('c').val()) || ($slot === 'b' && root.child('rooms').child($code).child('poll').child('max').val() >= 2 && newData.val() !== newData.parent().child('a').val() && newData.val() !== newData.parent().child('c').val()) || ($slot === 'c' && root.child('rooms').child($code).child('poll').child('max').val() >= 3 && newData.val() !== newData.parent().child('a').val() && newData.val() !== newData.parent().child('b').val()))"
+              }
             }
+          },
+          "max": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 3"
           }
         },
         "claims": {
@@ -248,6 +257,12 @@
               ".write": "auth != null && auth.uid === $uid && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
               ".validate": "newData.isBoolean()"
             }
+          }
+        },
+        "pick": {
+          ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || root.child('rooms').child($code).child('cohosts').child(auth.uid).val() === true)",
+          "$lid": {
+            ".validate": "newData.isBoolean() && $lid.length <= 40"
           }
         }
       }
@@ -595,6 +610,94 @@
     },
     "armadioKeyClaims": {
       "$aid": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isString() && newData.val().length === 8"
+        }
+      }
+    },
+    "people": {
+      "$pid": {
+        ".read": "auth != null && root.child('people').child($pid).child('uids').child(auth.uid).exists()",
+        ".validate": "$pid.matches(/^[A-Z0-9]{6}$/)",
+        "info": {
+          ".write": "auth != null && (!data.exists() || root.child('people').child($pid).child('uids').child(auth.uid).exists())",
+          ".validate": "newData.hasChildren(['name', 'style', 'seed', 'color', 'ownerUid', 'updatedAt']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 16 && newData.child('style').isString() && newData.child('style').val().length <= 30 && newData.child('seed').isString() && newData.child('seed').val().length <= 40 && newData.child('color').isString() && newData.child('color').val().matches(/^#[0-9A-Fa-f]{6}$/) && newData.child('updatedAt').isNumber() && ((!data.exists() && newData.child('ownerUid').val() === auth.uid) || (data.exists() && newData.child('ownerUid').val() === data.child('ownerUid').val()))",
+          "photo": {
+            ".validate": "newData.isString() && newData.val().beginsWith('data:image/') && newData.val().length < 120000 && !newData.val().contains('\"') && !newData.val().contains(\"'\") && !newData.val().contains('<') && !newData.val().contains('>')"
+          },
+          "motto": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "opts": {
+            "$k": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            }
+          },
+          "name": {
+            ".validate": true
+          },
+          "style": {
+            ".validate": true
+          },
+          "seed": {
+            ".validate": true
+          },
+          "color": {
+            ".validate": true
+          },
+          "ownerUid": {
+            ".validate": true
+          },
+          "updatedAt": {
+            ".validate": true
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": "false"
+          }
+        },
+        "uids": {
+          "$uid": {
+            ".write": "auth != null && (root.child('people').child($pid).child('uids').child(auth.uid).exists() || (auth.uid === $uid && ((!root.child('people').child($pid).child('info').exists() && newData.parent().parent().child('info').child('ownerUid').val() === auth.uid) || root.child('people').child($pid).child('info').child('ownerUid').val() === auth.uid || (root.child('personKeys').child($pid).exists() && root.child('personKeyClaims').child($pid).child(auth.uid).val() === root.child('personKeys').child($pid).val()))))",
+            ".validate": "newData.isNumber() || newData.isBoolean()"
+          }
+        },
+        "groups": {
+          "$gid": {
+            ".write": "auth != null && newData.parent().parent().child('uids').child(auth.uid).exists()",
+            ".validate": "$gid.matches(/^[A-Z0-9]{6}$/) && newData.isString() && newData.val().matches(/^[A-Z0-9]{6}$/)"
+          }
+        },
+        "alts": {
+          "$gid": {
+            "$mid": {
+              ".write": "auth != null && newData.parent().parent().parent().child('uids').child(auth.uid).exists()",
+              ".validate": "$mid.matches(/^[A-Z0-9]{6}$/) && newData.isBoolean()"
+            }
+          }
+        },
+        "armadi": {
+          "$aid": {
+            ".write": "auth != null && newData.parent().parent().child('uids').child(auth.uid).exists()",
+            ".validate": "$aid.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length <= 40 && (!newData.child('key').exists() || (newData.child('key').isString() && newData.child('key').val().matches(/^[A-Z0-9]{8}$/))) && (!newData.child('at').exists() || newData.child('at').isNumber()) && (!newData.child('own').exists() || newData.child('own').isBoolean())"
+          }
+        },
+        "$other": {
+          ".validate": "false"
+        }
+      }
+    },
+    "personKeys": {
+      "$pid": {
+        ".write": "auth != null && root.child('people').child($pid).child('uids').child(auth.uid).exists()",
+        ".validate": "newData.isString() && newData.val().matches(/^[A-Z0-9]{8}$/)"
+      }
+    },
+    "personKeyClaims": {
+      "$pid": {
         "$uid": {
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.isString() && newData.val().length === 8"
