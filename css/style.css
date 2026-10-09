@@ -3530,13 +3530,46 @@ body.has-dock .regia-fab { bottom: calc(6rem + env(safe-area-inset-bottom)); }
 html.theme-show .btn-sec[aria-pressed="true"], html.theme-show .btn-sec[aria-expanded="true"] { background: var(--sun); color: #1F1A3D; }
 .home-arm a { color: inherit; text-underline-offset: 0.2em; }
 
-/* Schermata iniziale della TV e armadio: si scorrono se non entrano nello schermo */
+/* Schermata iniziale della TV: tutto in una schermata (e l'armadio si scorre se ha tanti giochi) */
 html.tv .create, html.tv .armadio-page { height: 100vh; height: 100dvh; min-height: 0; overflow-y: auto; }
-.create { align-items: safe center; padding: 2.4rem 3rem; gap: 3rem 5rem; }
-.create-card { gap: 1rem; padding: 1.8rem 2rem; }
-.create-card .stepper--xl { margin: -0.2rem 0; }
+.create { align-items: safe center; padding: 2rem 3rem; gap: 2rem 4rem; }
+.create-hero { gap: 1.1rem; width: min(34rem, 100%); }
+.create-hero .logo--xl { font-size: 4.4rem; }
+.create-lead { font-size: 1.3rem; }
+.create-card { gap: 0.8rem; padding: 1.5rem 1.8rem; width: min(30rem, 100%); }
+.create-card h2 { font-size: 1.9rem; }
+.count-row { width: 100%; display: flex; align-items: center; gap: 0.6rem 1rem; flex-wrap: wrap; text-align: left; }
+.count-row .field-label { margin: 0; }
+.count-row .stepper output { font-size: 2.2rem; min-width: 3.4rem; }
+.count-row .muted { flex: 1 1 8rem; }
+.create-card .group-field { gap: 0.35rem; }
+.create-card .btn-big { padding-top: 0.55em; padding-bottom: 0.6em; }
+.create-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 1.4rem; }
 .arm-field { width: 100%; }
-.arm-row { display: flex; gap: 0.6rem; align-items: stretch; }
-.arm-row .select { flex: 1; min-width: 0; }
+.arm-card { display: flex; flex-direction: column; gap: 0.6rem; padding: 1.1rem 1.3rem; text-align: left; }
+.arm-card h2 { font-size: 1.6rem; }
+.arm-card p { margin: 0; }
+.arm-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.arm-open-btn {
+  display: inline-flex; align-items: baseline; gap: 0.4rem; cursor: pointer;
+  padding: 0.45rem 0.85rem; border-radius: 0.9rem; border: var(--bw) solid var(--ink);
+  background: var(--sun); color: #1F1A3D; font-weight: 900; font-size: 1rem; box-shadow: 0.18rem 0.18rem 0 var(--ink);
+}
+.arm-open-btn small { font-family: var(--num, var(--display)); font-size: 0.75rem; opacity: 0.7; }
+.arm-open-btn:active { transform: translate(0.12rem, 0.12rem); box-shadow: none; }
+.arm-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.arm-inline { display: flex; gap: 0.5rem; }
+.arm-inline[hidden] { display: none; }
+.arm-inline .input { flex: 1; min-width: 0; }
 .arm-key { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.55rem 0.8rem; border: var(--bw) dashed var(--ink); border-radius: 1rem; font-weight: 700; }
 .arm-key[hidden] { display: none; }
+
+/* Avviso "pagina caricata a metà" (js/stale.js) */
+.stale-banner {
+  position: fixed; z-index: 200; left: 50%; top: 1rem; transform: translateX(-50%);
+  width: min(36rem, calc(100% - 2rem)); display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start;
+  padding: 1rem 1.2rem; border-radius: 1rem; border: 3px solid #1F1A3D;
+  background: #FFF3C4; color: #1F1A3D; font: 700 1rem/1.35 Nunito, system-ui, sans-serif; box-shadow: 0.3rem 0.3rem 0 #1F1A3D;
+}
+.stale-banner button { font: inherit; font-weight: 900; padding: 0.4rem 1rem; border-radius: 0.8rem; border: 3px solid #1F1A3D; background: #FFC93C; cursor: pointer; }
+.stale-banner small { font-weight: 700; opacity: 0.8; }

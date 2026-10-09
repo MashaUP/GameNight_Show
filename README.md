@@ -222,8 +222,9 @@ Su un telefono nuovo:
 
 È il posto dove stanno i vostri giochi, con la foto, conservati da una serata all’altra. **Non dipende dal gruppo**: è un armadio a sé, con un suo codice, e ogni stanza sceglie quale armadio consultare (lo stesso armadio può servire a più gruppi, e una TV diversa può consultarlo con il codice). Conviene riempirlo **prima** della serata, così durante non si perde il ritmo (ma si possono aggiungere giochi anche a serata iniziata).
 
-- **Prima della serata:** nella pagina iniziale della TV, sotto **L’armadio dei giochi**, scegli **Nuovo armadio…** (con un nome, es. “I giochi di Andrea”) oppure uno già usato, e tocca **📦 Apri**. Si apre l’armadio senza creare la stanza e senza bisogno di un gruppo. Dalla home del sito c’è anche il link **Prepara l’armadio dei giochi**. Quando hai finito, **Crea la stanza**: la stanza consulterà quell’armadio (la volta dopo, con lo stesso gruppo, viene proposto da solo).
-- **Da un’altra TV:** scegli **Ho il codice di un armadio…** e scrivi il codice di 6 caratteri (lo trovi in cima all’armadio). Quella TV può **consultare** i giochi; per aggiungerli o modificarli serve anche la **chiave dell’armadio** (8 caratteri), che il computer che l’ha creato vede nell’armadio stesso.
+- **Prima della serata:** nella pagina iniziale della TV, a sinistra, c’è il riquadro **📦 Armadio dei giochi**: tocca un armadio già usato, **➕ Nuovo armadio** (gli dai un nome, es. “I giochi di Andrea”) oppure **🔑 Ho un codice**. Si apre l’armadio senza creare la stanza e senza gruppo. Dalla home del sito c’è anche il link **Prepara l’armadio dei giochi**.
+- **La serata:** nel riquadro **Nuova serata**, il campo **Giochi dall’armadio** sceglie quale armadio consultare (con lo stesso gruppo viene proposto quello dell’ultima volta). Dall’armadio aperto, **Crea la stanza** lo sceglie da solo.
+- **Da un’altra TV:** scegli **🔑 Ho un codice** (o, in **Giochi dall’armadio**, **Ho il codice di un armadio…**) e scrivi il codice di 6 caratteri (lo trovi in cima all’armadio). Quella TV può **consultare** i giochi; per aggiungerli o modificarli serve anche la **chiave dell’armadio** (8 caratteri), che il computer che l’ha creato vede nell’armadio stesso.
 - **Giochi salvati nei gruppi con le versioni precedenti:** quando crei un armadio nuovo per quel gruppo, vengono copiati da soli nell’armadio.
 - **Aggiungere un gioco:** nome, giocatori, durata e la foto: **scegli un file**, **trascinala**, **incollala** (Ctrl+V) oppure **incolla il link** di una foto trovata online.
 - **Dal telefono:** **📱 Aggiungi dal telefono** mostra un QR: il telefono apre l’armadio, fotografa la scatola e aggiunge il gioco. Il QR contiene la chiave dell’armadio: mostralo solo a chi vuoi. Durante la serata anche i telefoni dei giocatori possono aggiungere i giochi che hanno portato.
@@ -408,6 +409,8 @@ L'app si apre a schermo intero sulla schermata iniziale: mostra il tuo profilo e
 **Il profilo personale.** La prima volta che entri in una serata viene creato il tuo profilo, con un **codice personale** di 6 caratteri (compare sul telefono e in **Il mio profilo**). Con il codice ritrovi nome, personaggio e statistiche su qualsiasi telefono; le statistiche di sempre (serate, partite votate, vittorie, voti MVP, gioco preferito) si legano al profilo e non al nome.
 
 **Attenzione su iPhone:** l'app aggiunta alla Home ha una memoria separata da Safari. Al primo avvio dell'app inserisci il tuo codice personale per ritrovare il profilo.
+
+**Dopo una pubblicazione:** il sito controlla sempre se i file sono cambiati, quindi basta ricaricare la pagina. Se una pagina resta ferma o compare **La pagina non si è caricata del tutto**, il browser aveva tenuto file vecchi: tocca **Ricarica** (sul computer, se serve, Ctrl+Shift+R).
 
 **Aggiornamenti:** quando carichi una nuova versione su GitHub, le pagine aperte mostrano "È disponibile una nuova versione" con il pulsante **Aggiorna**. Se modifichi il progetto, aumenta il numero di versione in `js/version.js`, `version.json` e `sw.js` (devono essere uguali).
 

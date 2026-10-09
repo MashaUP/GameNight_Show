@@ -329,15 +329,34 @@ function renderCreate(opts = {}) {
       <div class="create-hero">
         <h1 class="logo logo--xl">GameNight <span class="logo-tag">Show</span></h1>
         <p class="create-lead">Votate i party game dal telefono: la TV svela i voti e fa la classifica.</p>
+        <section class="card arm-card" aria-labelledby="armCardTitle">
+          <h2 id="armCardTitle">📦 Armadio dei giochi</h2>
+          <p class="muted small">I vostri giochi con la foto, indipendenti da gruppi e stanze: preparali quando vuoi, ogni serata li consulta.</p>
+          <div class="arm-list" id="armList">
+            ${recentArmadi().map((a) => `<button type="button" class="arm-open-btn" data-armopen="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('') || '<p class="muted small">Ancora nessun armadio su questo computer.</p>'}
+          </div>
+          <div class="arm-actions" id="armActions">
+            <button type="button" class="btn-sec btn-sec--sm" data-armmode="new">➕ <span>Nuovo armadio</span></button>
+            <button type="button" class="btn-sec btn-sec--sm" data-armmode="code">🔑 <span>Ho un codice</span></button>
+          </div>
+          <div class="arm-inline" id="armInline" hidden>
+            <label class="sr-only" for="armInlineIn">Nome o codice dell’armadio</label>
+            <input class="input input--sm" id="armInlineIn" maxlength="40" autocomplete="off">
+            <button type="button" class="btn btn-sec--sm" id="armInlineGo">Apri</button>
+          </div>
+        </section>
       </div>
       <form class="card create-card" id="createForm">
-        <h2 id="countLabel">Quanti giocatori stasera?</h2>
-        <div class="stepper stepper--xl" role="group" aria-labelledby="countLabel">
-          <button type="button" class="step-btn" data-step="-1" aria-label="Un giocatore in meno">${ICONS.minus}</button>
-          <output id="countOut" aria-live="polite">${S.setupCount}</output>
-          <button type="button" class="step-btn" data-step="1" aria-label="Un giocatore in più">${ICONS.plus}</button>
+        <h2>Nuova serata</h2>
+        <div class="count-row">
+          <span class="field-label" id="countLabel">Giocatori</span>
+          <div class="stepper" role="group" aria-labelledby="countLabel">
+            <button type="button" class="step-btn" data-step="-1" aria-label="Un giocatore in meno">${ICONS.minus}</button>
+            <output id="countOut" aria-live="polite">${S.setupCount}</output>
+            <button type="button" class="step-btn" data-step="1" aria-label="Un giocatore in più">${ICONS.plus}</button>
+          </div>
+          <span class="muted small">da ${MIN_PLAYERS} a ${MAX_PLAYERS}, si cambia anche dopo</span>
         </div>
-        <p class="muted">Da ${MIN_PLAYERS} a ${MAX_PLAYERS}. Potrai cambiarlo in qualsiasi momento.</p>
         <div class="group-field">
           <label class="field-label" for="groupSel">Il vostro gruppo</label>
           <select class="input select" id="groupSel">
@@ -349,28 +368,26 @@ function renderCreate(opts = {}) {
           <input class="input" id="groupName" maxlength="40" autocomplete="off" placeholder="Es. Amici del giovedì" hidden>
           <label class="sr-only" for="groupCode">Codice del gruppo</label>
           <input class="input code-input code-input--6" id="groupCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Codice di 6 caratteri" hidden>
-          <p class="muted small">Il gruppo conserva classifica di sempre, profili e foto da una serata all'altra.</p>
+          <p class="muted small">Il gruppo conserva classifica di sempre, profili e foto.</p>
         </div>
         <div class="group-field arm-field">
-          <label class="field-label" for="armSel">L’armadio dei giochi</label>
-          <div class="arm-row">
-            <select class="input select" id="armSel">
-              ${recentArmadi().map((a) => `<option value="${esc(a.id)}">📦 ${esc(a.name)}</option>`).join('')}
-              <option value="__new">Nuovo armadio…</option>
-              <option value="__code">Ho il codice di un armadio…</option>
-            </select>
-            <button class="btn-sec" type="button" id="armBtn" title="Apri l’armadio per caricare o modificare i giochi, anche prima della serata">📦 <span>Apri</span></button>
-          </div>
+          <label class="field-label" for="armSel">Giochi dall’armadio</label>
+          <select class="input select" id="armSel">
+            ${recentArmadi().map((a) => `<option value="${esc(a.id)}">📦 ${esc(a.name)}</option>`).join('')}
+            <option value="__new">Nuovo armadio…</option>
+            <option value="__code">Ho il codice di un armadio…</option>
+          </select>
           <label class="sr-only" for="armName">Nome del nuovo armadio</label>
-          <input class="input" id="armName" maxlength="40" autocomplete="off" placeholder="Es. I giochi di Andrea" hidden>
+          <input class="input" id="armName" maxlength="40" autocomplete="off" placeholder="Nome dell’armadio, es. I giochi di Andrea" hidden>
           <label class="sr-only" for="armCode">Codice dell’armadio</label>
           <input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Codice di 6 caratteri" hidden>
-          <p class="muted small">L’armadio non dipende dal gruppo: lo riempi prima della serata e ogni stanza può consultarlo.</p>
         </div>
         <p class="form-error" id="createErr" role="alert"></p>
         <button class="btn btn-big btn-block" type="submit" id="createBtn">Crea la stanza</button>
-        <button class="link-btn" type="button" id="toResume">Riprendi una serata già iniziata</button>
-        <button class="btn-sec" type="button" id="demoBtn">🧪 <span>Prova con giocatori finti</span></button>
+        <div class="create-links">
+          <button class="link-btn" type="button" id="toResume">Riprendi una serata già iniziata</button>
+          <button class="link-btn" type="button" id="demoBtn">🧪 Prova con giocatori finti</button>
+        </div>
       </form>
       ${opts.recover ? recoveryHTML(opts.recover) : ''}
       <form class="card create-card" id="resumeForm" novalidate hidden>
@@ -497,12 +514,51 @@ function renderCreate(opts = {}) {
   });
   $('#armCode').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
   syncArm();
-  $('#armBtn').addEventListener('click', () => openArmadio());
-  if (opts.armadio) openArmadio();
+  // Riquadro "Armadio dei giochi": si apre un armadio senza creare la stanza (e senza gruppo).
+  let armMode = '';
+  const inl = $('#armInline');
+  const inlIn = $('#armInlineIn');
+  $('#armCardTitle').closest('.arm-card').addEventListener('click', async (e) => {
+    const o = e.target.closest('[data-armopen]');
+    if (o) { const a = recentArmadi().find((x) => x.id === o.dataset.armopen); if (a) openArmadioById(a.id, a.name); return; }
+    const m = e.target.closest('[data-armmode]');
+    if (m) {
+      armMode = m.dataset.armmode;
+      inl.hidden = false;
+      inlIn.value = '';
+      inlIn.placeholder = armMode === 'new' ? 'Nome, es. I giochi di Andrea' : 'Codice di 6 caratteri';
+      inlIn.maxLength = armMode === 'new' ? 40 : 6;
+      $('#armInlineGo').textContent = armMode === 'new' ? 'Crea' : 'Apri';
+      inlIn.focus();
+      return;
+    }
+    if (e.target.closest('#armInlineGo')) armInlineGo();
+  });
+  inlIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); armInlineGo(); } });
+  async function armInlineGo() {
+    const err = $('#createErr');
+    try {
+      if (armMode === 'new') {
+        const arm = await createArmadio(cleanName(inlIn.value) || 'I nostri giochi');
+        rememberArmadio(arm);
+        renderArmadio(arm);
+      } else {
+        const id = normalizeCode(inlIn.value, 6);
+        if (id.length !== 6) throw userError('Il codice dell’armadio ha 6 caratteri.');
+        await openArmadioById(id);
+      }
+    } catch (ex) { err.textContent = explainError(ex); }
+  }
+  if (opts.armadio) {
+    const first = recentArmadi()[0];
+    if (first) openArmadioById(first.id, first.name);
+    else $('[data-armmode="new"]')?.click();
+  }
   setTimeout(() => runTour('create', [
-    { sel: '.stepper--xl', title: 'Quanti siete?', text: 'Scegli i posti della stanza: potrai cambiarli in qualsiasi momento, anche a serata iniziata.' },
+    { sel: '.count-row', title: 'Quanti siete?', text: 'Scegli i posti della stanza: potrai cambiarli in qualsiasi momento, anche a serata iniziata.' },
     { sel: '#groupSel', title: 'Il vostro gruppo', text: 'Il gruppo conserva da una serata all’altra classifica di sempre, profili, foto e statistiche.' },
-    { sel: '#armSel', title: 'L’armadio dei giochi', text: 'I vostri giochi con la foto, indipendenti dal gruppo. Con “Apri” lo riempi anche prima della serata; la stanza lo consulta per scegliere cosa giocare.' },
+    { sel: '.arm-card', title: 'L’armadio dei giochi', text: 'I vostri giochi con la foto, indipendenti da gruppi e stanze. Aprilo e riempilo anche giorni prima della serata.' },
+    { sel: '#armSel', title: 'Quale armadio consultare', text: 'La stanza sceglie i giochi da questo armadio: con il codice anche un armadio di un altro computer.' },
     { sel: '#createBtn', title: 'Crea la stanza', text: 'La TV mostra un QR: ognuno lo inquadra con il telefono ed entra con nome e personaggio.' },
     { sel: '#demoBtn', title: 'Vuoi provare prima?', text: 'Con i giocatori finti fai una serata di prova da solo: votano da soli, e nulla viene salvato nel gruppo.' },
     { sel: '#toResume', title: 'Serata interrotta?', text: 'Da qui riprendi una serata già iniziata, anche da un altro computer con il codice regia.' }
@@ -608,23 +664,38 @@ function chosenGroupName() {
   return sel.selectedOptions[0]?.textContent || '';
 }
 
+/** Crea un armadio nuovo (di questo computer). */
+async function createArmadio(name) {
+  let id = null;
+  for (let i = 0; i < 12 && !id; i++) {
+    const candidate = randomCode(6);
+    if (!(await get(armadioRef(candidate, 'info'))).exists()) id = candidate;
+  }
+  if (!id) throw new Error('nessun codice libero');
+  await set(armadioRef(id, 'info'), { name, ownerUid: S.uid, createdAt: serverTimestamp() });
+  return { id, name, isNew: true };
+}
+
+/** Apre un armadio esistente (dal suo codice) come pagina. */
+async function openArmadioById(id, knownName = '') {
+  const info = (await get(armadioRef(id, 'info'))).val();
+  if (!info) { forgetArmadio(id); throw userError('Nessun armadio con questo codice.'); }
+  const arm = { id, name: info.name || knownName };
+  rememberArmadio(arm);
+  renderArmadio(arm);
+}
+
 /** L'armadio scelto nella schermata iniziale: esistente, nuovo, o di un altro computer (con il codice). */
 async function resolveArmadio() {
   const choice = $('#armSel')?.value || '__new';
   if (choice === '__new') {
     const g = chosenGroupName();
     const name = cleanName($('#armName')?.value || '') || (g ? `Giochi di ${g}` : 'I nostri giochi');
-    let id = null;
-    for (let i = 0; i < 12 && !id; i++) {
-      const candidate = randomCode(6);
-      if (!(await get(armadioRef(candidate, 'info'))).exists()) id = candidate;
-    }
-    if (!id) throw new Error('nessun codice libero');
-    await set(armadioRef(id, 'info'), { name, ownerUid: S.uid, createdAt: serverTimestamp() });
+    const arm = await createArmadio(name);
     // Il gruppo aveva già dei giochi (versioni precedenti): passano nel nuovo armadio.
     const gid = $('#groupSel')?.value;
-    if (gid && /^[A-Z0-9]{6}$/.test(gid)) await copyGroupGames(gid, id);
-    return { id, name, isNew: true };
+    if (gid && /^[A-Z0-9]{6}$/.test(gid)) await copyGroupGames(gid, arm.id);
+    return arm;
   }
   const id = choice === '__code' ? normalizeCode($('#armCode').value, 6) : choice;
   if (id.length !== 6) throw userError('Il codice dell’armadio ha 6 caratteri.');
@@ -642,20 +713,6 @@ async function copyGroupGames(gid, aid) {
   if (!legacy || typeof legacy !== 'object' || !Object.keys(legacy).length) return 0;
   await update(armadioRef(aid, 'library'), legacy).catch((err) => console.warn('Giochi del gruppo non copiati', err));
   return Object.keys(legacy).length;
-}
-
-async function openArmadio() {
-  const btn = $('#armBtn');
-  const err = $('#createErr');
-  if (btn) btn.disabled = true;
-  try {
-    const arm = await resolveArmadio();
-    rememberArmadio({ id: arm.id, name: arm.name });
-    renderArmadio(arm);
-  } catch (e) {
-    if (err) err.textContent = explainError(e);
-    if (btn) btn.disabled = false;
-  }
 }
 
 /** L'armadio come pagina: si prepara prima della serata, senza stanza e senza gruppo. */

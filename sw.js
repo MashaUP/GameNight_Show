@@ -2,7 +2,9 @@
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
 const VERSION = '1.0.0';
-const CACHE = `gnr-${VERSION}`;
+// Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
+const BUILD = '20261009b';
+const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
   "index.html",
@@ -44,6 +46,7 @@ const SHELL = [
   "js/stats.js",
   "js/util.js",
   "js/version.js",
+  "js/stale.js",
   "js/native.js",
   "js/site.js",
   "vendor/dicebear.js",
@@ -60,7 +63,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' = scarica dal sito, non dalla memoria del browser.
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -77,8 +81,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // Firebase e servizi esterni vanno sempre in rete; version.json anche (serve a scoprire gli aggiornamenti).
   if (url.origin !== self.location.origin || url.pathname.endsWith('version.json')) return;
+  // 'no-cache': il browser chiede sempre al sito se il file è cambiato (risposta leggerissima se è uguale).
+  // Così non si mescolano mai file vecchi e nuovi dopo una pubblicazione.
   event.respondWith(
-    fetch(req)
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

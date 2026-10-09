@@ -2,6 +2,9 @@ import { APP_VERSION } from './version.js';
 import { isSafeMode } from './safe.js';
 import { confettiBurst } from './fx.js';
 import { isApp, nativeFile, versionUrl, apkUrl } from './native.js';
+
+// I moduli sono partiti: il controllo di js/stale.js non serve più.
+try { window.__gnrReady = true; } catch { /* niente */ }
 // Funzioni di supporto condivise da TV e telefoni.
 
 export const PLAYER_COLORS = [
