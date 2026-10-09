@@ -1,0 +1,85 @@
+apply plugin: 'com.android.application'
+
+def appVersionName() {
+    def f = file('../../www/version.json')
+    if (!f.exists()) f = file('../../../version.json')
+    try { return new groovy.json.JsonSlurper().parse(f).version ?: '1.0.0' } catch (ignored) { return '1.0.0' }
+}
+def appVersionCode() {
+    def n = System.getenv('APP_VERSION_CODE') ?: System.getenv('GITHUB_RUN_NUMBER')
+    return n ? Integer.parseInt(n) : 1
+}
+
+android {
+    namespace = "it.gamenight.show"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "it.gamenight.show"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // Il numero cresce a ogni build di GitHub (serve ad Android per accettare l'aggiornamento);
+        // il nome è la versione del sito (version.json).
+        versionCode appVersionCode()
+        versionName appVersionName()
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            // Chiave di firma: se nei Secrets del repository c'è la tua (vedi README, "App Android"),
+            // si usa quella; altrimenti la chiave pubblica di prova in android-app/keystore/.
+            def ks = System.getenv('ANDROID_KEYSTORE_FILE')
+            if (ks && file(ks).exists()) {
+                storeFile file(ks)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            } else {
+                storeFile file('../../keystore/gamenight-show-pubblica.jks')
+                storePassword 'gamenight-show'
+                keyAlias 'gamenight-show'
+                keyPassword 'gamenight-show'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

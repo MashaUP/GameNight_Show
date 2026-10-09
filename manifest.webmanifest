@@ -1,0 +1,30 @@
+{
+  "name": "GameNight Show",
+  "short_name": "GameNight",
+  "description": "Votate i party game dal telefono, la TV svela i voti e fa la classifica.",
+  "lang": "it",
+  "start_url": "./play.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1C0B45",
+  "theme_color": "#FFF4DE",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

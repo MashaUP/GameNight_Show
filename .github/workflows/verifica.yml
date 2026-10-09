@@ -1,0 +1,23 @@
+# Controlli automatici a ogni caricamento su GitHub (scheda "Actions"):
+# versioni allineate, file del sito presenti, moduli JavaScript senza errori e regole del database.
+name: Verifica
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Installa gli strumenti di prova
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+      - name: Controlli
+        working-directory: tests
+        run: npm test

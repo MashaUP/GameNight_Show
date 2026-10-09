@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FFF4DE">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="GameNight">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/lilita-one.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+  <title>GameNight Show</title>
+</head>
+<body>
+  <main class="home">
+    <header class="home-stage">
+      <i class="stage-beam stage-beam--l" aria-hidden="true"></i><i class="stage-beam stage-beam--r" aria-hidden="true"></i>
+      <img class="home-mark" src="assets/logo-mark.svg" alt="" width="180" height="180">
+      <h1 class="logo logo--home">GameNight <span class="logo-tag">Show</span></h1>
+    </header>
+    <p class="home-lead">Votate i party game della serata dal telefono. La TV svela i voti, fa la classifica e premia il gioco migliore.</p>
+
+    <div class="home-choices">
+      <a class="card home-card home-card--tv" href="host.html">
+        <h2>Sono la TV</h2>
+        <p>Apri questa pagina sul portatile collegato alla TV: crei la stanza e guidi la serata.</p>
+        <span class="btn">Crea la stanza</span>
+      </a>
+
+      <a class="card home-card home-card--back" id="backCard" href="#" hidden>
+        <h2>Torna alla serata</h2>
+        <p id="backText">Rientra nell'ultima serata aperta su questo telefono.</p>
+        <span class="btn">Torna alla serata</span>
+      </a>
+
+      <form class="card home-card" id="joinForm" novalidate>
+        <h2>Sono un giocatore</h2>
+        <p>Inquadra il QR sulla TV oppure scrivi il codice della stanza.</p>
+        <label class="sr-only" for="homeCode">Codice stanza</label>
+        <input class="input code-input" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2">
+        <p class="form-error" id="homeErr" role="alert"></p>
+        <button class="btn" type="submit">Entra</button>
+      </form>
+    </div>
+
+    <p class="home-foot home-arm"><a href="host.html?armadio=1">📦 Prepara l’armadio dei giochi prima della serata</a></p>
+
+    <section class="card home-donate" aria-labelledby="donateTitle">
+      <h2 id="donateTitle">☕ Donazioni</h2>
+      <p>GameNight Show è gratis e senza pubblicità. Se le vostre serate sono più divertenti, potete offrirmi un caffè: aiuta a pagare il tempo per le prossime novità.</p>
+      <a class="btn kofi-btn" href="https://ko-fi.com/mashaup" target="_blank" rel="noopener noreferrer">❤️ <span>Sostienimi su Ko-fi</span></a>
+    </section>
+
+    <p class="credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>
+        <p class="home-foot"><a href="test.html">Verifica la configurazione di Firebase</a></p>
+    </main>
+  <script type="module" src="js/home.js"></script>
+</body>
+</html>

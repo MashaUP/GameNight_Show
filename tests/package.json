@@ -1,0 +1,11 @@
+{
+  "name": "gamenight-show-tests",
+  "private": true,
+  "description": "Controlli automatici di GameNight Show (regole del database e file del sito)",
+  "scripts": {
+    "test": "node check.mjs && node rules.test.js"
+  },
+  "devDependencies": {
+    "targaryen": "^3.1.0"
+  }
+}

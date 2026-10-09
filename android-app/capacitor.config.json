@@ -1,0 +1,10 @@
+{
+  "appId": "it.gamenight.show",
+  "appName": "GameNight Show",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#140B2E",
+    "allowMixedContent": false,
+    "captureInput": true
+  }
+}

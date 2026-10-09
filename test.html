@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="theme-color" content="#FFF4DE">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Verifica della configurazione – GameNight Show</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="is-phone">
+  <main class="phone selftest">
+    <h1 class="ph-title">Verifica della configurazione</h1>
+    <p class="ph-lead">Controllo Firebase e le regole del database con una stanza di prova, che poi cancello.</p>
+    <p class="muted small" id="info"></p>
+    <ul class="checks" id="checks"></ul>
+    <section class="card ph-card" id="summary"><p class="muted">Verifica in corso…</p></section>
+    <a class="link-btn" href="index.html">Torna alla pagina iniziale</a>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/selftest.js"></script>
+</body>
+</html>

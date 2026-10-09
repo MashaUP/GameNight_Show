@@ -1,0 +1,132 @@
+# App Android: a ogni caricamento su GitHub prepara l'APK di GameNight Show e la pubblica
+# nella pagina "Releases" del repository (release "app-android"), sempre allo stesso indirizzo:
+#   https://github.com/<utente>/<repository>/releases/download/app-android/GameNight-Show.apk
+# Si può anche avviare a mano: scheda "Actions" → "App Android" → "Run workflow".
+name: App Android
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - 'README.md'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-android
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # L'Android SDK è già installato sui server di GitHub (ubuntu-latest): basta dirlo a Gradle.
+      - name: Android SDK
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "SDK: $sdk"
+          test -n "$sdk" && test -d "$sdk"
+          echo "sdk.dir=$sdk" > android-app/android/local.properties
+          mkdir -p "$RUNNER_TEMP/log"
+
+      - name: Indirizzi pubblici del sito e dell'APK
+        id: urls
+        env:
+          SITE_VAR: ${{ vars.SITE_URL }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          name="${REPO#*/}"
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          if [ -n "$SITE_VAR" ]; then site="$SITE_VAR"; else site="https://${owner}.github.io/${name}/"; fi
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+          echo "apk=https://github.com/${REPO}/releases/download/app-android/GameNight-Show.apk" >> "$GITHUB_OUTPUT"
+          echo "Sito: $site"
+
+      - name: Strumenti dell'app
+        working-directory: android-app
+        run: npm ci --no-audit --no-fund 2>&1 | tee "$RUNNER_TEMP/log/npm.txt"; test ${PIPESTATUS[0]} -eq 0
+
+      - name: Copia del sito dentro l'app
+        working-directory: android-app
+        env:
+          SITE_URL: ${{ steps.urls.outputs.site }}
+          APK_URL: ${{ steps.urls.outputs.apk }}
+        run: |
+          set -o pipefail
+          node scripts/prepare-www.mjs 2>&1 | tee "$RUNNER_TEMP/log/www.txt"
+          npx cap sync android 2>&1 | tee -a "$RUNNER_TEMP/log/www.txt"
+
+      - name: Chiave di firma personale (se è nei Secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Uso la chiave personale dai Secrets."
+          else
+            echo "Nessuna chiave nei Secrets: uso la chiave di prova in android-app/keystore."
+          fi
+
+      - name: Costruzione dell'APK
+        working-directory: android-app/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/log/gradle.txt"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/GameNight-Show.apk"
+
+      # Se qualcosa va storto, le ultime righe dei registri finiscono nel riepilogo della pagina del lavoro
+      # (visibile anche senza accedere a GitHub): così si capisce subito cosa sistemare.
+      - name: Riepilogo dell'errore
+        if: failure()
+        run: |
+          {
+            echo "## Cosa è andato storto"
+            for f in "$RUNNER_TEMP"/log/*.txt; do
+              [ -f "$f" ] || continue
+              echo "### $(basename "$f")"
+              echo '```'
+              grep -v '^\s*$' "$f" | grep -iE 'error|failed|what went wrong|exception|could not|denied|not found' | head -40
+              echo '...'
+              tail -n 40 "$f"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GameNight-Show-apk
+          path: GameNight-Show.apk
+
+      - name: Pubblicazione nelle Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="$(node -p "require('./version.json').version")"
+          notes="App Android di GameNight Show, versione ${ver} (build ${GITHUB_RUN_NUMBER}). Scarica GameNight-Show.apk e aprilo sul telefono."
+          if gh release view app-android >/dev/null 2>&1; then
+            gh release edit app-android --title "App Android ${ver}" --notes "$notes"
+          else
+            gh release create app-android --title "App Android ${ver}" --notes "$notes" --target "$GITHUB_SHA"
+          fi
+          gh release upload app-android GameNight-Show.apk --clobber

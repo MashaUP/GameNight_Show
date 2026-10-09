@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+  <radialGradient id="bg" cx="50%" cy="46%" r="70%">
+    <stop offset="0" stop-color="#4A1D96"/><stop offset="0.55" stop-color="#2A0F63"/><stop offset="1" stop-color="#120830"/>
+  </radialGradient>
+  <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FFF6C8" stop-opacity="0.55"/><stop offset="1" stop-color="#FFF6C8" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="floor" cx="50%" cy="50%" r="50%">
+    <stop offset="0" stop-color="#FF3DCB" stop-opacity="0.55"/><stop offset="1" stop-color="#FF3DCB" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FF3DCB"/><stop offset="0.5" stop-color="#9B7BFF"/><stop offset="1" stop-color="#3DF5E0"/>
+  </linearGradient>
+  <linearGradient id="top" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A7A"/><stop offset="1" stop-color="#FF6A5C"/></linearGradient>
+  <linearGradient id="left" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF5A4E"/><stop offset="1" stop-color="#E8443A"/></linearGradient>
+  <linearGradient id="right" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D93A33"/><stop offset="1" stop-color="#B82B28"/></linearGradient>
+  <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF08A"/><stop offset="1" stop-color="#FFB400"/></linearGradient>
+  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+</defs><rect x="24" y="24" width="976" height="976" rx="230" fill="url(#bg)"/><g transform="translate(-10 -20) scale(1.02)"><ellipse cx="512" cy="835.0" rx="250.0" ry="46.0" fill="#0A0420" opacity="0.6" filter="url(#soft)"/><polygon points="300.0,423.0 512.0,545.0 512.0,790.0 300.0,667.0" fill="url(#left)"/><polygon points="512.0,545.0 724.0,423.0 724.0,667.0 512.0,790.0" fill="url(#right)"/><polygon points="512.0,300.0 724.0,423.0 512.0,545.0 300.0,423.0" fill="url(#top)"/><g transform="matrix(212.0 122.0 0 244.0 300.0 423.0)"><circle cx="0.28" cy="0.28" r="0.115" fill="#FFF4DE"/><circle cx="0.72" cy="0.72" r="0.115" fill="#FFF4DE"/></g><g transform="matrix(212.0 -122.0 0 245.0 512 545)"><circle cx="0.25" cy="0.25" r="0.115" fill="#FFE3D6"/><circle cx="0.5" cy="0.5" r="0.115" fill="#FFE3D6"/><circle cx="0.75" cy="0.75" r="0.115" fill="#FFE3D6"/></g><g transform="matrix(212.0 123.0 -212.0 123.0 512 300.0)"><polygon points="0.8,0.2 0.7,0.5 0.8,0.7 0.6,0.6 0.4,0.9 0.4,0.6 0.1,0.6 0.4,0.4 0.3,0.2 0.5,0.3" fill="url(#gold)" stroke="#1F1A3D" stroke-width="0.05" stroke-linejoin="round"/></g><polygon points="362.0,420.0 482.0,350.0 507.0,365.0 387.0,435.0" fill="#FFFFFF" opacity="0.35"/><polygon points="512.0,300.0 724.0,423.0 724.0,667.0 512.0,790.0 300.0,667.0 300.0,423.0" fill="none" stroke="#1F1A3D" stroke-width="30.0" stroke-linejoin="round"/><polyline points="300.0,423.0 512.0,545.0 724.0,423.0" fill="none" stroke="#1F1A3D" stroke-width="22.5" stroke-linejoin="round" stroke-linecap="round"/><line x1="512" y1="545" x2="512" y2="790.0" stroke="#1F1A3D" stroke-width="22.5" stroke-linecap="round"/></g></svg>
