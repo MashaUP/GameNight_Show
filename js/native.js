@@ -280,6 +280,13 @@ export function routeFromQR(text) {
     const m = /^#collega=([A-Za-z0-9]{6}-[A-Za-z0-9]{8})$/.exec(u.hash);
     return m ? `index.html#collega=${m[1]}` : null;
   }
+  if (page === 'armadio.html') {
+    const q = new URLSearchParams(keep(['a', 'p', 'g', 'add']));
+    const pos = u.searchParams.get('pos');
+    if (pos && pos.length <= 120 && !/[<>"\u0000-\u001f]/.test(pos)) q.set('pos', pos);
+    const h = /^#?(ak|inv)=[\w-]{1,20}$/.test(u.hash) ? u.hash : '';
+    return q.get('a') || q.get('p') ? `armadio.html?${q.toString()}${h}` : null;
+  }
   if (page === 'ludoteca.html') {
     const q = keep(['a', 'g', 'add']);
     const h = /^#?(ak|gk)=[\w-]{1,20}$/.test(u.hash) ? u.hash : '';

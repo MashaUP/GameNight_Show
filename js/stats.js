@@ -507,7 +507,7 @@ export function buildAllTime(nights, library) {
   }
   const imageByKey = {};
   for (const item of Object.values(library || {})) {
-    if (item?.name && item.image) imageByKey[dbKey(item.name)] = item.image;
+    if (item?.name && (item.image || item.thumb)) imageByKey[dbKey(item.name)] = item.image || item.thumb;
   }
   const rows = Object.values(games)
     .map((g) => ({

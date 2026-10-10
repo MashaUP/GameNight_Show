@@ -313,11 +313,12 @@ export function isImageSource(s) {
 
 /** Riquadro immagine del gioco, con segnaposto a righe se manca la foto. */
 export function gameImageHTML(game, cls = '') {
-  const src = game?.image;
+  // Negli elenchi dell'armadio c'è solo la miniatura leggera; la foto grande si carica a parte.
+  const src = isImageSource(game?.image) ? game.image : game?.thumb;
   if (isImageSource(src)) {
     // Due livelli: sfondo sfocato che riempie il riquadro e foto intera sopra. Ogni foto, di qualsiasi forma,
     // sta nello stesso riquadro senza uscire e senza tagli brutti.
-    return `<div class="game-img ${cls}" data-initials="${esc(initials(game?.name))}"><img class="gi-bg" src="${esc(src)}" alt="" aria-hidden="true" data-fallback="hide"><img class="gi-fg" src="${esc(src)}" alt="${esc(game?.name || 'Foto del gioco')}" data-fallback="game"></div>`;
+    return `<div class="game-img ${cls}" data-initials="${esc(initials(game?.name))}"><img class="gi-bg" src="${esc(src)}" alt="" aria-hidden="true" data-fallback="hide" decoding="async" loading="lazy"><img class="gi-fg" src="${esc(src)}" decoding="async" loading="lazy" alt="${esc(game?.name || 'Foto del gioco')}" data-fallback="game"></div>`;
   }
   return `<div class="game-img game-img--empty ${cls}"><span>${esc(initials(game?.name))}</span></div>`;
 }

@@ -1,4 +1,4 @@
-# Verifica della versione 1.1.0
+# Verifica della versione 1.2.0
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
@@ -7,6 +7,43 @@ I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 16
 - **con le regole vere** di `database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
+
+## Novità della 1.2.0 · Armadio organizzato
+
+Test nuovo `am12` (102 controlli), eseguito sul server di prova **con le regole vere**. Più l’armadio grande da 600 giochi (`amperf`), 229 regole del database (`tests/rules.test.js`) e 5 verifiche nuove nel tavolo di verifica, anche queste con le regole vere.
+
+| Funzione | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Rinomina, descrizione, icona | ✅ | Rinomina dalla pagina e ricarica. Un estraneo prova a rinominare. La home mostra il nome nuovo. | Salvata e mostrata ovunque, anche nella stanza aperta. Rifiutata a chi non è proprietario (anche a un collaboratore). La rinomina finisce in cronologia. |
+| Ricerca, filtri combinati, ordinamento, viste | ✅ | Ricerca per nome e per posizione. “In 2” + cooperativo. Chip tolto, poi Azzera. Senza posizione. Solo espansioni. Ordinamento per durata e per posizione. Griglia, Lista, Scaffali. Vista salvata e riapplicata dopo una ricarica. | Risultati esatti in ogni caso. I valori mancanti vanno in fondo. È stato trovato e corretto un difetto: dopo aver scritto un numero, il primo tocco su un chip andava a vuoto. |
+| Posizione e “Trova il gioco” | ✅ | Posizione inserita, mostrata nella scheda e in Trova, anche con le espansioni. | Stanza › mobile › ripiano › contenitore, con i suggerimenti dei valori già usati. |
+| Prestiti | ✅ | Prestito scaduto (rosso nella scheda Prestiti e nel riepilogo) e restituzione “manca qualcosa”. Due copie prestate a due persone, poi una restituita. | Stato, storico e note corretti. Con tutte le copie fuori non si può prestare. Con una copia in casa il gioco è di nuovo disponibile. |
+| Espansioni, edizioni, copie, duplicati | ✅ | Espansione collegata dall’importazione. Stesso nome: “un’altra copia” (copie = 2). Altra edizione aggiunta senza domande e trovata tra i duplicati. “Sono diversi” ricordato su entrambi i giochi. | Niente viene cancellato da solo. |
+| Cronologia e cestino | ✅ | Cestino, poi ripristino con tutti i dati. Ripristino con un nome già presente: chiede conferma. Eliminazione: senza la parola ELIMINA non succede niente, con ELIMINA va. Un estraneo prova a svuotare il cestino. Il proprietario prova a riscrivere una voce della cronologia. | Rifiutati entrambi dalle regole. La cronologia mostra tutte le operazioni. Il proprietario può solo cancellare una voce, non modificarla. |
+| Import / export | ✅ | CSV con giochi nuovi, uno già presente, una riga ripetuta e una senza nome. Anteprima, poi Importa, Annulla e reimportazione. Esportati CSV e JSON. | L’anteprima conta tutto esattamente e non scrive niente. L’annullamento mette nel cestino. Il JSON non contiene chiavi, utenti né foto grandi. Tavolo di verifica: un CSV con accenti e punto e virgola si reimporta uguale. |
+| Link pubblico | ✅ | Creato e aperto da un altro dispositivo. Scritture e letture vietate provate direttamente sul database. Modifica di un gioco e aggiornamento del catalogo. Disattivazione. | Il visitatore vede solo il catalogo, senza comandi, con la posizione nascosta. Il catalogo non contiene prestiti, nomi, note, proprietari né posizioni (salvo scelta). Il visitatore non può: scriverlo, scrivere nell’armadio, leggere i prestiti, elencare tutti i cataloghi. Il catalogo si aggiorna da solo in circa 3 secondi. Dopo la disattivazione compare “Link non più valido” all’istante. |
+| Foto leggere e migrazione | ✅ | Gioco con foto: controllate miniatura e foto grande. Un gioco “vecchio” con la foto dentro, poi l’apertura dell’armadio. | Nell’elenco solo la miniatura. La foto grande si scarica alla scheda. Migrazione: copia, rilettura, poi rimozione; nessuna perdita. |
+| Prestazioni (600 giochi) | ✅ ⚠️ | `amperf`: 600 giochi con foto 640×480. | Dati scaricati all’apertura: 7,1 MB invece di 31,2 MB (4,4 volte meno). Con le foto di prova la miniatura è di circa 12 KB contro i 40 KB della foto grande. Si disegnano 120 giochi alla volta (“Mostra altri”). Ricerca 0,26 s, cambio vista 0,2–0,5 s, duplicati su 600 giochi istantanei. ⚠️ I tempi di apertura misurati qui dipendono dal server di prova, non da Firebase. |
+| Modifica multipla | ✅ | 2 giochi selezionati: posizione (parziale) ed etichetta. | L’anteprima dice quanti giochi cambiano e non scrive niente. I campi lasciati vuoti restano com’erano. Le etichette vengono aggiunte, non sostituite. Tutto in cronologia. |
+| Etichette QR | ✅ ✋ | Pagina di stampa generata. Lettura del QR come la fa l’app. | Un QR per gioco, anche per scaffale. Il QR si apre dall’app con gioco e scaffale. ✋ Stampa su carta e lettura con il telefono da provare a mano. |
+| Schede incomplete | ✅ | “Salva e avanti” e “Salta”. | Vengono chiesti solo i campi mancanti. |
+| Collaboratori e permessi | ✅ | Invito, poi un altro dispositivo diventa collaboratore e modifica. Revoca. Riuso dell’invito. Ricarica della pagina. | Il codice sparisce dall’indirizzo. Dopo la revoca il dispositivo non scrive più e torna in sola lettura. È stato trovato e corretto un problema di sicurezza: un collaboratore revocato poteva rientrare con lo stesso invito. Ora l’invito vale per **una sola persona** e la revoca lo annulla. 9 regole nuove. |
+| Trasferimento tra armadi | ✅ | Gioco spostato in un secondo armadio. | Spostato, non copiato. Posizione da riconfermare. I prestiti seguono il gioco. |
+| TV e app | ✅ ✋ | `host.html?armadio=…`, “Crea una serata”, tasto Indietro simulato (scheda aperta, sezione, elenco), pagina a 360 px. | La TV porta alla pagina nuova. La serata ha già l’armadio scelto. Indietro chiude la scheda, poi torna all’elenco, poi alla home. A 360 px niente esce dallo schermo (griglia, lista, scaffali, filtri, scheda, selezione, prestiti, cronologia, cestino, strumenti). ✋ Da riprovare sull’APK. |
+
+È stato trovato e corretto anche un errore che bloccava la TV: un nome importato due volte in `js/host.js`, rilevato dal controllo `check.mjs`.
+
+**Regressione:** tutti i test delle versioni precedenti sono stati rieseguiti, senza errori:
+
+- regress e tranche 1–9;
+- xss, fit;
+- mtour, dtour, phoneui;
+- endnight, hub, hubjoin, app;
+- armpick, armadio, arm2, images;
+- pollmulti, sfx, rot;
+- tavolo di verifica con le regole vere.
+
+Quattro test che seguivano il vecchio percorso dell’armadio (armadio, arm2, images, hub) sono stati aggiornati alla pagina nuova.
 
 ## Novità della 1.1.0
 

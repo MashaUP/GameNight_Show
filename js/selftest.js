@@ -11,6 +11,8 @@ import {
 import { $, esc, randomCode, applyTheme, ICONS, normalizeCode, isImageSource, downloadFile } from './util.js';
 import { APP_VERSION } from './version.js';
 import { firebaseConfig } from './config.js';
+import { newToken, toCSV, readImportFile, planImport, pubGame } from './collection.js';
+import { routeFromQR } from './native.js';
 import {
   initializeApp, getAuth, signInAnonymously, getDatabase, ref as dbRef, set as dbSet, get as dbGet, update as dbUpdate,
   remove as dbRemove, serverTimestamp as dbNow
@@ -263,6 +265,78 @@ async function run() {
       return 'I telefoni vedono i giochi dell’armadio; le scelte della serata stanno nella stanza e non cambiano la collezione.';
     });
   }
+  // Armadio organizzato (1.2): rinomina, foto leggere, prestiti, cronologia, cestino, link pubblico, inviti
+  let pubTok = '';
+  if (armOk) {
+    await step('Armadio 1.2', 'Rinomina e foto leggere', 'Il proprietario rinomina l’armadio e salva una foto a parte con la miniatura; un collaboratore prova a rinominarlo.', async () => {
+      await update(armadioRef(aid, 'info'), { name: 'Armadio di prova 2', desc: 'Verifica', emoji: '🎲', updatedAt: Date.now() });
+      await update(armadioRef(aid), { 'images/t1': 'data:image/jpeg;base64,AAAA', 'library/t1/thumb': 'data:image/jpeg;base64,AA', 'library/t1/loc': { room: 'Soggiorno', shelf: '2' } });
+      if ((await get(armadioRef(aid, 'info/name'))).val() !== 'Armadio di prova 2') fail('La rinomina non è stata salvata.');
+      if (B) await mustDeny(() => G.update(B, `armadi/${aid}/info`, { name: 'Rubato' }), `Un collaboratore rinomina l’armadio: ${OLD_RULES}`);
+      return 'Rinomina solo del proprietario; foto grande separata dall’elenco.';
+    });
+    await step('Armadio 1.2', 'Prestiti, cronologia e cestino', 'Registro un prestito, una voce di cronologia, sposto un gioco nel cestino e lo ripristino; A (estraneo) prova a leggere i prestiti.', async () => {
+      const lr = push(armadioRef(aid, 'loans'));
+      await update(armadioRef(aid), { [`loans/${lr.key}`]: { item: 't1', name: 'Gioco di prova', to: 'Luca', start: Date.now(), due: Date.now() + 86400000 }, 'library/t1/loanId': lr.key, 'library/t1/status': 'prestato' });
+      const ev = push(armadioRef(aid, 'log'));
+      await set(ev, { at: Date.now(), op: 'lend', item: 't1', msg: 'a Luca' });
+      await mustDeny(() => set(ev, { at: 1, op: 'edit' }), `La cronologia si può riscrivere: ${OLD_RULES}`);
+      if (A) await mustDeny(() => G.get(A, `armadi/${aid}/loans`), `Chi ha solo il codice vede a chi sono prestati i giochi: ${OLD_RULES}`);
+      const t2 = (await get(armadioRef(aid, 'library/t2'))).val();
+      await update(armadioRef(aid), { 'trash/t2': { game: t2, at: Date.now() }, 'library/t2': null });
+      await update(armadioRef(aid), { 'library/t2': t2, 'trash/t2': null });
+      if (!(await get(armadioRef(aid, 'library/t2'))).exists()) fail('Il ripristino dal cestino non ha funzionato.');
+      return 'Prestiti privati, cronologia non modificabile, cestino con ripristino.';
+    });
+    if (A) {
+      await step('Armadio 1.2', 'Link pubblico in sola lettura', 'Creo un catalogo pubblico; A lo legge, prova a modificarlo e a leggere il token; poi lo disattivo.', async () => {
+        pubTok = newToken();
+        const g = pubGame({ name: 'Gioco di prova', loanTo: 'Luca', note: 'privata', owner: 'Andrea', loc: { room: 'Soggiorno' }, minPlayers: 2 }, { status: true, loc: false });
+        if (g.loanTo || g.note || g.owner || g.loc) fail('Il catalogo pubblico conterrebbe dati privati.');
+        await set(pathRef(`pub/${pubTok}`), { aid, name: 'Armadio di prova 2', at: Date.now(), fields: { status: true, loc: false }, games: { t1: g } });
+        await set(armadioRef(aid, 'share'), { token: pubTok });
+        const seen = await G.get(A, `pub/${pubTok}`);
+        if (seen?.games?.t1?.name !== 'Gioco di prova') fail('Chi ha il link non vede il catalogo.');
+        await mustDeny(() => G.set(A, `pub/${pubTok}/games/x`, { name: 'Spam' }), `Chi ha il link modifica il catalogo: ${OLD_RULES}`);
+        await mustDeny(() => G.get(A, `armadi/${aid}/share`), `Chi ha solo il codice legge il token del link: ${OLD_RULES}`);
+        await mustDeny(() => G.get(A, 'pub'), `Si può elencare tutti i cataloghi pubblici: ${OLD_RULES}`);
+        await remove(pathRef(`pub/${pubTok}`)); await remove(armadioRef(aid, 'share'));
+        if (await G.get(A, `pub/${pubTok}`)) fail('Il link disattivato funziona ancora.');
+        pubTok = '';
+        return 'Il catalogo si legge solo con il link, non si modifica, si disattiva subito.';
+      });
+      await step('Armadio 1.2', 'Invito collaboratore e revoca', 'Creo un invito; A lo usa e modifica un gioco; B prova a riusarlo; revoco A e A prova a rientrare.', async () => {
+        const inv = randomCode(10);
+        await set(armadioRef(aid, `invites/${inv}`), { exp: Date.now() + 3600000, role: 'editor', by: 'Verifica' });
+        await G.set(A, `armadioInviteClaims/${aid}/${A.uid}`, inv);
+        await G.set(A, `armadi/${aid}/invites/${inv}/used`, A.uid);
+        await G.set(A, `armadi/${aid}/admins/${A.uid}`, true);
+        await G.update(A, `armadi/${aid}/library/t2`, { duration: 20 });
+        if (B) {
+          await G.set(B, `armadioInviteClaims/${aid}/${B.uid}`, inv);
+          await mustDeny(() => G.set(B, `armadi/${aid}/invites/${inv}/used`, B.uid), `Un invito si usa due volte: ${OLD_RULES}`);
+        }
+        await update(armadioRef(aid), { [`admins/${A.uid}`]: null, [`invites/${inv}`]: null });
+        await mustDeny(() => G.set(A, `armadi/${aid}/admins/${A.uid}`, true), `Un collaboratore revocato rientra da solo: ${OLD_RULES}`);
+        await mustDeny(() => G.update(A, `armadi/${aid}/library/t2`, { duration: 30 }), `Un collaboratore revocato modifica ancora: ${OLD_RULES}`);
+        await G.remove(A, `armadioInviteClaims/${aid}/${A.uid}`).catch(() => {});
+        if (B) await G.remove(B, `armadioInviteClaims/${aid}/${B.uid}`).catch(() => {});
+        return 'L’invito vale per una persona; dopo la revoca non si rientra.';
+      });
+    }
+  }
+  await step('Armadio 1.2', 'Esporta e importa (in memoria)', 'Esporto due giochi in CSV, rileggo il file e calcolo l’anteprima dell’importazione, senza scrivere niente.', async () => {
+    const lib = { a1: { name: 'Azul', minPlayers: 2, maxPlayers: 4, loc: { room: 'Soggiorno' }, tags: ['astratto'] }, a2: { name: 'Dixit; ed. “Big”', duration: 30 } };
+    const csv = toCSV(lib);
+    const back = readImportFile('prova.csv', csv);
+    const plan = planImport(back.rows, {}, 'add');
+    if (plan.add.length !== 2 || plan.add[1].game.name !== lib.a2.name || plan.add[0].game.loc?.room !== 'Soggiorno') fail('Il CSV esportato non si reimporta uguale.');
+    const again = planImport(back.rows, lib, 'add');
+    if (again.add.length || again.same.length !== 2) fail('L’anteprima non riconosce i giochi già presenti.');
+    const r = routeFromQR('https://example.github.io/GameNight_Show/armadio.html?a=ABC123&g=-Nx1');
+    if (r !== 'armadio.html?a=ABC123&g=-Nx1') fail(`Il QR delle etichette non si apre dall’app (${r}).`);
+    return 'CSV con accenti e punto e virgola reimportato uguale; i doppioni vengono riconosciuti; le etichette QR si aprono anche dall’app.';
+  });
   const gid = await freshCode(6, (c) => groupRef(c, 'info')).catch(() => null);
   const mid = await freshCode(6, (c) => memberRef(c)).catch(() => null);
   if (gid && mid) {
@@ -344,6 +418,8 @@ async function run() {
     for (const m of made.members) await wipe(ops, `members/${m}`);
     for (const a of made.armadi) {
       await wipe(ops, `armadi/${a}/library`); await wipe(ops, `armadi/${a}/admins`); await wipe(ops, `armadi/${a}/uids`);
+      for (const k of ['images', 'loans', 'log', 'trash', 'share', 'invites', 'adminInfo']) await wipe(ops, `armadi/${a}/${k}`);
+      if (pubTok) await wipe(ops, `pub/${pubTok}`);
       await wipe(ops, `armadioKeys/${a}`);
       if (B) await wipe(gOps(B), `armadioKeyClaims/${a}/${B.uid}`);
       await wipe(ops, `armadi/${a}/info`);

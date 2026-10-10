@@ -34,6 +34,7 @@ import {
 import { Lite } from './lite.js';
 import { publicUrl, isApp } from './native.js';
 import { Person } from './person.js';
+import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
 import { Music, MUSIC_MODES, MOOD_LABEL } from './music.js';
 import { Atmo, ATMOS, atmoForGame } from './atmo.js';
@@ -157,6 +158,9 @@ function loadDraft() {
 
 async function boot() {
   if (!isConfigured) { showNotConfigured(app); return; }
+  // Vecchi link "host.html?armadio=CODICE": l'armadio ha la sua pagina (1.2)
+  const armLink = normalizeCode(param('armadio') || '', 6);
+  if (armLink.length === 6 && !param('room')) { location.replace(`armadio.html?a=${armLink}`); return; }
   app.innerHTML = loadingHTML('Collegamento in corso…');
   try {
     S.uid = await connect();
@@ -187,12 +191,6 @@ async function boot() {
   localStorage.removeItem(STORE_KEY);
   // Mai dritti alla schermata iniziale se c'è una serata interrotta da riprendere.
   const sess = (await Vault.sessions().catch(() => []))[0];
-  const armParam = normalizeCode(param('armadio') || '', 6);
-  if (armParam.length === 6 && !sess) {
-    renderCreate();
-    openArmadioById(armParam).catch((err) => toast(explainError(err), 'error'));
-    return;
-  }
   renderCreate({ ...(sess ? { recover: sess } : {}), armadio: param('armadio') === '1' && !sess });
 }
 
@@ -332,12 +330,22 @@ function watchArmadio() {
   S.armadioWatching = aid;
   S.armMissing = false;
   if (!aid) return;
-  S.armadioStop = onValue(armadioRef(aid, 'library'), (snap) => { S.library = snap.val() || {}; LibPanel.sig = ''; render(); }, (err) => toast(explainError(err), 'error'));
-  get(armadioRef(aid, 'info')).then((s) => {
+  const stopLib = onValue(armadioRef(aid, 'library'), (snap) => { S.library = snap.val() || {}; LibPanel.sig = ''; render(); }, (err) => toast(explainError(err), 'error'));
+  // Anche il nome: se l'armadio viene rinominato, la stanza mostra subito il nome nuovo
+  let first = true;
+  const stopInfo = onValue(armadioRef(aid, 'info'), (s) => {
     S.armMissing = !s.exists();
-    if (S.armMissing) toast('L’armadio di questa serata non esiste più: scegline un altro da Armadio › Cambia armadio.', 'warn');
+    if (S.armMissing && first) toast('L’armadio di questa serata non esiste più: scegline un altro da Armadio › Cambia armadio.', 'warn');
+    first = false;
+    const nm = s.val()?.name;
+    if (nm && S.meta && S.code && nm !== S.meta.armadioName && S.meta.armadioId === aid && !S.meta.demo) {
+      S.meta.armadioName = nm;
+      update(roomRef(S.code, 'meta'), { armadioName: nm }).catch(() => {});
+      rememberArmadio({ id: aid, name: nm });
+    }
     LibPanel.sig = ''; LibPanel.update();
-  }).catch(() => {});
+  }, () => {});
+  S.armadioStop = () => { stopLib(); stopInfo(); };
   if (armReadOnly()) { S.armAdmin = false; LibPanel.sig = ''; LibPanel.update(); return; }
   ensureArmadioAdmin(aid).then((ok) => { S.armAdmin = ok; registerMembers(); LibPanel.sig = ''; LibPanel.update(); }).catch(() => { S.armAdmin = false; });
 }
@@ -552,6 +560,15 @@ function renderCreate(opts = {}) {
     if (armSel.value === '__code') $('#armCode').focus();
   });
   $('#armCode').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
+  // "Crea una serata" dalla pagina dell'armadio: quell'armadio è già scelto
+  const usa = normalizeCode(param('usaArmadio') || '', 6);
+  if (usa.length === 6) {
+    if (![...armSel.options].some((o) => o.value === usa)) {
+      const nm = recentArmadi().find((a) => a.id === usa)?.name || usa;
+      armSel.insertAdjacentHTML('afterbegin', `<option value="${esc(usa)}">📦 ${esc(nm)}</option>`);
+    }
+    armSel.value = usa;
+  }
   syncArm();
   // Riquadro "Armadio dei giochi": si apre un armadio senza creare la stanza (e senza gruppo).
   let armMode = '';
@@ -762,39 +779,9 @@ async function copyGroupGames(gid, aid) {
   return Object.keys(legacy).length;
 }
 
-/** L'armadio come pagina: si prepara prima della serata, senza stanza e senza gruppo. */
+/** L'armadio ha la sua pagina (1.2): ricerca, filtri, posizioni, prestiti, cronologia, condivisione. */
 function renderArmadio(arm) {
-  S.screenKey = 'armadio';
-  S.meta = { armadioId: arm.id, armadioName: arm.name };
-  S.library = {};
-  S.nights = {};
-  S.games = {};
-  S.armAdmin = undefined;
-  history.replaceState(null, '', `${location.pathname}?armadio=1`);
-  app.innerHTML = `
-    <main class="armadio-page">
-      <header class="page-top">
-        <button type="button" class="btn-sec back-btn" id="armBack">← <span>Indietro</span></button>
-        <span class="brand">GameNight <span class="logo-tag logo-tag--sm">Show</span></span>
-        <button type="button" class="btn" id="armCreate">${ICONS.play}<span>Crea la stanza</span></button>
-      </header>
-      <div id="armBox"></div>
-    </main>`;
-  const stop = () => { Armadio.stops.forEach((f) => { try { f(); } catch { /* niente */ } }); Armadio.stops = []; LibPanel.close(); };
-  const toCreate = () => { stop(); S.meta = null; S.library = {}; S.nights = {}; renderCreate(); };
-  $('#armBack').addEventListener('click', toCreate);
-  $('#armCreate').addEventListener('click', () => {
-    toCreate();
-    const sel = $('#armSel');
-    if (sel && [...sel.options].some((o) => o.value === arm.id)) { sel.value = arm.id; sel.dispatchEvent(new Event('change')); }
-    $('#createBtn')?.focus();
-  });
-  Armadio.stops.push(onValue(armadioRef(arm.id, 'library'), (snap) => {
-    S.library = snap.val() || {};
-    LibPanel.update();
-  }, (e) => toast(explainError(e), 'error')));
-  ensureArmadioAdmin(arm.id).then((ok) => { S.armAdmin = ok; LibPanel.sig = ''; LibPanel.update(); }).catch(() => { S.armAdmin = false; });
-  LibPanel.open({ mount: $('#armBox') });
+  location.href = `armadio.html?a=${encodeURIComponent(arm.id)}${arm.isNew ? '&add=1' : ''}`;
 }
 
 async function resolveGroup() {
@@ -1059,7 +1046,9 @@ async function groupBackup(withPhotos = false) {
   if (!gid) return;
   const read = async (path) => (await get(groupRef(gid, path))).val();
   const [info, identity, library, nights, next, photos] = await Promise.all([read('info'), read('identity'), S.meta?.armadioId ? get(libRef()).then((x) => x.val()) : read('library'), read('nights'), read('next'), withPhotos ? read('photos') : null]);
-  const body = sealBackup({ app: 'GameNight_Show', kind: 'group', at: Date.now(), group: { id: gid, name: info?.name || S.meta.groupName || '' }, info, identity, library, nights, next, photos: photos || null });
+  // Dalla 1.2 le foto grandi dell'armadio stanno a parte: con "anche le foto" si salvano anche quelle
+  const armadioImages = withPhotos && S.meta?.armadioId ? (await get(armadioRef(S.meta.armadioId, 'images')).catch(() => null))?.val() || null : null;
+  const body = sealBackup({ app: 'GameNight_Show', kind: 'group', at: Date.now(), group: { id: gid, name: info?.name || S.meta.groupName || '' }, info, identity, library, nights, next, photos: photos || null, armadioImages });
   downloadFile(`gamenight_gruppo_${gid}_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(body), 'application/json');
   logEvent('Backup del gruppo scaricato', '🗄️');
 }
@@ -1075,7 +1064,11 @@ async function restoreGroupFile(file) {
   let lib = 0, nights = 0, failed = 0;
   for (const [id, it] of Object.entries(d.library || {})) {
     if (S.library?.[id]) continue;
-    try { await set(libRef(id), it); lib++; } catch { failed++; }
+    try {
+      await set(libRef(id), it); lib++;
+      const big = d.armadioImages?.[id];
+      if (S.meta?.armadioId && typeof big === 'string' && big.startsWith('data:image/')) await set(armadioRef(S.meta.armadioId, `images/${id}`), big).catch(() => {});
+    } catch { failed++; }
   }
   for (const [room, n] of Object.entries(d.nights || {})) {
     if (S.nights?.[room]) continue;
@@ -2233,7 +2226,8 @@ const GameSheet = {
     if (!it) return;
     this.id = id;
     this.eanClear = false;
-    this.image = it.image || null;
+    this.image = it.image || it.thumb || null;
+    this.imageChanged = false;
     const rec = gameRecord(S.nights, it.name);
     const opt = (vals, cur, empty) => `<option value="">${empty}</option>` + vals.map(([v, l]) => `<option value="${esc(v)}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('');
     const bases = libraryItems().filter((x) => x.id !== id && !x.baseId).map((x) => [x.id, x.name]);
@@ -2288,7 +2282,7 @@ const GameSheet = {
       const f = e.target.files[0];
       e.target.value = '';
       if (!f) return;
-      try { this.image = await gameImage(f); const b = $('#gsPick', el); b.innerHTML = `<img src="${this.image}" alt="">`; b.classList.add('has-img'); } catch (err) { toast(err.message, 'error'); }
+      try { this.image = await gameImage(f); this.imageChanged = true; const b = $('#gsPick', el); b.innerHTML = `<img src="${this.image}" alt="">`; b.classList.add('has-img'); } catch (err) { if (!err.cancelled) toast(err.message, 'error'); }
     });
   },
   async save() {
@@ -2318,7 +2312,12 @@ const GameSheet = {
       ...(this.eanClear ? { ean: null } : {})
     };
     try {
-      await update(libRef(this.id), patch);
+      if (S.meta?.armadioId) {
+        const before = S.library?.[this.id] || {};
+        delete patch.image;
+        await saveGame(S.meta.armadioId, this.id, patch, this.imageChanged ? { full: this.image || null } : {});
+        armLog(S.meta.armadioId, { op: 'edit', item: this.id, name, by: 'TV', msg: before.name !== name ? `prima: ${before.name}` : '' });
+      } else await update(libRef(this.id), patch);
       toast(`${name} aggiornato`);
       this.close();
     } catch (e) { err.textContent = explainError(e); }
@@ -3827,11 +3826,23 @@ async function addToLibrary(name, image, by = 'TV', extra = {}) {
   if (!hasLib() || armReadOnly()) return null;
   const info = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== null && v !== undefined));
   const existing = findLibrary(name);
+  const aid = S.meta?.armadioId;
   if (existing) {
     const patch = { ...info };
+    const hasImg = existing.image || existing.thumb;
+    if (aid) {
+      if (Object.keys(patch).length || (image && !hasImg)) await saveGame(aid, existing.id, patch, image && !hasImg ? { full: image } : {});
+      return existing.id;
+    }
     if (image && !existing.image) patch.image = image;
     if (Object.keys(patch).length) await update(libRef(existing.id), patch);
     return existing.id;
+  }
+  if (aid) {
+    const id = newGameId(aid);
+    await saveGame(aid, id, { name, addedBy: by, ...info }, { create: true, ...(image ? { full: image } : {}) });
+    armLog(aid, { op: 'add', item: id, name, by });
+    return id;
   }
   const r = push(libRef());
   await set(r, { name, image: image || null, addedBy: by, addedAt: serverTimestamp(), ...info });
@@ -3939,6 +3950,7 @@ const LibPanel = {
         <div class="arm-tools">
           <button type="button" class="btn-sec btn-sec--sm" id="lpPhone">📱 <span>Aggiungi dal telefono</span></button>
           <button type="button" class="btn-sec btn-sec--sm" id="lpQr">🔎 <span>Sfoglia sul telefono</span></button>
+          ${S.meta.armadioId && !armReadOnly() ? `<a class="btn-sec btn-sec--sm" id="lpFull" href="armadio.html?a=${esc(S.meta.armadioId)}" target="_blank" rel="noopener">🗂️ <span>Gestione completa</span></a>` : ''}
           <button type="button" class="btn-sec btn-sec--sm" id="lpCsv" title="Su boardgamegeek.com: Collezione › Esporta (CSV). Va bene anche un CSV con la colonna “nome”.">📥 <span>Importa da BoardGameGeek (CSV)</span></button>
           <input type="file" id="lpCsvFile" accept=".csv,text/csv" hidden>
         </div>
@@ -4157,7 +4169,8 @@ const LibPanel = {
     $('#lpDur', this.el).value = it.duration || '';
     $('#lpSel', this.el).closest('label').hidden = true;
     const b = $('#lpPick', this.el);
-    if (it.image) { b.innerHTML = `<img src="${esc(it.image)}" alt="">`; b.classList.add('has-img'); } else this.resetPick();
+    const shown = it.image || it.thumb;
+    if (shown) { b.innerHTML = `<img src="${esc(shown)}" alt="">`; b.classList.add('has-img'); } else this.resetPick();
     $('#lpSubmit', this.el).innerHTML = `${ICONS.check}<span>Salva</span>`;
     $('#lpCancel', this.el).hidden = false;
     $('#lpErr', this.el).textContent = '';
@@ -4197,8 +4210,8 @@ const LibPanel = {
       if (this.editId) {
         if (same && same.id !== this.editId) { err.textContent = 'C’è già un altro gioco con questo nome.'; return; }
         const patch = { name, ...extra };
-        if (this.img) patch.image = this.img;
-        await update(libRef(this.editId), patch);
+        if (S.meta?.armadioId) await saveGame(S.meta.armadioId, this.editId, patch, this.img ? { full: this.img } : {});
+        else { if (this.img) patch.image = this.img; await update(libRef(this.editId), patch); }
         toast(`${name} aggiornato`);
       } else {
         if (same && !this.img && !Object.values(extra).some(Boolean)) { err.textContent = 'Questo gioco è già nell’armadio: premi la matita per modificarlo.'; return; }
@@ -4214,8 +4227,9 @@ const LibPanel = {
 
   removeItem(id) {
     const it = S.library?.[id];
-    if (!it || !confirm(`Togliere “${it.name}” dall’armadio?`)) return;
-    remove(libRef(id)).catch((e) => toast(explainError(e), 'error'));
+    if (!it || !confirm(`Togliere “${it.name}” dall’armadio? Finisce nel cestino dell’armadio, da cui si può ripristinare.`)) return;
+    if (S.meta?.armadioId) armTrash(S.meta.armadioId, id, it, 'TV').then(() => toast(`${it.name} nel cestino dell’armadio`)).catch((e) => toast(explainError(e), 'error'));
+    else remove(libRef(id)).catch((e) => toast(explainError(e), 'error'));
   },
 
   update() {
@@ -4712,7 +4726,8 @@ SCREENS.idle = {
   pickLib(id) {
     const it = S.library?.[id];
     if (!it) return;
-    S.draft = { ...S.draft, name: it.name, image: it.image || null, libraryId: id, quick: Boolean(it.quick) };
+    S.draft = { ...S.draft, name: it.name, image: it.image || it.thumb || null, libraryId: id, quick: Boolean(it.quick) };
+    upgradeDraftImage(id);
     $('#gameName').value = it.name;
     $('#quickChk').checked = S.draft.quick;
     saveDraft();
@@ -4822,7 +4837,9 @@ async function openVotingWith(d) {
   const name = cleanName(d.name);
   if (!name) throw userError('Manca il nome del gioco.');
   const lib = (d.libraryId && S.library?.[d.libraryId]) ? { id: d.libraryId, ...S.library[d.libraryId] } : findLibrary(name);
-  const image = d.image || lib?.image || null;
+  let image = d.image || lib?.image || null;
+  // Dall'armadio arriva la miniatura: per la TV serve la foto grande (scaricata solo adesso).
+  if (lib?.id && S.meta?.armadioId && (!image || image === lib.thumb)) image = (await fullImage(S.meta.armadioId, lib.id, lib).catch(() => null)) || image;
   const quick = Boolean(d.quick);
   let libraryId = lib?.id || null;
   // I giochi nuovi entrano nell’armadio da soli, così la prossima volta ci sono già.
@@ -4873,12 +4890,26 @@ async function openVotingWith(d) {
   if (Object.keys(S.scores || {}).length) remove(roomRef(S.code, 'scores')).catch(() => {});
 }
 
+/** La foto grande del gioco scelto dall'armadio arriva dopo (nell'elenco c'è solo la miniatura). */
+function upgradeDraftImage(id) {
+  const aid = S.meta?.armadioId;
+  const it = S.library?.[id];
+  if (!aid || !it || it.image) return;
+  fullImage(aid, id, it).then((full) => {
+    if (!full || full === it.thumb || S.draft?.libraryId !== id || (S.draft.image && S.draft.image !== it.thumb)) return;
+    S.draft.image = full;
+    saveDraft();
+    if (S.screen === SCREENS.idle && $('#gameName')) SCREENS.idle.paintDrop?.();
+  }).catch(() => {});
+}
+
 /** Sceglie un gioco dell’armadio per il modulo "Prossimo gioco" (ruota dei giochi). */
 function chooseGame(id) {
   const it = S.library?.[id];
   if (!it) return;
-  S.draft = { ...S.draft, name: it.name, image: it.image || null, libraryId: id, quick: Boolean(it.quick) };
+  S.draft = { ...S.draft, name: it.name, image: it.image || it.thumb || null, libraryId: id, quick: Boolean(it.quick) };
   saveDraft();
+  upgradeDraftImage(id);
   if (S.screen === SCREENS.idle && $('#gameName')) {
     $('#gameName').value = it.name;
     const q = $('#quickChk');
@@ -4960,7 +4991,8 @@ function chaosEvent() {
 function useLibraryGame(id) {
   const it = S.library?.[id];
   if (!it) return;
-  S.draft = { ...S.draft, name: it.name, image: it.image || null, libraryId: id, quick: Boolean(it.quick) };
+  S.draft = { ...S.draft, name: it.name, image: it.image || it.thumb || null, libraryId: id, quick: Boolean(it.quick) };
+  upgradeDraftImage(id);
   saveDraft();
   if (S.screen === SCREENS.idle && $('#gameName')) {
     $('#gameName').value = it.name;
@@ -5812,8 +5844,9 @@ async function pollGo() {
   const poll = S.poll;
   if (!poll || poll.open) return;
   const it = S.library?.[poll.winner] || {};
-  S.draft = { ...EMPTY_DRAFT(), name: it.name || '', image: it.image || null, libraryId: poll.winner || null, quick: Boolean(it.quick) };
+  S.draft = { ...EMPTY_DRAFT(), name: it.name || '', image: it.image || it.thumb || null, libraryId: poll.winner || null, quick: Boolean(it.quick) };
   saveDraft();
+  if (poll.winner) upgradeDraftImage(poll.winner);
   await setPhase('idle');
   remove(roomRef(S.code, 'poll')).catch(() => {});
 }

@@ -4,6 +4,7 @@ import { $, esc, fmt, param, normalizeCode, gameImageHTML, libInfo, applyTheme, 
 ErrLog.install();
 import { searchLibrary, parseQuery, tagsOf, isAvailable, gameRecord, GAME_STATUS, GAME_MODES } from './stats.js';
 import { Person } from './person.js';
+import { saveGame, newGameId, logEvent as armLog } from './collection.js';
 
 const app = $('#app');
 const L = { gid: null, uid: null, info: null, identity: null, library: {}, nights: {}, query: '', quick: new Set(), open: null, canEdit: false, img: null };
@@ -135,13 +136,19 @@ function bindAddForm() {
       const found = Object.entries(L.library || {}).find(([, it]) => nameKey(it?.name) === k);
       if (found) {
         const patch = { ...extra };
-        if (L.img) patch.image = L.img;
         if (sel) patch.sel = true;
-        await update(libRef(found[0]), patch);
+        if (L.aid) await saveGame(L.aid, found[0], patch, L.img ? { full: L.img } : {});
+        else { if (L.img) patch.image = L.img; await update(libRef(found[0]), patch); }
         toast(`${found[1].name} era già nell’armadio: aggiornato`);
       } else {
-        const r = push(libRef());
-        await set(r, { name, image: L.img || null, addedBy: 'Telefono', addedAt: serverTimestamp(), ...extra, ...(sel ? { sel } : {}) });
+        if (L.aid) {
+          const id = newGameId(L.aid);
+          await saveGame(L.aid, id, { name, addedBy: 'Telefono', ...extra, ...(sel ? { sel } : {}) }, { create: true, ...(L.img ? { full: L.img } : {}) });
+          armLog(L.aid, { op: 'add', item: id, name, by: Person.data?.info?.name || 'Telefono' });
+        } else {
+          const r = push(libRef());
+          await set(r, { name, image: L.img || null, addedBy: 'Telefono', addedAt: serverTimestamp(), ...extra, ...(sel ? { sel } : {}) });
+        }
         toast(`${name} è nell’armadio${sel ? ' ⭐ per stasera' : ''}`);
       }
       L.img = null;

@@ -24,6 +24,7 @@ import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from '
 import { SFX_META } from './sfx.js';
 import { setRoomSafeMode } from './safe.js';
 import { Person, lookOf } from './person.js';
+import { saveGame, newGameId, logEvent as armLog } from './collection.js';
 
 const app = $('#app');
 const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows'];
@@ -1227,15 +1228,24 @@ SCREENS.addgame = {
     try {
       if (existing) {
         const patch = { ...info };
-        if (this.image && !existing[1].image) patch.image = this.image;
-        if (Object.keys(patch).length) await update(libraryRef(P.meta, existing[0]), patch);
-        else if (!$('#agBrought').checked) { err.textContent = 'Questo gioco è già nell’armadio.'; btn.disabled = false; return; }
+        const hasImg = existing[1].image || existing[1].thumb;
+        if (P.meta?.armadioId && (Object.keys(patch).length || (this.image && !hasImg))) await saveGame(P.meta.armadioId, existing[0], patch, this.image && !hasImg ? { full: this.image } : {});
+        else if (!P.meta?.armadioId) { if (this.image && !existing[1].image) patch.image = this.image; if (Object.keys(patch).length) await update(libraryRef(P.meta, existing[0]), patch); }
+        if (!Object.keys(patch).length && !(this.image && !hasImg) && !$('#agBrought').checked) { err.textContent = 'Questo gioco è già nell’armadio.'; btn.disabled = false; return; }
         if ($('#agBrought').checked) await markTonight(existing[0], true);
       } else {
         const me = P.players[P.uid];
-        const r = push(libraryRef(P.meta));
-        await set(r, { name, image: this.image || null, addedBy: me?.name || '', addedAt: serverTimestamp(), ...info });
-        if ($('#agBrought').checked) await markTonight(r.key, true);
+        let key;
+        if (P.meta?.armadioId) {
+          key = newGameId(P.meta.armadioId);
+          await saveGame(P.meta.armadioId, key, { name, addedBy: (me?.name || '').slice(0, 24), ...info }, { create: true, ...(this.image ? { full: this.image } : {}) });
+          armLog(P.meta.armadioId, { op: 'add', item: key, name, by: me?.name || 'Telefono' });
+        } else {
+          const r = push(libraryRef(P.meta));
+          key = r.key;
+          await set(r, { name, image: this.image || null, addedBy: me?.name || '', addedAt: serverTimestamp(), ...info });
+        }
+        if ($('#agBrought').checked) await markTonight(key, true);
       }
       toast(`${name} aggiunto all’armadio`);
       input.value = '';

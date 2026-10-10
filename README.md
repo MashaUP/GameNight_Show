@@ -2,7 +2,7 @@
 
 Web app per le serate di party game da tavolo. Ognuno vota i giochi dal proprio telefono, la TV svela i voti con le carte che si girano, tiene la classifica e a fine serata fa la premiazione.
 
-Versione 1.1.0
+Versione 1.2.0
 
 > **Importante:** a ogni nuova versione ricopia `database.rules.json` in Firebase (passo 2.3) e pubblica: molte funzioni dipendono dalle regole del database.
 
@@ -94,7 +94,7 @@ La configurazione si fa una volta sola e richiede circa 10 minuti.
 1. Nella pagina del Realtime Database apri la scheda **Regole**.
 2. Cancella tutto, incolla il contenuto del file `database.rules.json` di questo progetto e clicca **Pubblica**.
 
-Le regole fanno in modo che solo la TV che ha creato la stanza possa guidarla, che ognuno possa votare solo per sé e solo mentre la votazione è aperta, e che le serate salvate in un gruppo arrivino solo dalla TV che le ha guidate. Il profilo personale (`people`) lo leggono e lo modificano solo i dispositivi collegati con la sua chiave.
+Le regole fanno in modo che solo la TV che ha creato la stanza possa guidarla, che ognuno possa votare solo per sé e solo mentre la votazione è aperta, e che le serate salvate in un gruppo arrivino solo dalla TV che le ha guidate. Il profilo personale (`people`) lo leggono e lo modificano solo i dispositivi collegati con la sua chiave. Negli armadi, prestiti, cronologia, cestino e inviti li vedono solo proprietario e collaboratori; la cronologia non si può modificare; il catalogo pubblico (`pub`) si legge solo conoscendo il link e lo scrive solo chi può modificare l’armadio.
 
 **Ogni volta che il file `database.rules.json` cambia** (per esempio con una nuova versione), ricopialo in Firebase e premi **Pubblica**: altrimenti le funzioni nuove vengono rifiutate dal database.
 
@@ -123,7 +123,7 @@ Dopo aver pubblicato il sito (passo 3), apri `https://TUO-UTENTE.github.io/GameN
 
 - stanza, codice regia segreto, ingresso, stanza chiusa e rientro, telefono rimosso;
 - votazione (solo per sé, bloccata dopo il reveal), timer del voto, pronostici solo nei primi 5 minuti, segnapunti, quiz (una risposta), soundboard con anti-spam, votazione dei giochi con più voti a testa;
-- armadio (permessi e chiave), giochi dell’armadio nella stanza (le stelline della serata non toccano la collezione), gruppo, serata salvata una volta sola, fine serata e resoconto, profilo personale su più dispositivi.
+- armadio (permessi e chiave), giochi dell’armadio nella stanza (le stelline della serata non toccano la collezione), armadio organizzato (rinomina, foto leggere, prestiti privati, cronologia non modificabile, cestino, link pubblico in sola lettura, invito per una sola persona e revoca, esporta/importa), gruppo, serata salvata una volta sola, fine serata e resoconto, profilo personale su più dispositivi.
 
 Usa solo dati di prova con codici nuovi (controllati prima) e alla fine li cancella e ricontrolla: i tuoi dati non vengono toccati. Con **Prova anche un tuo armadio** controlla, in sola lettura, un tuo armadio vero (giochi, foto, stelline). Le cose che servono una persona davanti (audio della TV, telefono che si spegne, fotocamera, tasto Indietro dell’app, grafica della premiazione) sono segnate ✋ **da provare a mano**, mai come riuscite. In fondo c’è la **matrice delle verifiche** (funzione, stato, come è stata provata, risultato), che si può scaricare.
 
@@ -232,8 +232,8 @@ Su un telefono nuovo:
 
 È il posto dove stanno i vostri giochi, con la foto, conservati da una serata all’altra. **Non dipende dal gruppo**: è un armadio a sé, con un suo codice, e ogni stanza sceglie quale armadio consultare (lo stesso armadio può servire a più gruppi, e una TV diversa può consultarlo con il codice). Conviene riempirlo **prima** della serata, così durante non si perde il ritmo (ma si possono aggiungere giochi anche a serata iniziata).
 
-- **Prima della serata:** nella pagina iniziale della TV, a sinistra, c’è il riquadro **📦 Armadio dei giochi**: tocca un armadio già usato, **➕ Nuovo armadio** (gli dai un nome, es. “I giochi di Andrea”) oppure **🔑 Ho un codice**. Si apre l’armadio senza creare la stanza e senza gruppo. Dalla home del sito c’è anche il link **Prepara l’armadio dei giochi**.
-- **La serata:** nel riquadro **Nuova serata**, il campo **Giochi dall’armadio** sceglie quale armadio consultare (con lo stesso gruppo viene proposto quello dell’ultima volta). Dall’armadio aperto, **Crea la stanza** lo sceglie da solo.
+- **Prima della serata:** dalla home, **📦 I tuoi armadi** (oppure, sulla TV, il riquadro **📦 Armadio dei giochi**: un armadio già usato, **➕ Nuovo armadio** o **🔑 Ho un codice**). L’armadio si apre nella sua pagina, `armadio.html`, senza creare la stanza e senza gruppo: vedi **L’armadio organizzato** qui sotto.
+- **La serata:** nel riquadro **Nuova serata**, il campo **Giochi dall’armadio** sceglie quale armadio consultare (con lo stesso gruppo viene proposto quello dell’ultima volta). Dalla pagina dell’armadio, **📺 Crea una serata** lo sceglie da solo. Se rinomini l’armadio, anche la stanza aperta mostra il nome nuovo.
 - **Da un’altra TV:** scegli **🔑 Ho un codice** (o, in **Giochi dall’armadio**, **Ho il codice di un armadio…**) e scrivi il codice di 6 caratteri (lo trovi in cima all’armadio). Quella TV può **consultare** i giochi; per aggiungerli o modificarli serve anche la **chiave dell’armadio** (8 caratteri), che il computer che l’ha creato vede nell’armadio stesso.
 - **Giochi salvati nei gruppi con le versioni precedenti:** quando crei un armadio nuovo per quel gruppo, vengono copiati da soli nell’armadio.
 - **Aggiungere un gioco:** nome, giocatori, durata e la foto: **scegli un file**, **trascinala**, **incollala** (Ctrl+V) oppure **incolla il link** di una foto trovata online.
@@ -245,6 +245,26 @@ Su un telefono nuovo:
 - **Prova con giocatori finti:** usa l’armadio scelto in **Giochi dall’armadio**, in sola lettura: si gioca con i vostri giochi ma la prova non aggiunge né modifica niente.
 - **⭐ Stasera:** con la stellina segni i giochi che portate stasera (i giochi nuovi la hanno già). Durante la serata **A caso**, **Ruota**, **Votazione** e **Consigli** scelgono solo tra quelli, e **mai un gioco già giocato**. Con **📦 Tutto l’armadio** si sceglie tra tutti i giochi; **Azzera** toglie tutte le stelline.
 - **Scegli il prossimo gioco** (schermata della TV tra un gioco e l’altro): 🎲 **A caso** (la TV fa lampeggiare i nomi e si ferma su uno), 🎡 **Ruota**, 📱 **Votazione** dai telefoni, 💡 **Consigli** in base ai gusti dei presenti, 📦 **Armadio**. Oppure tocca direttamente un gioco. I giochi già giocati finiscono in **Già giocati stasera**.
+
+### L’armadio organizzato (1.2)
+
+La pagina dell’armadio (`armadio.html?a=CODICE`) funziona su telefono, tablet e computer: sul computer i filtri stanno in una colonna a sinistra, sul telefono in **⚙️ Filtri**.
+
+- **Nome, descrizione e icona:** **✏️ Modifica armadio** (solo il proprietario). Il nome nuovo compare ovunque: home, profilo, stanza aperta, link pubblico. La rinomina finisce nella cronologia.
+- **Cercare e filtrare:** la ricerca guarda nome, titolo originale, etichette, editore, posizione e codice a barre. I filtri si combinano: quanti siete, durata, tipologia, difficoltà, lingua, disponibilità, stato, proprietario, stanza, mobile, scaffale, espansioni, prestati, senza posizione, schede incomplete, possibili duplicati, nuovi da provare, etichetta. I filtri attivi compaiono come chip da togliere con un tocco; **Azzera** li toglie tutti.
+- **Ordinare e guardare:** per nome, data di aggiunta, durata, giocatori, posizione, proprietario, stato, ultime modifiche (i valori mancanti vanno in fondo). Viste **▦ Griglia**, **☰ Lista** e **🗄️ Scaffali** (i giochi raggruppati per stanza › mobile › ripiano). **⭐ Viste** salva una combinazione di filtri, ordinamento e vista con un nome (resta sul dispositivo). La vista e l’ordinamento scelti si ricordano.
+- **Dove si trova:** ogni gioco può avere **stanza, mobile, ripiano e contenitore** (con i suggerimenti dei valori già usati). **📍 Trova il gioco** dice dove si trova, se è disponibile o a chi è prestato, e dove sono le sue espansioni; con **Cerca anche negli altri armadi** guarda in tutti i tuoi armadi.
+- **Prestiti:** **🤝 Presta** (a chi, entro quando, note: i nomi delle persone dei tuoi gruppi vengono suggeriti), **↩️ Restituito** (tutto a posto, manca qualcosa, danneggiato). La scheda **Prestiti** mostra quelli in corso (in rosso quelli scaduti) e lo storico. Con più copie si presta una copia alla volta: il gioco resta disponibile finché ne resta una in casa. I giochi prestati non vengono proposti nelle serate.
+- **Espansioni, edizioni, copie:** un gioco può essere **espansione di** un altro; nella scheda si vedono le espansioni con la loro posizione. Si registrano titolo originale, edizione, anno, editore, copie e codice a barre. Aggiungendo un gioco con lo stesso nome l’app chiede se è **un’altra copia**, **un gioco diverso o un’altra edizione**, o se vuoi **aprire quello che c’è**. **Strumenti › Duplicati** mostra le coppie sospette (stesso titolo, stessa scatola, nome simile): decidi tu, niente viene cancellato da solo.
+- **Cronologia e cestino:** ogni aggiunta, modifica, prestito, spostamento, eliminazione, importazione e rinomina finisce nella **Cronologia**, che nessuno può modificare. Togliere un gioco lo mette nel **Cestino**, da cui si ripristina con tutti i dati; se nel frattempo c’è un gioco con lo stesso nome l’app chiede prima. **Elimina per sempre** chiede di scrivere ELIMINA. Niente si cancella da solo.
+- **Esporta e importa (Strumenti):** **CSV** per Excel (punto e virgola, accenti giusti) e **JSON** completo con le miniature, senza foto grandi, chiavi o codici. **📥 Importa** legge CSV (anche quello di BoardGameGeek) e JSON e mostra prima un’**anteprima**: giochi nuovi, già presenti, ripetuti nel file, righe non valide e avvisi. Due modi: **prudente** (solo i nuovi) oppure **aggiungi e completa i campi vuoti** (non sovrascrive mai). Dopo l’importazione, **↶ Annulla** mette nel cestino i giochi aggiunti e riporta come prima quelli completati.
+- **Link pubblico (Strumenti):** un link per far consultare il catalogo agli amici, **in sola lettura** (lo garantiscono le regole del database). Si vedono nome, miniatura, giocatori, durata, tipologia, difficoltà, lingua, edizione, etichette, regole in breve ed espansioni; **mai** prestiti e nomi di chi li ha, note, proprietari, cronologia o cestino. Disponibilità e posizione in casa solo se le scegli tu. Si aggiorna da solo quando modifichi l’armadio; **🔁 Nuovo link** rende inutile il vecchio, **Disattiva** lo spegne subito (chi lo apre vede “Link non più valido”).
+- **Modifica multipla:** **☑️ Seleziona**, poi tocca i giochi (o **Tutti quelli filtrati**): cambia insieme posizione, stato, proprietario, tipologia, “da provare”, aggiungi o togli etichette. **👀 Anteprima** dice quanti giochi cambiano prima di applicare. Dalla selezione anche **🏷️ Etichette**, **🚚 Sposta** e **🗑️ Cestino**.
+- **Etichette QR da stampare:** per tutti i giochi filtrati, per quelli selezionati, per un gioco o per uno **scaffale** (vista Scaffali). Inquadrando l’etichetta (anche con la fotocamera dell’app) si apre la scheda del gioco o l’elenco dello scaffale.
+- **Schede incomplete:** **✍️ Completa le schede** propone un gioco alla volta con solo i campi che mancano (giocatori, durata, tipologia, difficoltà, posizione, foto). Puoi saltare o lasciare vuoto.
+- **Persone e permessi (Strumenti):** proprietario, collaboratori (modificano giochi, prestiti e cestino), giocatori delle serate (aggiungono giochi), visitatori (sola lettura). **➕ Invita un collaboratore** crea un link valido 7 giorni per **una sola persona**, senza dare la chiave dell’armadio. Il proprietario può **revocare** un collaboratore (e con l’invito usato non può rientrare); un collaboratore può **lasciare**. **🔑 Cambia la chiave** rende inutili i vecchi QR “Aggiungi dal telefono”.
+- **Altro:** **data di acquisizione** e stato **🆕 Nuovo, da provare** (filtro e conteggio), **🚚 Sposta** in un altro tuo armadio (il gioco esce da questo ed entra nell’altro con foto, prestiti e cronologia; la posizione va riconfermata).
+- **Più leggero:** nell’elenco c’è solo una **miniatura** (240×180, pochi KB); la foto grande si scarica solo quando apri la scheda. Le foto degli armadi creati prima della 1.2 vengono spostate da sole, poche alla volta, quando il proprietario o un collaboratore apre l’armadio: la foto viene copiata e ricontrollata prima di toglierla dal gioco, quindi non si perde niente.
 
 ### Il telefono durante la serata
 

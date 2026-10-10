@@ -16,7 +16,6 @@ registerSW();
 
 const H = { uid: null, online: false, groupStops: [] };
 const CODE6 = /^[A-Z0-9]{6}$/;
-const narrow = () => window.matchMedia('(max-width: 760px)').matches || isApp();
 const ls = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* niente */ } },
@@ -405,7 +404,7 @@ function armadiList() {
   for (const a of ls.json('gnr_armadi', []) || []) if (a && CODE6.test(a.id) && !map.has(a.id)) map.set(a.id, { id: a.id, name: a.name, at: 0 });
   return [...map.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
-const armUrl = (id) => (narrow() ? `ludoteca.html?a=${id}` : `host.html?armadio=${id}`);
+const armUrl = (id) => `armadio.html?a=${id}`;
 
 function paintArmadi() {
   const list = armadiList();
@@ -462,7 +461,7 @@ function openNewArmadio() {
       ls.set(`gnr_akey_${id}`, key);
       rememberArm(id, name);
       await Person.linkArmadio(id, name, key, true).catch(() => {});
-      location.href = armUrl(id) + (narrow() ? '&add=1' : '');
+      location.href = `${armUrl(id)}&add=1`;
     } catch (err) {
       $('#naErr', el).textContent = explainError(err);
       btn.disabled = false;
