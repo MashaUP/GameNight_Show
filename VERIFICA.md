@@ -1,4 +1,4 @@
-# Verifica della versione 1.3.0
+# Verifica della versione 1.3.1
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
@@ -7,6 +7,12 @@ I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 16
 - **con le regole vere** di `database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
+
+## Correzione della 1.3.1
+
+| Problema | Stato | Come è stata provata | Risultato |
+|---|---|---|---|
+| Sul sito pubblicato “Le informazioni sulla versione pubblicata non sono valide”, con l’APK regolarmente creata | ✅ ✋ | Causa: il sito ricava l’indirizzo dell’APK da `mashaup.github.io` (minuscolo), la release lo scrive con `MashaUP`; il confronto era esatto. Test aggiunto: utente con maiuscole e sito in minuscolo. | L’APK viene riconosciuta e si scarica dall’indirizzo scritto da GitHub. `upd13` 56/56. ✋ Da ricontrollare sul sito dopo il caricamento (da qui l’API di GitHub non è raggiungibile). |
 
 ## Novità della 1.3.0 · Aggiornamenti e installazione
 

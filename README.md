@@ -2,7 +2,7 @@
 
 Web app per le serate di party game da tavolo. Ognuno vota i giochi dal proprio telefono, la TV svela i voti con le carte che si girano, tiene la classifica e a fine serata fa la premiazione.
 
-Versione 1.3.0
+Versione 1.3.1
 
 > **Importante:** a ogni nuova versione ricopia `database.rules.json` in Firebase (passo 2.3) e pubblica: molte funzioni dipendono dalle regole del database.
 

@@ -70,6 +70,10 @@ export function releaseSource(url = apkUrl()) {
     page: `https://github.com/${m[1]}/${m[2]}/releases/tag/app-android`
   };
 }
+/** Stesso indirizzo dell'APK ufficiale (https, senza distinguere maiuscole e minuscole). */
+export function sameUrl(a, b) {
+  return typeof a === 'string' && typeof b === 'string' && /^https:\/\//.test(a) && a.toLowerCase() === b.toLowerCase();
+}
 /** Pagina ufficiale di download (sul sito): stabile, è quella del QR. */
 export function downloadPageUrl() { return publicUrl('scarica.html').href; }
 
@@ -90,7 +94,9 @@ export function parseWebVersion(v) {
 export function parseRelease(json, officialApk = apkUrl()) {
   if (!json || typeof json !== 'object' || !Array.isArray(json.assets)) return null;
   const asset = json.assets.find((a) => a && a.name === APK_NAME);
-  if (!asset || asset.browser_download_url !== officialApk) return null;
+  // Nomi di utente e repository su GitHub non distinguono maiuscole e minuscole: il sito
+  // (mashaup.github.io) li vede in minuscolo, la release li scrive come sono (MashaUP).
+  if (!asset || !sameUrl(asset.browser_download_url, officialApk)) return null;
   const size = Number.isInteger(asset.size) && asset.size > 0 ? asset.size : 0;
   let meta = {};
   const m = /<!--\s*gamenight-apk:\s*(\{[\s\S]*?\})\s*-->/.exec(String(json.body || ''));
@@ -103,7 +109,7 @@ export function parseRelease(json, officialApk = apkUrl()) {
   return {
     version,
     versionCode: Number.isInteger(meta.versionCode) && meta.versionCode > 0 ? meta.versionCode : null,
-    url: officialApk,
+    url: asset.browser_download_url,
     size: size || metaSize,
     // Dimensione dei dati della build diversa da quella del file: l'APK è cambiata dopo (build in corso)
     sizeMismatch: Boolean(size && metaSize && size !== metaSize),
@@ -215,7 +221,7 @@ const removeLocal = () => nativeCall('Filesystem', 'deleteFile', { path: LOCAL_A
 export async function downloadApk(rel, { onProgress, onVerify } = {}) {
   if (!isApp()) throw fail('notapp', 'Il download con installazione si fa dall’app Android.');
   const official = apkUrl();
-  if (!rel || !official || rel.url !== official || !/^https:\/\//.test(official)) throw fail('url', 'Indirizzo dell’APK non ufficiale: download annullato.');
+  if (!rel || !official || !sameUrl(rel.url, official)) throw fail('url', 'Indirizzo dell’APK non ufficiale: download annullato.');
   if (typeof navigator !== 'undefined' && navigator.onLine === false) throw fail('offline', 'Sei offline: collegati a internet e riprova.');
   await removeLocal();
   const cap = window.Capacitor;
@@ -223,7 +229,7 @@ export async function downloadApk(rel, { onProgress, onVerify } = {}) {
   try { sub = cap?.addListener?.('Filesystem', 'progress', (e) => { const d = e?.bytes ?? e?.data?.bytes; const t = e?.contentLength ?? e?.data?.contentLength; if (Number.isFinite(d)) onProgress?.(d, t > 0 ? t : rel.size || 0); }); } catch { sub = null; }
   let res;
   try {
-    res = await nativeCall('Filesystem', 'downloadFile', { url: official, path: LOCAL_APK, directory: 'CACHE', progress: true, connectTimeout: 15000, readTimeout: 30000 });
+    res = await nativeCall('Filesystem', 'downloadFile', { url: rel.url, path: LOCAL_APK, directory: 'CACHE', progress: true, connectTimeout: 15000, readTimeout: 30000 });
   } catch (err) {
     await removeLocal();
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;

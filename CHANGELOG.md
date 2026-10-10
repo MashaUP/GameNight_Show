@@ -1,5 +1,9 @@
 # Novità
 
+## 1.3.1 (10 ottobre 2026)
+
+- Corretto: “Le informazioni sulla versione pubblicata non sono valide”. Il sito (`mashaup.github.io`) vede il nome utente in minuscolo, la release di GitHub lo scrive con le maiuscole (`MashaUP`): ora i due indirizzi vengono riconosciuti come lo stesso (GitHub non distingue maiuscole e minuscole nei nomi).
+
 ## 1.3.0 · Aggiornamenti e installazione (10 ottobre 2026)
 
 > Le regole del database non cambiano rispetto alla 1.2.0. Serve però installare a mano, una volta, l’APK 1.3: dalle versioni successive gli aggiornamenti arrivano dall’app.
