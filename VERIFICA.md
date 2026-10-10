@@ -1,4 +1,4 @@
-# Verifica della versione 1.2.0
+# Verifica della versione 1.3.0
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
@@ -7,6 +7,26 @@ I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 16
 - **con le regole vere** di `database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
+
+## Novità della 1.3.0 · Aggiornamenti e installazione
+
+Test nuovo `upd13` (55 controlli). L’app Android è simulata nel browser con un Capacitor finto, che riproduce download, avanzamento, lettura del file e apertura dell’installazione; GitHub (API e APK) è simulato con risposte preparate. **Non sono stati provati:** la costruzione dell’APK con il nuovo componente (serve GitHub Actions, qui non c’è l’Android SDK), l’installazione vera su un telefono, la lettura del QR con un telefono vero davanti alla TV, un dispositivo Android TV.
+
+| Funzione | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Confronto delle versioni | ✅ | 1.10.0/1.9.0, 1.2/1.2.0, beta, 2.0.0/10.0.0, testi non validi. | Confronto numerico, non alfabetico; le versioni non valide vengono ignorate. |
+| Dati della versione pubblicata | ✅ | Release corretta, APK non ufficiale, release senza APK, dati della build mancanti o rotti, dimensione o SHA-256 non validi, `version.json` non valido. | Ogni campo controllato; un’APK da un indirizzo diverso da quello ufficiale viene ignorata. Senza dati della build si verifica solo la dimensione. |
+| Stessa versione / nuova versione / build più recente / in preparazione | ✅ | App 1.3.0 build 58 con release uguale; app 1.2.0 con release 1.3.0 e poi 1.4.0; stessa versione con build più nuova; sito già alla 1.4.0 con APK ancora 1.3.0. | “GameNight Show è aggiornato”; avviso con versione installata, nuova e prima novità; download possibile senza avviso; “APK in preparazione” senza download. |
+| Avviso senza disturbo | ✅ | 4 pagine aperte di seguito; ✕ e ricarica; uscita di una versione ancora più nuova. | 1 sola richiesta a GitHub; ✕ vale per quella versione; con la versione successiva l’avviso torna. |
+| Errori di rete e dati | ✅ | API irraggiungibile, risposta rotta, release assente. | L’app parte normalmente, nessun avviso; nel pannello il motivo in chiaro e nessun pulsante di download. |
+| Download e controllo | ✅ ⚠️ | Download corretto; file alterato, troncato, vuoto; APK irraggiungibile (404); rete caduta; SHA-256 pubblicato diverso. | Avanzamento visibile; “completato e controllato (SHA-256 e dimensione)” solo a controllo superato; negli altri 6 casi messaggio chiaro, file cancellato, nessuna installazione. ⚠️ Il download vero lo fa il componente Filesystem di Capacitor (già nell’app): qui è simulato. |
+| Installazione | ✅ ✋ | Pulsante Installa. | Apre l’installazione di Android sul file controllato (tipo APK) e scrive “Installazione da confermare”, mai “installato”; spiega il permesso “Consenti da questa fonte”. ✋ Da provare su un telefono con l’APK 1.3. |
+| APK vecchia senza componente | ✅ | App senza FileOpener. | Propone il download nel browser. |
+| Pagina scarica.html | ✅ | Android 13, Android 6, iPhone, telefono a 390 px. | Download ufficiale, istruzioni, novità, SHA-256; Android 6: “richiede Android 7.0”, niente download; iPhone: usa il sito. Niente scorrimento a destra. |
+| Home del sito | ✅ | 1366 px. | Riquadro “Scarica GameNight” con versione, link ufficiale e QR per il telefono. |
+| QR sulla TV | ✅ ✋ | 1280×720 e 1920×1080: apertura con Invio, lettura del QR con jsQR, Tab, scorciatoie, Esc. Nella stanza dentro l’app: Strumenti › App sui telefoni. | QR di 376 e 567 px, tutto nello schermo, il QR porta alla pagina stabile `scarica.html` (nell’app: sito pubblico). Il fuoco resta nella finestra, Esc chiude e riporta il fuoco al pulsante. ✋ Lettura con un telefono vero alla distanza del divano. |
+| Regressione | ✅ | Rieseguiti tutti i test delle versioni precedenti (armadio 1.2, regress, tranche 1–9, xss, tavolo di verifica, fit, tour, telefono, fine serata, hub, app, votazioni, suoni, rotazione) più `check.mjs` (984 controlli). | Nessun errore. Tranche 2, 3 e 7 sono state rieseguite da sole: le prime due per un aggiornamento del programma di prova (copia del nuovo modulo), la 7 perché sotto carico era scaduto un tempo d’attesa. |
+| Workflow | ✅ ⚠️ | Il passaggio che scrive i dati della build e la descrizione della release è stato eseguito in locale su un file di prova (con virgolette, apostrofi, % e `}` nelle novità). | JSON e descrizione corretti, impronta uguale a `sha256sum`. ⚠️ Il workflow completo (Gradle, firma, pubblicazione) gira solo su GitHub: va controllata la spunta verde dopo il caricamento. |
 
 ## Novità della 1.2.0 · Armadio organizzato
 

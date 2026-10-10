@@ -13,7 +13,8 @@
     "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.5.3",
     "@capacitor/filesystem": "8.1.4",
-    "@capacitor/share": "8.0.3"
+    "@capacitor/share": "8.0.3",
+    "@capawesome-team/capacitor-file-opener": "8.0.5"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3"

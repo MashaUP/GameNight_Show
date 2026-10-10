@@ -1,7 +1,8 @@
 import { APP_VERSION } from './version.js';
 import { isSafeMode } from './safe.js';
 import { confettiBurst } from './fx.js';
-import { isApp, nativeFile, versionUrl, apkUrl } from './native.js';
+import { isApp, nativeFile, versionUrl } from './native.js';
+import { autoCheck, semverCmp } from './updates.js';
 
 // I moduli sono partiti: il controllo di js/stale.js non serve più.
 try { window.__gnrReady = true; } catch { /* niente */ }
@@ -19,15 +20,16 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /** Codice QR come SVG (serve vendor/qrcode.js caricato nella pagina). */
-export function qrSVG(text) {
+export function qrSVG(text, margin = 2) {
   if (typeof window.qrcode !== 'function') return '<p class="muted">QR non disponibile</p>';
   const qr = window.qrcode(0, 'M');
   qr.addData(text);
   qr.make();
   const n = qr.getModuleCount();
+  const m = Math.max(1, Math.min(6, Number(margin) || 2));
   let d = '';
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
-  return `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges" role="img" aria-label="Codice QR"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#1F1A3D"/></svg>`;
+  return `<svg viewBox="-${m} -${m} ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="Codice QR"><rect x="-${m}" y="-${m}" width="${n + 2 * m}" height="${n + 2 * m}" fill="#fff"/><path d="${d}" fill="#1F1A3D"/></svg>`;
 }
 
 export function esc(value) {
@@ -662,24 +664,22 @@ if (typeof document !== 'undefined') {
 
 let versionTimer = null;
 async function checkVersion() {
+  // Nell'app le pagine sono dentro l'APK: conta solo l'APK nuova (controllo ogni 6 ore al massimo, avviso una volta per versione).
+  if (isApp()) { autoCheck().catch(() => {}); return; }
   try {
     const res = await fetch(`${versionUrl()}?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return;
     const { version } = await res.json();
-    if (version && version !== APP_VERSION && !$('#updBanner')) {
+    // Solo se quella pubblicata è davvero più nuova (confronto tra versioni, non tra testi)
+    if (semverCmp(version, APP_VERSION) === 1 && !$('#updBanner')) {
+      try { if (sessionStorage.getItem('gnr_upd_hide') === version) return; } catch { /* niente */ }
       const el = document.createElement('div');
       el.id = 'updBanner';
       el.className = 'upd-banner';
       el.setAttribute('role', 'status');
-      // Nell'app la versione nuova si installa scaricando l'APK aggiornata (il sito si aggiorna da solo).
-      const apk = isApp() ? apkUrl() : '';
-      if (isApp() && !apk) return;
-      try { if (sessionStorage.getItem('gnr_upd_hide') === version) return; } catch { /* niente */ }
-      el.innerHTML = (apk
-        ? `<span>È uscita la versione ${esc(version)} dell'app.</span><a class="btn-sec btn-sec--sm" href="${esc(apk)}" target="_blank" rel="noopener">Scarica</a>`
-        : `<span>È disponibile una nuova versione dell'app.</span><button type="button" class="btn-sec btn-sec--sm" data-upd>Aggiorna</button>`)
+      el.innerHTML = `<span>È disponibile la versione ${esc(version)} del sito.</span><button type="button" class="btn-sec btn-sec--sm" data-upd>Aggiorna</button>`
         + '<button type="button" class="upd-x" aria-label="Più tardi" title="Più tardi">✕</button>';
-      el.querySelector('[data-upd]')?.addEventListener('click', () => location.reload());
+      el.querySelector('[data-upd]').addEventListener('click', () => location.reload());
       // "Più tardi": il pulsante non deve mai coprire i comandi (per esempio "Entra in partita").
       el.querySelector('.upd-x').addEventListener('click', () => { try { sessionStorage.setItem('gnr_upd_hide', version); } catch { /* niente */ } el.remove(); });
       document.body.appendChild(el);

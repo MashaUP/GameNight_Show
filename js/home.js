@@ -9,6 +9,7 @@ import { Person, parseLinkCode, personKeysFor, mergedNights, lookOf } from './pe
 import { avatarHTML, avatarOptions, avatarUri } from './avatars.js';
 import { progressFor, ACHIEVEMENTS } from './stats.js';
 import { isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
+import { mountUpdatePanel, autoCheck } from './updates.js';
 
 ErrLog.install();
 applyTheme();
@@ -536,19 +537,21 @@ function paintGroups() {
 
 function paintApp() {
   const box = $('#hubApp');
-  if (isApp()) { box.hidden = true; return; }
-  const apk = apkUrl();
-  const rel = apk ? apk.replace(/\/download\/app-android\/.*$/, '/tag/app-android') : '';
-  if (!apk) { box.hidden = true; return; }
+  // Nell'app la sezione sta nelle Impostazioni (e nell'avviso degli aggiornamenti)
+  if (isApp() || !apkUrl()) { box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = `
-    <div class="hub-sec-head"><h2>📲 App per Android</h2></div>
-    <p>Si apre a schermo intero, legge il QR della TV e usa lo stesso profilo del sito. È gratuita e si aggiorna da sola a ogni nuova versione pubblicata.</p>
-    <div class="hub-row">
-      <a class="btn" href="${esc(apk)}" rel="noopener">⬇️ <span>Scarica l’app (APK)</span></a>
-      <a class="btn-sec btn-sec--sm" href="${esc(rel)}" target="_blank" rel="noopener noreferrer">Tutte le versioni</a>
-    </div>
-    <p class="muted small">${isAndroid() ? 'Dopo il download apri il file: Android chiede di permettere l’installazione da questa fonte.' : 'Apri questa pagina dal telefono Android per scaricarla. Su iPhone: Safari › Condividi › Aggiungi alla schermata Home.'}</p>`;
+    <div class="hub-sec-head"><h2>📲 Scarica GameNight</h2></div>
+    <p>L’app per Android si apre a schermo intero, legge il QR della TV e usa lo stesso profilo del sito. È gratuita.</p>
+    <div id="hubVerPanel" class="ver-panel"></div>`;
+  mountUpdatePanel($('#hubVerPanel'), { qrSVG, toast, showQR: !isAndroid() });
+}
+
+/** Sezione "Scarica GameNight" in una finestra: versioni, aggiornamenti, download e QR per un altro telefono. */
+function openUpdates() {
+  const el = Sheet.open(`${head('📲 Scarica GameNight')}
+    <div id="stVerPanel" class="ver-panel"></div>`, { wide: true });
+  mountUpdatePanel($('#stVerPanel', el), { qrSVG, toast, showQR: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -563,7 +566,10 @@ $('#hubSettings').addEventListener('click', () => {
     <h3>Aiuto</h3>
     <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stIntro">👋 Rivedi l’introduzione</button><a class="btn-sec btn-sec--sm" href="test.html">🩺 Verifica Firebase</a></div>
     ${Person.local() ? '<div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stShare">🔗 Profilo sugli altri dispositivi</button></div>' : ''}
+    <h3>Versione</h3>
+    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stUpd">📲 Aggiornamenti e download dell’app</button></div>
     <p class="muted small" id="stVer"></p>`, { wide: true });
+  $('#stUpd', el).addEventListener('click', () => { Sheet.close(); openUpdates(); });
   $('#stIntro', el).addEventListener('click', () => { Sheet.close(); showIntro(true); });
   $('#stShare', el)?.addEventListener('click', () => { Sheet.close(); openShare(); });
   $('#stVer', el).textContent = $('#hubVer').textContent;
@@ -648,7 +654,10 @@ async function boot() {
   else if (!state) showIntro();
 }
 boot();
+// Avviso "È disponibile GameNight Show …" nell'app, e link diretto alla sezione (index.html#aggiornamenti)
+if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); } else autoCheck({ onOpen: openUpdates }).catch(() => {});
 window.addEventListener('hashchange', () => {
+  if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); return; }
   const l = parseLinkCode(location.hash);
   if (!l) return;
   history.replaceState(null, '', location.pathname);

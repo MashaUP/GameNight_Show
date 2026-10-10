@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FFF4DE">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/fredoka-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/atkinson-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+  <title>GameNight Show · Scarica l’app</title>
+</head>
+<body class="is-phone dl-body">
+  <div id="app"><div class="loading"><div class="loading-die" aria-hidden="true"><i></i><i></i><i></i></div><p>Carico…</p></div></div>
+  <noscript>Per scaricare GameNight Show serve JavaScript attivo. L’app si trova nella pagina Releases del repository GitHub, release “app-android”.</noscript>
+  <script src="vendor/qrcode.js"></script>
+  <script type="module" src="js/scarica.js"></script>
+</body>
+</html>

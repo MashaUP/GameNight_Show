@@ -4410,3 +4410,60 @@ html.in-app .am-desk-only { display: none !important; }
 .am-overlay .qr-url { text-align: center; overflow-wrap: anywhere; }
 .am-list--grid > .am-more { grid-column: 1 / -1; }
 .am-more { margin-top: 0.6rem; }
+
+/* ==========================================================================
+   Versioni, aggiornamenti e installazione dell'app (1.3)
+   ========================================================================== */
+.upd-banner--app .upd-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.upd-banner--app .upd-text small { font-weight: 700; font-size: 0.85rem; overflow-wrap: anywhere; }
+.ver-panel { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+.ver-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem 0.6rem; }
+.ver-kv--wide { grid-column: 1 / -1; }
+@media (min-width: 900px) { .ver-grid { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); } .ver-kv--wide { grid-column: auto; } }
+.ver-kv { display: flex; flex-direction: column; gap: 0.05rem; padding: 0.4rem 0.6rem; border: 2px solid var(--ink); border-radius: 0.8rem; background: var(--cream); min-width: 0; }
+.ver-kv span { font-size: 0.85rem; color: var(--ink-soft); }
+.ver-kv b { font-size: 1.05rem; overflow-wrap: anywhere; }
+.ver-kv small { font-weight: 700; color: var(--ink-soft); }
+.ver-status { margin: 0; }
+.ver-state { display: inline-block; padding: 0.35rem 0.7rem; border-radius: 0.8rem; border: 2px solid var(--ink); font-weight: 900; background: var(--paper); }
+.ver-state--new { background: var(--sun); color: #1F1A3D; }
+.ver-state--ok { background: #D4F5EF; color: #1F1A3D; }
+.ver-state--busy, .ver-state--wait { background: #E7DEFF; color: #1F1A3D; }
+.ver-state--err { background: #FFE3DF; color: #8A1A12; border-color: #B3261E; }
+.ver-bar { height: 0.8rem; border-radius: 999px; border: 2px solid var(--ink); background: var(--cream); overflow: hidden; }
+.ver-bar i { display: block; height: 100%; background: var(--teal); transition: width .2s; }
+.ver-notes ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.ver-actions > .btn, .ver-actions > .btn-sec { flex: 1 1 12rem; text-decoration: none; }
+.ver-qr { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; text-align: center; padding-top: 0.6rem; border-top: 2px dashed rgba(31, 26, 61, 0.25); }
+.ver-qr h3 { font-size: 1.15rem; }
+.ver-url, .ver-sha { overflow-wrap: anywhere; word-break: break-all; }
+.ver-sha { display: block; font-size: 0.8rem; padding: 0.4rem; background: var(--cream); border-radius: 0.5rem; }
+html[data-theme="night"] .ver-kv, html[data-theme="night"] .ver-sha { color: var(--fg); }
+html[data-theme="night"] .ver-qr { border-color: rgba(244, 236, 220, 0.25); }
+
+/* Pagina scarica.html */
+main.phone.dl { max-width: 44rem; }
+.dl-hero { padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; text-align: center; align-items: center; }
+.dl-hero h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); }
+.dl-ico { font-size: 2.8rem; line-height: 1; }
+.dl-sec { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.dl-sec h2 { font-size: 1.4rem; }
+.dl-steps { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.45rem; }
+
+/* TV: QR grande per installare l'app su un altro dispositivo (leggibile da lontano, si chiude con Esc) */
+.install-qr { z-index: 95; padding: 1.5rem; }
+.install-qr-card { width: min(70rem, 100%); max-height: calc(100vh - 3rem); overflow: auto; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 2rem; align-items: center; padding: 1.6rem 2rem; }
+.install-qr-code { width: min(28rem, 62vh, 45vw); aspect-ratio: 1; background: #FFFFFF; border: var(--bw) solid var(--ink); border-radius: 1.2rem; padding: 0.4rem; }
+.install-qr-code svg { display: block; width: 100%; height: 100%; }
+.install-qr-text { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.install-qr-text h2 { font-size: clamp(1.6rem, 2.6vw, 2.6rem); line-height: 1.1; }
+.install-qr-lead { font-size: clamp(1.1rem, 1.6vw, 1.5rem); font-weight: 800; }
+.install-qr-url { font-family: var(--display); font-size: clamp(1rem, 1.4vw, 1.35rem); overflow-wrap: anywhere; padding: 0.35rem 0.7rem; background: var(--cream); border-radius: 0.7rem; border: 2px solid var(--ink); }
+.install-qr-text .btn { align-self: flex-start; }
+.install-qr-text .btn:focus-visible, .install-qr-text .btn:focus { outline: 0.3rem solid var(--sky); outline-offset: 0.25rem; }
+html[data-theme="night"] .install-qr-url { color: var(--fg); }
+@media (max-width: 760px) {
+  .install-qr-card { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; padding: 1rem; gap: 1rem; }
+  .install-qr-code { width: min(18rem, 80vw); }
+  .install-qr-text .btn { align-self: center; }
+}

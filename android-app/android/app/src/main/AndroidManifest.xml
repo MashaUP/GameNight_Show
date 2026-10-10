@@ -45,6 +45,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Aggiornamenti: aprire la schermata di installazione di Android sull'APK scaricata e controllata.
+         Android chiede sempre conferma all'utente (e la prima volta il permesso "Installa app sconosciute"). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Solo sui telefoni più vecchi (Android 10 e prima): salvare i file in Documenti/GameNight Show. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />

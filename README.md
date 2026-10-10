@@ -2,7 +2,7 @@
 
 Web app per le serate di party game da tavolo. Ognuno vota i giochi dal proprio telefono, la TV svela i voti con le carte che si girano, tiene la classifica e a fine serata fa la premiazione.
 
-Versione 1.2.0
+Versione 1.3.0
 
 > **Importante:** a ogni nuova versione ricopia `database.rules.json` in Firebase (passo 2.3) e pubblica: molte funzioni dipendono dalle regole del database.
 
@@ -491,7 +491,10 @@ Nella cartella `android-app/` c'è l'app Android vera e propria (fatta con [Capa
 
 ### Dove si scarica
 
-Nella home del sito c'è il riquadro **📲 App per Android** con **Scarica l’app (APK)**: compare sul sito pubblicato su GitHub Pages, sia dal PC che dal telefono. Il file sta nella pagina **Releases** del repository (release **App Android**) e viene **rifatto da solo a ogni caricamento su GitHub**: non devi fare niente, basta aspettare 5-8 minuti dopo il push.
+- **Pagina ufficiale di download:** `https://TUO-UTENTE.github.io/NOME-REPOSITORY/scarica.html`. L’indirizzo non cambia mai e mostra sempre l’ultima versione: versione, data, dimensione, novità, impronta SHA-256, istruzioni e requisiti (Android 7.0 o più recente). Su iPhone spiega di usare il sito; sui telefoni troppo vecchi lo dice invece di scaricare.
+- **Nella home del sito**, riquadro **📲 Scarica GameNight**: le stesse informazioni, il pulsante **Scarica APK** e, dal computer, un QR da inquadrare con il telefono.
+- **Sulla TV:** nella schermata **Nuova serata** e in **Strumenti › 📲 App sui telefoni** c’è **Installa GameNight su un altro dispositivo**: un QR grande (leggibile dal divano) verso la pagina di download. Si apre e si chiude anche da tastiera o telecomando (Invio, Esc).
+- Il file sta nella pagina **Releases** del repository (release **App Android**) e viene **rifatto da solo a ogni caricamento su GitHub**: non devi fare niente, basta aspettare 5-8 minuti dopo il push.
 
 ### Come si ottiene l'APK
 
@@ -512,7 +515,27 @@ Se il lavoro fallisce con un errore di permessi alla fine ("Resource not accessi
 2. Apri il file scaricato. La prima volta Android chiede di permettere l'installazione da quella app (Chrome, Files…): consentila e torna indietro.
 3. Play Protect può avvisare che l'app non è conosciuta: tocca **Installa comunque**. È normale per le app che non passano dal Play Store.
 
-Gli aggiornamenti si installano allo stesso modo, sopra la versione vecchia: profili e impostazioni restano. Quando sul sito c'è una versione più nuova, l'app mostra **È uscita la versione…** con il pulsante **Scarica**.
+Gli aggiornamenti si installano allo stesso modo, sopra la versione vecchia: profili e impostazioni restano.
+
+### Aggiornamenti dall’app
+
+Dalla versione 1.3 l’app controlla da sola se c’è una versione nuova (al massimo ogni mezz’ora, con le informazioni lette al massimo ogni 6 ore) e mostra **È disponibile GameNight Show 1.4.0 · hai la 1.3.0** con la prima novità. **✕** lo chiude per quella versione: torna solo quando ne esce una ancora più nuova. Se la rete non c’è o GitHub non risponde, l’app funziona normalmente e non dice niente.
+
+In **⚙️ Impostazioni › 📲 Aggiornamenti e download dell’app** (o dal pulsante **Vedi e scarica** dell’avviso) c’è la sezione **Scarica GameNight**:
+
+- versione e build installate, ultima versione pubblicata, data, dimensione, requisiti e novità;
+- **🔄 Controlla aggiornamenti** (controllo vero, subito) e lo stato: *aggiornata*, *disponibile*, *build più recente* (stessa versione con correzioni), *in preparazione* (versione già sul sito ma APK ancora in costruzione: riprova tra qualche minuto), *nessuna connessione*;
+- **⬇️ Scarica APK**: scarica l’APK **solo dall’indirizzo ufficiale**, con la barra di avanzamento, poi controlla **dimensione e impronta SHA-256** pubblicate dal workflow. Se qualcosa non torna (file vuoto, incompleto, diverso) lo cancella e non lo installa;
+- **📲 Installa**: apre la schermata di installazione di Android. **L’app non si installa da sola**: Android chiede conferma e, la prima volta, il permesso **Installa app sconosciute** per GameNight Show (Impostazioni › Consenti da questa fonte). Android controlla anche che l’APK sia firmata con la stessa chiave di quella installata;
+- il QR per **installare GameNight su un altro dispositivo**.
+
+Le app installate prima della 1.3 mostrano ancora il vecchio avviso con il download nel browser: dopo aver installato la 1.3 a mano, gli aggiornamenti successivi si fanno dall’app.
+
+**Da dove arrivano le informazioni (gratis, niente server in più):**
+- `version.json` del sito: versione, data, novità e Android minimo. **A ogni nuova versione si aggiorna questo file** (le novità sono quelle mostrate nell’app).
+- La release **App Android** su GitHub: il workflow, dopo aver costruito l’APK, scrive nella descrizione versione, numero di build, dimensione, SHA-256 e novità (e carica anche `GameNight-Show.json` con gli stessi dati). L’app li legge con l’API pubblica di GitHub (senza chiavi, 60 richieste l’ora per rete: ne basta una ogni 6 ore).
+
+**Pubblicare una nuova versione:** aggiorna `version.json` (versione, data, novità), `js/version.js` e `sw.js` con lo stesso numero, carica su GitHub. Dopo 5-8 minuti il lavoro **App Android** pubblica l’APK e i suoi dati: da quel momento le app la vedono.
 
 ### Cosa cambia nell'app
 
@@ -541,7 +564,8 @@ Gli aggiornamenti si installano allo stesso modo, sopra la versione vecchia: pro
 | Condividere immagini, salvare backup e registro | download del browser | pannello Condividi e cartella Documenti |
 | Resoconto PDF | stampa del browser | file `.html` da stampare |
 | Schermo intero sulla TV | ✅ (tasto F) | — (l'app è già a tutto schermo) |
-| Installazione | "Aggiungi a Home" (anche iPhone) | APK dalla home del sito |
+| Installazione | "Aggiungi a Home" (anche iPhone) | APK da `scarica.html`, dalla home del sito o dal QR della TV |
+| Aggiornamenti | il sito si aggiorna da solo (avviso **Aggiorna**) | avviso nell’app, download controllato e installazione con conferma di Android |
 
 ### Firebase
 

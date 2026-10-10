@@ -35,6 +35,7 @@ import { Lite } from './lite.js';
 import { publicUrl, isApp } from './native.js';
 import { Person } from './person.js';
 import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
+import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
 import { Music, MUSIC_MODES, MOOD_LABEL } from './music.js';
 import { Atmo, ATMOS, atmoForGame } from './atmo.js';
@@ -434,6 +435,7 @@ function renderCreate(opts = {}) {
         <div class="create-links">
           <button class="link-btn" type="button" id="toResume">Riprendi una serata già iniziata</button>
           <button class="link-btn" type="button" id="demoBtn">🧪 Prova con giocatori finti</button>
+          <button class="link-btn" type="button" id="installTvBtn">📲 Installa GameNight su un altro dispositivo</button>
         </div>
       </form>
       ${opts.recover ? recoveryHTML(opts.recover) : ''}
@@ -541,6 +543,7 @@ function renderCreate(opts = {}) {
   }));
   $('#createForm').addEventListener('submit', (e) => { e.preventDefault(); createRoom(); });
   $('#demoBtn').addEventListener('click', () => createDemo().catch((err) => { $('#createErr').textContent = explainError(err); }));
+  $('#installTvBtn').addEventListener('click', () => InstallQR.open());
   const armSel = $('#armSel');
   const syncArm = () => {
     $('#armName').hidden = armSel.value !== '__new';
@@ -1637,6 +1640,55 @@ async function restoreGame(gid) {
 const VOTE_TIMERS = [['0', 'Spento'], ['45', '45 secondi'], ['60', '1 minuto'], ['90', '1 minuto e mezzo'], ['120', '2 minuti'], ['180', '3 minuti']];
 
 /** Pannello "Strumenti": pausa, tema, musica, suoni, ticker, cestino, copie di sicurezza, verifica della configurazione. */
+/**
+ * "Installa GameNight su un altro dispositivo": QR grande per la TV verso la pagina ufficiale di download
+ * (scarica.html, indirizzo stabile: a ogni nuova versione il QR resta lo stesso). Si usa anche da tastiera
+ * o telecomando: il fuoco va su "Chiudi", Esc o Indietro chiudono.
+ */
+const InstallQR = {
+  el: null,
+  last: null,
+  isOpen() { return Boolean(this.el); },
+  open() {
+    if (this.el) return;
+    const url = downloadPageUrl();
+    this.last = document.activeElement;
+    const el = document.createElement('div');
+    el.className = 'overlay install-qr';
+    el.innerHTML = `
+      <div class="card panel install-qr-card" role="dialog" aria-modal="true" aria-labelledby="iqTitle">
+        <div class="install-qr-code">${qrSVG(url, 4)}</div>
+        <div class="install-qr-text">
+          <h2 id="iqTitle">📲 Installa GameNight su un altro dispositivo</h2>
+          <p class="install-qr-lead">Inquadra il QR con il telefono per scaricare GameNight Show e installarlo sul tuo dispositivo Android.</p>
+          <p class="install-qr-url">${esc(url.replace(/^https?:\/\//, ''))}</p>
+          <p class="muted" id="iqVer">Versione stabile: controllo…</p>
+          <p class="muted">Serve Android ${esc(MIN_ANDROID)} o più recente. Su iPhone si usa il sito (Safari › Condividi › Aggiungi alla schermata Home).</p>
+          <button type="button" class="btn" id="iqClose">Chiudi</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    this.el = el;
+    el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('#iqClose')) this.close(); });
+    el.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // le scorciatoie della TV (L, G, T…) non agiscono sotto la finestra
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'BrowserBack' || e.key === 'GoBack') { e.preventDefault(); e.stopPropagation(); this.close(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); $('#iqClose', el)?.focus(); }
+    });
+    $('#iqClose', el).focus();
+    getRelease().then((r) => {
+      const v = r.release || r.stale;
+      if (!this.el) return;
+      $('#iqVer', el).textContent = v ? `Versione stabile: ${v.version}${v.size ? ` · ${fmtSize(v.size)}` : ''}.` : 'La pagina mostra sempre l’ultima versione pubblicata.';
+    }).catch(() => {});
+  },
+  close() {
+    this.el?.remove();
+    this.el = null;
+    this.last?.focus?.({ preventScroll: true });
+  }
+};
+
 const ToolsPanel = {
   el: null,
   sig: '',
@@ -1664,6 +1716,8 @@ const ToolsPanel = {
             <select class="input select select--sm" id="tlLite" aria-label="Modalità leggera">${opts([['auto', 'Automatica (si accende se la TV va a scatti)'], ['on', 'Sempre accesa'], ['off', 'Spenta']], Lite.mode())}</select>
             ${Lite.on() ? '<p class="muted small">⚡ Adesso è accesa.</p>' : ''}</section>
           <section class="tool"><h3>Accessibilità</h3><p class="muted">Per questa TV. Ogni telefono ha le sue in "Il mio profilo".</p>${a11yHTML('tlA11y')}</section>
+          <section class="tool"><h3>📲 App sui telefoni</h3><p class="muted">Un QR grande da inquadrare per scaricare l’app Android di GameNight Show (sempre l’ultima versione).</p>
+            <button type="button" class="btn-sec" id="tlInstall">📲 <span>Installa su un altro dispositivo</span></button></section>
           <section class="tool"><h3>Registro errori</h3><p class="muted" id="tlErrInfo"></p>
             <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tlErrDl">${ICONS.download}<span>Scarica il registro</span></button><button type="button" class="btn-sec btn-sec--sm" id="tlErrClear">Svuota</button></div>
             <button type="button" class="link-btn" id="tlTour">🎓 Rivedi il tutorial</button></section>
@@ -1750,6 +1804,7 @@ const ToolsPanel = {
       if (e.target.closest('#tlTime')) { this.close(); TimeMachine.open(); return; }
       if (e.target.closest('#tlErrDl')) { ErrLog.download({ stanza: S.code, fase: S.state?.phase, giocatori: activePlayers(S.players).length, safeMode: isSafeMode() }); return; }
       if (e.target.closest('#tlErrClear')) { if (confirm('Svuotare il registro degli errori?')) { ErrLog.clear(); this.paintErr(); } return; }
+      if (e.target.closest('#tlInstall')) { this.close(); InstallQR.open(); return; }
       if (e.target.closest('#tlTour')) { resetTours(); this.close(); setTimeout(() => runTour(S.state?.phase || 'lobby', TOURS[S.state?.phase] || TOURS.lobby, { force: true }), 200); return; }
       if (e.target.closest('#tlGkEnter')) { this.close(); showGroupKeyBanner(); $('#gkInput')?.focus(); return; }
       if (e.target.closest('#tlGkNew')) {

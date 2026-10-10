@@ -36,7 +36,7 @@ export function apkUrl() {
 // Chiamate ai plugin nativi (Filesystem, Share, SystemBars)
 // ---------------------------------------------------------------------------
 
-function nativeCall(plugin, method, opts = {}) {
+export function nativeCall(plugin, method, opts = {}) {
   const cap = window.Capacitor;
   if (typeof cap?.nativePromise === 'function') return cap.nativePromise(plugin, method, opts);
   const p = cap?.Plugins?.[plugin];

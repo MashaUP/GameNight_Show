@@ -113,20 +113,46 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Dati della build per il controllo degli aggiornamenti nell'app e nella pagina scarica.html:
+      # versione, numero di build, impronta SHA-256, dimensione, data e novità (da version.json).
+      - name: Dati della versione
+        run: |
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const v = JSON.parse(fs.readFileSync("version.json", "utf8"));
+            const apk = fs.readFileSync("GameNight-Show.apk");
+            const meta = {
+              app: "GameNight Show", version: v.version, versionCode: Number(process.env.GITHUB_RUN_NUMBER),
+              sha256: crypto.createHash("sha256").update(apk).digest("hex"), size: apk.length,
+              date: new Date().toISOString(), notes: Array.isArray(v.notes) ? v.notes.slice(0, 12).map((n) => String(n).replace(/-->/g, "→").slice(0, 240)) : [],
+              minAndroid: v.minAndroid || "7.0", commit: process.env.GITHUB_SHA
+            };
+            if (!/^\d+\.\d+(\.\d+)?/.test(meta.version) || !(meta.versionCode > 0) || !meta.size) throw new Error("dati della versione non validi");
+            fs.writeFileSync("GameNight-Show.json", JSON.stringify(meta, null, 2) + "\n");
+            console.log(`Versione ${meta.version}, build ${meta.versionCode}, ${meta.size} byte, SHA-256 ${meta.sha256}`);
+          '
+
       - uses: actions/upload-artifact@v4
         with:
           name: GameNight-Show-apk
-          path: GameNight-Show.apk
+          path: |
+            GameNight-Show.apk
+            GameNight-Show.json
 
+      # Ordine: prima l'APK, poi i dati che la descrivono. Così l'app non legge mai l'impronta di un'APK
+      # che non è ancora stata caricata (se trova l'APK nuova con i dati vecchi, il controllo fallisce e
+      # chiede di riprovare: non installa niente).
       - name: Pubblicazione nelle Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="$(node -p "require('./version.json').version")"
-          notes="App Android di GameNight Show, versione ${ver} (build ${GITHUB_RUN_NUMBER}). Scarica GameNight-Show.apk e aprilo sul telefono."
-          if gh release view app-android >/dev/null 2>&1; then
-            gh release edit app-android --title "App Android ${ver}" --notes "$notes"
-          else
-            gh release create app-android --title "App Android ${ver}" --notes "$notes" --target "$GITHUB_SHA"
+          meta="$(node -p "JSON.stringify(require('./GameNight-Show.json'))")"
+          sha="$(node -p "require('./GameNight-Show.json').sha256")"
+          notes="$(printf 'App Android di GameNight Show, versione %s (build %s).\n\nScarica GameNight-Show.apk e aprila sul telefono Android (7.0 o più recente). Pagina con le istruzioni: scarica.html sul sito.\n\nSHA-256: %s\n\n<!-- gamenight-apk: %s -->' "$ver" "$GITHUB_RUN_NUMBER" "$sha" "$meta")"
+          if ! gh release view app-android >/dev/null 2>&1; then
+            gh release create app-android --title "App Android ${ver}" --notes "In preparazione…" --target "$GITHUB_SHA"
           fi
           gh release upload app-android GameNight-Show.apk --clobber
+          gh release upload app-android GameNight-Show.json --clobber
+          gh release edit app-android --title "App Android ${ver}" --notes "$notes"
