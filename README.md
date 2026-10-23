@@ -321,7 +321,7 @@ bgg-proxy/                 proxy BoardGameGeek per Cloudflare Workers (facoltati
 tests/                     controlli statici, regole, link, prove nel browser (tests/e2e)
 docs/                      GUIDA.md, LINKS.md, AUDIT.md, PRIVACY.md
 .github/                   workflow (Verifica, App Android, proxy BGG), moduli per le segnalazioni,
-                           Dependabot, pulsante Sponsor (Ko-fi), modello per le pull request
+                           pulsante Sponsor (Ko-fi), modello per le pull request
 LICENSE, CONTRIBUTING.md, SECURITY.md   licenza MIT, come contribuire, segnalazioni di sicurezza
 vendor/, assets/           librerie incluse; icone, marchio, font
 ```
