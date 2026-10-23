@@ -1,0 +1,11 @@
+{
+  "name": "gamenight-bgg-proxy",
+  "private": true,
+  "type": "module",
+  "description": "Proxy Cloudflare Worker (piano gratuito) tra GameNight Show e l'XML API2 di BoardGameGeek",
+  "scripts": {
+    "test": "node --test test/worker.test.mjs",
+    "deploy": "npx wrangler deploy",
+    "dev": "npx wrangler dev"
+  }
+}

@@ -3,6 +3,7 @@ import { isSafeMode } from './safe.js';
 import { confettiBurst } from './fx.js';
 import { isApp, nativeFile, versionUrl } from './native.js';
 import { autoCheck, semverCmp } from './updates.js';
+import { t, fmtNum, locale } from './i18n.js';
 
 // I moduli sono partiti: il controllo di js/stale.js non serve più.
 try { window.__gnrReady = true; } catch { /* niente */ }
@@ -21,7 +22,7 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /** Codice QR come SVG (serve vendor/qrcode.js caricato nella pagina). */
 export function qrSVG(text, margin = 2) {
-  if (typeof window.qrcode !== 'function') return '<p class="muted">QR non disponibile</p>';
+  if (typeof window.qrcode !== 'function') return `<p class="muted">${esc(t('common.qrMissing'))}</p>`;
   const qr = window.qrcode(0, 'M');
   qr.addData(text);
   qr.make();
@@ -29,7 +30,7 @@ export function qrSVG(text, margin = 2) {
   const m = Math.max(1, Math.min(6, Number(margin) || 2));
   let d = '';
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
-  return `<svg viewBox="-${m} -${m} ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="Codice QR"><rect x="-${m}" y="-${m}" width="${n + 2 * m}" height="${n + 2 * m}" fill="#fff"/><path d="${d}" fill="#1F1A3D"/></svg>`;
+  return `<svg viewBox="-${m} -${m} ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="${esc(t('common.qr'))}"><rect x="-${m}" y="-${m}" width="${n + 2 * m}" height="${n + 2 * m}" fill="#fff"/><path d="${d}" fill="#1F1A3D"/></svg>`;
 }
 
 export function esc(value) {
@@ -77,10 +78,10 @@ export function param(name) {
   return new URLSearchParams(location.search).get(name);
 }
 
-/** Numero con una cifra decimale e virgola italiana. */
+/** Numero con una cifra decimale, nella lingua scelta (virgola in italiano, punto in inglese). */
 export function fmt(n, digits = 1) {
   if (n === null || n === undefined || Number.isNaN(n)) return '–';
-  return Number(n).toFixed(digits).replace('.', ',');
+  return fmtNum(Number(n), digits);
 }
 
 /** Giocatori presenti adesso (esclude chi è uscito dalla serata). */
@@ -100,11 +101,11 @@ export function libInfo(item) {
   const min = Number(item?.minPlayers) || 0;
   const max = Number(item?.maxPlayers) || 0;
   const parts = [];
-  if (min && max) parts.push(min === max ? `${min} giocatori` : `${min}–${max} giocatori`);
-  else if (min) parts.push(`da ${min} giocatori`);
-  else if (max) parts.push(`fino a ${max} giocatori`);
-  if (Number(item?.playedCount) && Number(item?.playedTotal)) parts.push(`${Math.round(item.playedTotal / item.playedCount)} min a partita`);
-  else if (Number(item?.duration)) parts.push(`${Number(item.duration)} min`);
+  if (min && max) parts.push(min === max ? t('lib.players', { n: min }) : t('lib.playersRange', { min, max }));
+  else if (min) parts.push(t('lib.playersFrom', { n: min }));
+  else if (max) parts.push(t('lib.playersUpTo', { n: max }));
+  if (Number(item?.playedCount) && Number(item?.playedTotal)) parts.push(t('lib.minPerGame', { n: Math.round(item.playedTotal / item.playedCount) }));
+  else if (Number(item?.duration)) parts.push(t('lib.minutes', { n: Number(item.duration) }));
   return parts.join(', ');
 }
 
@@ -124,7 +125,7 @@ export function sortedPlayers(players) {
 export function compressImage(file, max = 720, quality = 0.74) {
   return new Promise((resolve, reject) => {
     if (!file || !String(file.type || '').startsWith('image/')) {
-      reject(new Error('Il file scelto non è un’immagine.'));
+      reject(new Error(t('img.notImage')));
       return;
     }
     const url = URL.createObjectURL(file);
@@ -145,7 +146,7 @@ export function compressImage(file, max = 720, quality = 0.74) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Impossibile leggere questa immagine. Prova con un JPG o PNG.'));
+      reject(new Error(t('img.unreadable')));
     };
     img.src = url;
   });
@@ -163,7 +164,7 @@ function loadAnyImage(src, cors = false) {
     const img = new Image();
     if (cors) img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Impossibile leggere questa immagine. Prova con un JPG o PNG.'));
+    img.onerror = () => reject(new Error(t('img.unreadable')));
     img.src = src;
   });
 }
@@ -175,7 +176,7 @@ function loadAnyImage(src, cors = false) {
 function drawStandard(img) {
   const W = GAME_IMG_W, H = GAME_IMG_H;
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-  if (!iw || !ih) throw new Error('Immagine vuota.');
+  if (!iw || !ih) throw new Error(t('img.empty'));
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const c = cv.getContext('2d');
@@ -236,7 +237,7 @@ function rotatedCanvas(img, quarter, maxSide = 3000) {
  * un errore con cancelled = true se si annulla.
  */
 export async function editPhoto(file, kind = 'free') {
-  if (!file || !String(file.type || '').startsWith('image/')) throw new Error('Il file scelto non è un’immagine.');
+  if (!file || !String(file.type || '').startsWith('image/')) throw new Error(t('img.notImage'));
   const url = URL.createObjectURL(file);
   let img;
   try { img = await loadAnyImage(url); } catch (err) { URL.revokeObjectURL(url); throw err; }
@@ -246,14 +247,14 @@ export async function editPhoto(file, kind = 'free') {
     el.className = 'overlay overlay--sheet photo-edit';
     el.innerHTML = `
       <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="peTitle">
-        <div class="panel-head"><h2 id="peTitle">Controlla la foto</h2><button type="button" class="icon-btn" data-pecancel aria-label="Annulla">✕</button></div>
-        <div class="pe-stage pe-stage--${kind}"><img id="peImg" alt="Anteprima della foto"></div>
+        <div class="panel-head"><h2 id="peTitle">${esc(t('img.check'))}</h2><button type="button" class="icon-btn" data-pecancel data-close aria-label="${esc(t('common.cancel'))}">✕</button></div>
+        <div class="pe-stage pe-stage--${kind}"><img id="peImg" alt="${esc(t('img.preview'))}"></div>
         <div class="pe-rot">
-          <button type="button" class="btn-sec" id="peLeft" aria-label="Ruota a sinistra di 90 gradi">⟲ <span>Sinistra</span></button>
-          <button type="button" class="btn-sec" id="peRight" aria-label="Ruota a destra di 90 gradi">⟳ <span>Destra</span></button>
+          <button type="button" class="btn-sec" id="peLeft" aria-label="${esc(t('img.rotLeftAria'))}">⟲ <span>${esc(t('img.rotLeft'))}</span></button>
+          <button type="button" class="btn-sec" id="peRight" aria-label="${esc(t('img.rotRightAria'))}">⟳ <span>${esc(t('img.rotRight'))}</span></button>
         </div>
-        <p class="muted small">${kind === 'game' ? 'Così comparirà nell’armadio e sulla TV.' : kind === 'square' ? 'Così comparirà il tuo personaggio.' : 'Se la foto è storta, girala prima di salvarla.'}</p>
-        <button type="button" class="btn btn-block" id="peOk">Usa la foto</button>
+        <p class="muted small">${esc(kind === 'game' ? t('img.hintGame') : kind === 'square' ? t('img.hintSquare') : t('img.hintFree'))}</p>
+        <button type="button" class="btn btn-block" id="peOk">${esc(t('img.use'))}</button>
       </div>`;
     document.body.appendChild(el);
     const prev = el.querySelector('#peImg');
@@ -291,7 +292,7 @@ export async function editPhoto(file, kind = 'free') {
 
 /** Foto di un gioco da file (scelto, incollato, scattato): sempre 640×480, dopo l'eventuale rotazione. */
 export async function gameImage(file, { edit = true } = {}) {
-  if (!file || !String(file.type || '').startsWith('image/')) throw new Error('Il file scelto non è un’immagine.');
+  if (!file || !String(file.type || '').startsWith('image/')) throw new Error(t('img.notImage'));
   if (edit) file = await editPhoto(file, 'game');
   const url = URL.createObjectURL(file);
   try { return drawStandard(await loadAnyImage(url)); } finally { URL.revokeObjectURL(url); }
@@ -303,9 +304,9 @@ export async function gameImage(file, { edit = true } = {}) {
  * comunque nel riquadro standard.
  */
 export async function gameImageFromUrl(url) {
-  if (!/^https?:\/\//i.test(url)) throw new Error('Il link deve iniziare con http:// o https://');
+  if (!/^https?:\/\//i.test(url)) throw new Error(t('img.badLink'));
   try { return { image: drawStandard(await loadAnyImage(url, true)), copied: true }; } catch { /* il sito non permette la copia */ }
-  await loadAnyImage(url).catch(() => { throw new Error('Non riesco ad aprire questa immagine: copia il link diretto della foto (tasto destro › Copia indirizzo immagine).'); });
+  await loadAnyImage(url).catch(() => { throw new Error(t('img.linkUnreadable')); });
   return { image: url, copied: false };
 }
 
@@ -320,7 +321,7 @@ export function gameImageHTML(game, cls = '') {
   if (isImageSource(src)) {
     // Due livelli: sfondo sfocato che riempie il riquadro e foto intera sopra. Ogni foto, di qualsiasi forma,
     // sta nello stesso riquadro senza uscire e senza tagli brutti.
-    return `<div class="game-img ${cls}" data-initials="${esc(initials(game?.name))}"><img class="gi-bg" src="${esc(src)}" alt="" aria-hidden="true" data-fallback="hide" decoding="async" loading="lazy"><img class="gi-fg" src="${esc(src)}" decoding="async" loading="lazy" alt="${esc(game?.name || 'Foto del gioco')}" data-fallback="game"></div>`;
+    return `<div class="game-img ${cls}" data-initials="${esc(initials(game?.name))}"><img class="gi-bg" src="${esc(src)}" alt="" aria-hidden="true" data-fallback="hide" decoding="async" loading="lazy"><img class="gi-fg" src="${esc(src)}" decoding="async" loading="lazy" alt="${esc(game?.name || t('img.gameAlt'))}" data-fallback="game"></div>`;
   }
   return `<div class="game-img game-img--empty ${cls}"><span>${esc(initials(game?.name))}</span></div>`;
 }
@@ -339,7 +340,7 @@ export function connectionStatus(online) {
     if (net.shown) {
       $('#netBanner')?.remove();
       net.shown = false;
-      toast('Di nuovo connesso');
+      toast(t('net.back'));
     }
     net.wasOnline = true;
     return;
@@ -352,7 +353,7 @@ export function connectionStatus(online) {
     el.id = 'netBanner';
     el.className = 'net-banner';
     el.setAttribute('role', 'alert');
-    el.innerHTML = `${ICONS.wifiOff}<span>Connessione persa. I dati restano salvati su questo dispositivo e partono da soli appena torna la rete.</span>`;
+    el.innerHTML = `${ICONS.wifiOff}<span>${esc(t('net.lost'))}</span>`;
     document.body.appendChild(el);
   }, 1500);
 }
@@ -403,8 +404,8 @@ export const ErrLog = {
       app: 'GameNight_Show', versione: APP_VERSION, data: new Date().toISOString(), pagina: location.href.replace(/#.*$/, ''),
       browser: navigator.userAgent, schermo: `${screen.width}×${screen.height} (finestra ${innerWidth}×${innerHeight})`, lingua: navigator.language, ...extra
     };
-    const lines = l.map((e) => `[${new Date(e.t).toLocaleString('it-IT')}] ${e.kind.toUpperCase()}${e.n > 1 ? ` ×${e.n}` : ''} (${e.page}, v${e.v})\n  ${e.msg}${e.stack ? `\n  ${e.stack.replace(/\n/g, '\n  ')}` : ''}`);
-    downloadFile(`gamenight_errori_${new Date().toISOString().slice(0, 10)}.txt`, `${JSON.stringify(head, null, 2)}\n\n${lines.join('\n\n') || 'Nessun errore registrato.'}\n`, 'text/plain');
+    const lines = l.map((e) => `[${new Date(e.t).toLocaleString(locale())}] ${e.kind.toUpperCase()}${e.n > 1 ? ` ×${e.n}` : ''} (${e.page}, v${e.v})\n  ${e.msg}${e.stack ? `\n  ${e.stack.replace(/\n/g, '\n  ')}` : ''}`);
+    downloadFile(`gamenight_errori_${new Date().toISOString().slice(0, 10)}.txt`, `${JSON.stringify(head, null, 2)}\n\n${lines.join('\n\n') || t('errlog.none')}\n`, 'text/plain');
   },
   install() {
     if (this.installed) return;
@@ -447,10 +448,10 @@ export function a11yHTML(id = 'a11y') {
   const a = a11ySettings();
   const sz = (v, l) => `<button type="button" data-a11y-size="${v}" aria-pressed="${a.size === v}">${l}</button>`;
   return `<div class="a11y-box" id="${id}">
-    <div class="seg" role="group" aria-label="Dimensione del testo">${sz('m', 'A')}${sz('l', '<span class="a11y-l-label">A+</span>')}${sz('xl', '<span class="a11y-xl-label">A++</span>')}</div>
-    <label class="quick-toggle"><input type="checkbox" data-a11y="contrast" ${a.contrast ? 'checked' : ''}><span>Alto contrasto</span></label>
-    <label class="quick-toggle"><input type="checkbox" data-a11y="cb" ${a.cb ? 'checked' : ''}><span>Colori adatti ai daltonici</span></label>
-    <label class="quick-toggle"><input type="checkbox" data-a11y="motion" ${a.motion ? 'checked' : ''}><span>Meno animazioni</span></label>
+    <div class="seg" role="group" aria-label="${esc(t('a11y.size'))}">${sz('m', 'A')}${sz('l', '<span class="a11y-l-label">A+</span>')}${sz('xl', '<span class="a11y-xl-label">A++</span>')}</div>
+    <label class="quick-toggle"><input type="checkbox" data-a11y="contrast" ${a.contrast ? 'checked' : ''}><span>${esc(t('a11y.contrast'))}</span></label>
+    <label class="quick-toggle"><input type="checkbox" data-a11y="cb" ${a.cb ? 'checked' : ''}><span>${esc(t('a11y.cb'))}</span></label>
+    <label class="quick-toggle"><input type="checkbox" data-a11y="motion" ${a.motion ? 'checked' : ''}><span>${esc(t('a11y.motion'))}</span></label>
   </div>`;
 }
 document.addEventListener('click', (e) => {
@@ -556,7 +557,7 @@ export function showFatal(container, title, message) {
       <div class="card fatal-card">
         <h1>${esc(title)}</h1>
         <p>${esc(message)}</p>
-        <button class="btn" type="button" data-reload>Ricarica la pagina</button>
+        <button class="btn" type="button" data-reload>${esc(t('common.reload'))}</button>
       </div>
     </div>`;
   container.querySelector('[data-reload]')?.addEventListener('click', () => location.reload());
@@ -566,9 +567,8 @@ export function showNotConfigured(container) {
   container.innerHTML = `
     <div class="fatal">
       <div class="card fatal-card">
-        <h1>Manca la configurazione</h1>
-        <p>Apri il file <code>js/config.js</code> e incolla i dati del tuo progetto Firebase.
-        Trovi la guida passo passo nel README del progetto.</p>
+        <h1>${esc(t('cfg.missingTitle'))}</h1>
+        <p>${t('cfg.missingText')}</p>
       </div>
     </div>`;
 }
@@ -593,11 +593,11 @@ export function downloadFile(filename, content, type = 'text/plain') {
 export async function saveInApp(blob, filename, { mode = 'save', text = '' } = {}) {
   try {
     const r = await nativeFile(blob, filename, { mode, title: 'GameNight Show', text });
-    if (r.result === 'saved') toast(`Salvato in ${r.where}`);
+    if (r.result === 'saved') toast(t('file.savedIn', { where: r.where }));
     return r.result;
   } catch (err) {
     console.error(err);
-    toast('Non sono riuscito a salvare il file.', 'error');
+    toast(t('file.saveFailed'), 'error');
     return 'error';
   }
 }
@@ -677,8 +677,8 @@ async function checkVersion() {
       el.id = 'updBanner';
       el.className = 'upd-banner';
       el.setAttribute('role', 'status');
-      el.innerHTML = `<span>È disponibile la versione ${esc(version)} del sito.</span><button type="button" class="btn-sec btn-sec--sm" data-upd>Aggiorna</button>`
-        + '<button type="button" class="upd-x" aria-label="Più tardi" title="Più tardi">✕</button>';
+      el.innerHTML = `<span>${esc(t('upd.web.available', { v: version }))}</span><button type="button" class="btn-sec btn-sec--sm" data-upd>${esc(t('upd.web.reload'))}</button>`
+        + `<button type="button" class="upd-x" aria-label="${esc(t('common.later'))}" title="${esc(t('common.later'))}">✕</button>`;
       el.querySelector('[data-upd]').addEventListener('click', () => location.reload());
       // "Più tardi": il pulsante non deve mai coprire i comandi (per esempio "Entra in partita").
       el.querySelector('.upd-x').addEventListener('click', () => { try { sessionStorage.setItem('gnr_upd_hide', version); } catch { /* niente */ } el.remove(); });
@@ -710,19 +710,31 @@ const THEME_KEY = 'gnr_theme';
 // La TV ha una scelta tutta sua (e di partenza il tema "Show": luci basse e neon da studio televisivo).
 const onTV = () => typeof document !== 'undefined' && document.documentElement.classList.contains('tv');
 const themeKey = () => (onTV() ? 'gnr_theme_tv' : THEME_KEY);
+// Dalla 1.4 il tema "Show" (viola profondo, quello del nuovo logo) è il predefinito su tutti i dispositivi.
+// Chi aveva il vecchio "Automatico" (salvato da solo alla prima apertura) passa una volta a "Show";
+// chi aveva scelto Giorno o Notte li tiene.
+function migrateTheme() {
+  try {
+    if (localStorage.getItem('gnr_theme_v') === '2') return;
+    if (localStorage.getItem(THEME_KEY) === 'auto') localStorage.setItem(THEME_KEY, 'show');
+    localStorage.setItem('gnr_theme_v', '2');
+  } catch { /* niente */ }
+}
 export function themeChoice() {
+  migrateTheme();
   let c = null;
   try { c = localStorage.getItem(themeKey()); } catch { /* niente */ }
-  if (c === 'show' && !onTV()) c = 'night';
-  return c || (onTV() ? 'show' : 'auto');
+  return ['show', 'day', 'night', 'auto'].includes(c) ? c : 'show';
 }
 export function applyTheme(choice = themeChoice()) {
   try { localStorage.setItem(themeKey(), choice); } catch { /* niente */ }
+  // Sulla TV "Show" accende anche la scenografia da studio televisivo; sugli altri schermi è il tema scuro.
   const show = choice === 'show' && onTV();
-  const night = show || choice === 'night' || (choice === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const night = choice === 'show' || choice === 'night' || (choice === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = night ? 'night' : 'day';
   document.documentElement.classList.toggle('theme-show', show);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', show ? '#120A26' : night ? '#15112B' : '#FFF4DE');
+  document.documentElement.classList.toggle('theme-show-ui', choice === 'show');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', night ? '#0E0A26' : '#F3F0FF');
   window.dispatchEvent(new CustomEvent('gnr-theme', { detail: choice }));
 }
 export const isShowTheme = () => typeof document !== 'undefined' && document.documentElement.classList.contains('theme-show');
@@ -732,7 +744,7 @@ if (typeof window !== 'undefined' && window.matchMedia) {
 export function themeSwitchHTML(id = 'themeSwitch') {
   const c = themeChoice();
   const opt = (v, label) => `<button type="button" data-theme-set="${v}" aria-pressed="${c === v}">${label}</button>`;
-  return `<div class="seg" id="${id}" role="group" aria-label="Tema">${onTV() ? opt('show', 'Show') : ''}${opt('day', 'Giorno')}${opt('night', 'Notte')}${opt('auto', 'Automatico')}</div>`;
+  return `<div class="seg" id="${id}" role="group" aria-label="${esc(t('theme.label'))}">${opt('show', t('theme.show'))}${opt('day', t('theme.day'))}${opt('night', t('theme.night'))}${opt('auto', t('theme.auto'))}</div>`;
 }
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (e) => {
@@ -752,7 +764,7 @@ export function toastUndo(message, onUndo, ms = 9000) {
   const el = document.createElement('div');
   el.className = 'undo-toast';
   el.setAttribute('role', 'status');
-  el.innerHTML = `<span></span><button type="button" class="btn-sec btn-sec--sm" data-undo>Annulla</button><button type="button" class="undo-x" aria-label="Chiudi l’avviso (non annulla niente)" title="Chiudi l’avviso">✕</button>`;
+  el.innerHTML = `<span></span><button type="button" class="btn-sec btn-sec--sm" data-undo>${esc(t('common.undo'))}</button><button type="button" class="undo-x" aria-label="${esc(t('undo.closeAria'))}" title="${esc(t('undo.close'))}">✕</button>`;
   el.querySelector('span').textContent = message;
   const timer = setTimeout(() => el.remove(), ms);
   el.querySelector('[data-undo]').addEventListener('click', () => {
@@ -779,7 +791,7 @@ export async function watchBattery() {
       document.documentElement.classList.toggle('save-power', low);
       if (low && bat.level < warned - 0.04) {
         warned = bat.level;
-        toast(`Batteria al ${Math.round(bat.level * 100)}%: collega il caricatore. Le animazioni sono ridotte per risparmiare.`, 'warn');
+        toast(t('battery.low', { n: Math.round(bat.level * 100) }), 'warn');
       }
       if (bat.charging) warned = 1;
     };
@@ -818,7 +830,7 @@ export async function squarePhoto(file, { edit = true } = {}) {
       while (out.length > 100000 && q > 0.4) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
       resolve(out);
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Foto non leggibile')); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(t('common.photoUnreadable'))); };
     img.src = url;
   });
 }

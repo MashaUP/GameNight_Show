@@ -72,6 +72,13 @@ check('un altro NON rimette serate', base(), 'p1', 'set', '/groups/GRP123/nights
 check('una TV che non è admin NON salva serate nel gruppo', base(), 'host', 'set', '/groups/GRP123/nights/ABCD', { at: 5, games: {} }, false);
 check('logo con < rifiutato', base(), 'p1', 'set', '/groups/GRP123/identity', { logo: 'data:image/svg+xml,<svg onload=alert(1)>' }, false);
 check('profilo con colore non valido rifiutato', base(), 'p1', 'set', '/members/ABC123', { name: 'A', groupId: 'GRP123', style: 'adventurer', seed: 'x', color: 'url(x)' }, false);
+// Vecchi profili di gruppo (members): nessuno li cancella o li sposta in un altro gruppo (1.4)
+const withMember = () => ({ ...base(), members: { ABC123: { name: 'Anna', groupId: 'GRP123', style: 'adventurer', seed: 'x', color: '#FF5A4E' } } });
+check('profilo di gruppo: aggiornamento del nome', withMember(), 'p1', 'update', '/members/ABC123', { name: 'Annina' }, true);
+check('profilo di gruppo: un altro NON lo cancella', withMember(), 'p2', 'set', '/members/ABC123', null, false);
+check('profilo di gruppo: NON si sposta in un altro gruppo', withMember(), 'p2', 'update', '/members/ABC123', { groupId: 'ALTRO1' }, false);
+check('profilo di gruppo: il proprietario del gruppo lo cancella', withMember(), 'owner', 'set', '/members/ABC123', null, true);
+check('profilo di gruppo nuovo', base(), 'p1', 'set', '/members/NEW123', { name: 'Carla', groupId: 'GRP123', style: 'adventurer', seed: 'x', color: '#FF5A4E' }, true);
 
 // --- 2.6: anti-spam, gruppo solo ai membri, profili ricordati dal telefono ---
 const TS = { '.sv': 'timestamp' };

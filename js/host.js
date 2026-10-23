@@ -44,7 +44,8 @@ import { commentatorMode, setCommentatorMode, COMMENTATOR_MODES, revealComment, 
 import { reportHTML, printReport } from './report.js';
 import { Vault, checksum, sealBackup, validateBackup, storageInfo, askPersistence } from './vault.js';
 import { isSafeMode, setSafeMode, watchErrors } from './safe.js';
-import { trophies, affinities, lastPlayed, freshnessLabel, personKey } from './stats.js';
+import { trophies, affinities, lastPlayed, freshnessLabel, personKey, awardTitle } from './stats.js';
+import { t as tr, has as trHas } from './i18n.js';
 
 const app = $('#app');
 const STORE_KEY = 'gnr_host_room';
@@ -3181,7 +3182,8 @@ function trophyBadges(p) {
   return `${t.crown ? `<span class="trophy trophy--crown" title="MVP della serata precedente">${ICONS.crown}</span>` : ''}${t.star ? `<span class="trophy trophy--star" title="MVP di sempre">${ICONS.star}</span>` : ''}`;
 }
 function trophyTitle(p) {
-  return trophyMap()[personKey(p)]?.title || '';
+  const k = trophyMap()[personKey(p)]?.title;
+  return k ? awardTitle(k) : '';
 }
 
 function hasVoted(uid) {
@@ -5097,7 +5099,8 @@ function processBuzz() {
     if (Number(b?.at) && Date.now() - Number(b.at) > 60000) continue;
     const who = S.players[b?.by]?.name || 'Qualcuno';
     whistle();
-    setPaused(true, `Time-out chiamato da ${who}${b?.reason ? `: ${String(b.reason).slice(0, 40)}` : ''}`).catch(() => {});
+    const why = b?.reason ? (trHas(`timeout.${b.reason}`) ? tr(`timeout.${b.reason}`) : String(b.reason).slice(0, 40)) : '';
+    setPaused(true, `Time-out chiamato da ${who}${why ? `: ${why}` : ''}`).catch(() => {});
   }
 }
 
@@ -6315,7 +6318,7 @@ SCREENS.alltime = {
     if (!n) { this.view = 'memories'; this.paintMemories(); return; }
     const names = Object.fromEntries(Object.entries(n.people || {}).map(([k, pp]) => [k, pp.name]));
     const titles = {};
-    for (const [k, ts] of Object.entries(n.titles || {})) for (const tt of (Array.isArray(ts) ? ts : Object.values(ts))) (titles[tt] ||= []).push(names[k] || k);
+    for (const [k, ts] of Object.entries(n.titles || {})) for (const tt of (Array.isArray(ts) ? ts : Object.values(ts))) (titles[awardTitle(tt)] ||= []).push(names[k] || k);
     const imgByKey = Object.fromEntries(libraryItems().map((it) => [dbKey(it.name), it]));
     const games = [...n.gamesSorted].sort((a, b) => (b.n ? b.sum / b.n : 0) - (a.n ? a.sum / a.n : 0)).map((g, i) => `
       <li class="brow brow--at brow--r${Math.min(i + 1, 4)}">

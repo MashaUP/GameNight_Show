@@ -1,0 +1,27 @@
+# Pubblica il proxy BoardGameGeek (cartella bgg-proxy) su Cloudflare Workers.
+# Facoltativo, si avvia solo a mano (Actions › Proxy BGG › Run workflow).
+# Serve il segreto del repository CLOUDFLARE_API_TOKEN (token Cloudflare con "Edit Cloudflare Workers").
+# Il token di BoardGameGeek NON passa da qui: è un segreto del Worker (npx wrangler secret put BGG_TOKEN).
+name: Proxy BGG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Prove del proxy
+        run: node --test bgg-proxy/test/worker.test.mjs
+      - name: Pubblica su Cloudflare
+        working-directory: bgg-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "Manca il segreto CLOUDFLARE_API_TOKEN (vedi bgg-proxy/README.md)"; exit 1; fi
+          npx --yes wrangler@4 deploy

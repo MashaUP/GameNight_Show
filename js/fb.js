@@ -4,6 +4,7 @@ import {
   getDatabase, ref, onValue, get, set, update, remove, push, serverTimestamp, onDisconnect
 } from '../vendor/firebase.js';
 import { firebaseConfig } from './config.js';
+import { t } from './i18n.js';
 
 export { ref, onValue, get, set, update, remove, push, serverTimestamp };
 
@@ -107,17 +108,9 @@ export function roomRef(code, path = '') {
 export function explainError(err) {
   if (err?.user) return err.message;
   const code = String(err?.code || err?.message || err || '');
-  if (code.includes('admin-restricted-operation') || code.includes('operation-not-allowed')) {
-    return "L'accesso anonimo non è attivo su Firebase. Apri Authentication › Metodo di accesso e abilita “Anonimo”.";
-  }
-  if (code.includes('unauthorized-domain')) {
-    return 'Questo indirizzo non è autorizzato su Firebase. Aggiungilo in Authentication › Impostazioni › Domini autorizzati.';
-  }
-  if (code.toLowerCase().includes('permission')) {
-    return 'Il database ha rifiutato l’operazione. Controlla di aver pubblicato le regole di database.rules.json.';
-  }
-  if (code.includes('network')) {
-    return 'Connessione assente. Controlla il wifi e riprova.';
-  }
-  return 'Qualcosa non ha funzionato (' + code + '). Ricarica la pagina e riprova.';
+  if (code.includes('admin-restricted-operation') || code.includes('operation-not-allowed')) return t('fb.err.anon');
+  if (code.includes('unauthorized-domain')) return t('fb.err.domain');
+  if (code.toLowerCase().includes('permission')) return t('fb.err.permission');
+  if (code.includes('network')) return t('fb.err.network');
+  return t('fb.err.other', { code });
 }

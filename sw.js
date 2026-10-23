@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '1.3.1';
+const VERSION = '1.5.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261010e';
+const BUILD = '20261023a';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -13,6 +13,10 @@ const SHELL = [
   "test.html",
   "manifest.webmanifest",
   "css/style.css",
+  "css/ui.css",
+  "js/i18n.js",
+  "js/lang/it.js",
+  "js/lang/en.js",
   "ludoteca.html",
   "armadio.html",
   "js/armadio.js",
@@ -58,11 +62,20 @@ const SHELL = [
   "js/stale.js",
   "js/native.js",
   "js/site.js",
+  "js/services.js",
+  "js/links.js",
+  "js/links-core.js",
+  "js/links-policy.js",
+  "config/links.json",
+  "go.html",
+  "js/go.js",
   "vendor/dicebear.js",
   "vendor/firebase.js",
   "vendor/qrcode.js",
-  "assets/favicon.svg",
-  "assets/logo-mark.svg",
+  "assets/favicon-32.png",
+  "assets/favicon-48.png",
+  "assets/brand/logo-256.webp",
+  "assets/brand/logo-512.webp",
   "assets/icon-192.png",
   "assets/icon-512.png",
   "assets/apple-touch-icon.png",

@@ -1,27 +1,74 @@
 // Pagina iniziale (sito e app Android): profilo personale, ingresso nelle serate, armadi, gruppi e impostazioni.
 // Il profilo personale (js/person.js) è lo stesso su tutti i dispositivi collegati.
+// Sezioni (viste) con l'indirizzo dopo #: home, armadi, serate, gruppi, altro. Barra laterale sul computer,
+// barra in basso sul telefono. Tutti i testi vengono da js/lang/<lingua>.js.
 import {
-  $, esc, normalizeCode, registerSW, applyTheme, ErrLog, toast, themeSwitchHTML, a11yHTML, PLAYER_COLORS,
+  $, $$, esc, normalizeCode, registerSW, applyTheme, ErrLog, toast, themeSwitchHTML, a11yHTML, PLAYER_COLORS,
   squarePhoto, qrSVG, cleanName, param, randomCode, userError
 } from './util.js';
+import { t, fmtDate, langSwitchHTML, applyStatic } from './i18n.js';
 import { isConfigured, connect, get, set, dbRef, roomRef, groupRef, memberRef, armadioRef, onValue, explainError } from './fb.js';
-import { Person, parseLinkCode, personKeysFor, mergedNights, lookOf } from './person.js';
+import { Person, parseLinkCode, personKeysFor, mergedNights } from './person.js';
 import { avatarHTML, avatarOptions, avatarUri } from './avatars.js';
 import { progressFor, ACHIEVEMENTS } from './stats.js';
 import { isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
 import { mountUpdatePanel, autoCheck } from './updates.js';
+import { links, bindLinks, refreshLinks } from './links.js';
+import { APP_VERSION } from './version.js';
 
 ErrLog.install();
 applyTheme();
 registerSW();
 
-const H = { uid: null, online: false, groupStops: [] };
+const H = { uid: null, online: false, groupStops: [], groups: {}, view: 'home', appPanel: null, appFull: null };
 const CODE6 = /^[A-Z0-9]{6}$/;
+const VIEWS = ['home', 'armadi', 'serate', 'gruppi', 'altro'];
 const ls = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* niente */ } },
   json(k, fb) { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fb; } catch { return fb; } }
 };
+
+// ---------------------------------------------------------------------------
+// Sezioni: #home, #armadi, #serate, #gruppi, #altro (il tasto Indietro torna alla home)
+// ---------------------------------------------------------------------------
+
+function viewFromHash() {
+  const h = location.hash.replace(/^#/, '');
+  return VIEWS.includes(h) ? h : 'home';
+}
+function showView(v, { focus = false } = {}) {
+  H.view = v;
+  for (const el of $$('.view')) el.hidden = el.dataset.view !== v;
+  for (const a of $$('[data-nav]')) {
+    const on = a.dataset.nav === v;
+    a.classList.toggle('is-on', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+  document.body.dataset.view = v;
+  if (v === 'altro') mountAppFull();
+  if (focus) {
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    const h = $(`.view[data-view="${v}"] h1, .view[data-view="${v}"] h2`);
+    if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+  }
+}
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); return; }
+  const l = parseLinkCode(location.hash);
+  if (l) { history.replaceState(null, '', location.pathname); H.ready?.then(() => askLink(l)); return; }
+  showView(viewFromHash(), { focus: true });
+});
+// Tasto Indietro di Android: da una sezione si torna alla home, dalla home l'app va in secondo piano.
+window.addEventListener('gnr:back', (e) => {
+  if (H.view !== 'home') { e.preventDefault(); location.hash = '#home'; }
+});
+document.addEventListener('click', (e) => {
+  const o = e.target.closest('[data-open]');
+  if (!o) return;
+  if (o.dataset.open === 'settings') openSettings();
+  else if (o.dataset.open === 'updates') openUpdates(true);
+});
 
 // ---------------------------------------------------------------------------
 // Finestre dal basso (stesso aspetto del telefono durante la serata)
@@ -39,6 +86,8 @@ const Sheet = {
     this.el = el;
     this.onClose = onClose || null;
     this.last = document.activeElement;
+    const title = el.querySelector('h2');
+    if (title) { title.id ||= 'sheetTitle'; el.firstElementChild.setAttribute('aria-labelledby', title.id); }
     requestAnimationFrame(() => el.querySelector('input:not([type=file]), button:not([data-close])')?.focus({ preventScroll: true }));
     return el;
   },
@@ -51,8 +100,19 @@ const Sheet = {
     this.last?.focus?.({ preventScroll: true });
   }
 };
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Sheet.el) { e.preventDefault(); Sheet.close(); } });
-const head = (title) => `<div class="panel-head"><h2>${title}</h2><button type="button" class="icon-btn" data-close aria-label="Chiudi">✕</button></div>`;
+document.addEventListener('keydown', (e) => {
+  if (!Sheet.el) return;
+  if (e.key === 'Escape') { e.preventDefault(); Sheet.close(); return; }
+  // Il fuoco resta dentro la finestra
+  if (e.key === 'Tab') {
+    const f = [...Sheet.el.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type=file]), select, textarea, summary, label[for]')].filter((x) => x.getClientRects().length);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+const head = (title) => `<div class="panel-head"><h2>${title}</h2><button type="button" class="icon-btn" data-close aria-label="${esc(t('common.close'))}">✕</button></div>`;
 
 // ---------------------------------------------------------------------------
 // Entra in una serata: prima il QR (nell'app e sui telefoni), poi il codice
@@ -63,13 +123,13 @@ input.addEventListener('input', () => { input.value = normalizeCode(input.value)
 $('#joinForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const code = normalizeCode(input.value);
-  if (code.length !== 4) { $('#homeErr').textContent = 'Il codice ha 4 caratteri: lo trovi sulla TV.'; input.focus(); return; }
+  if (code.length !== 4) { $('#homeErr').textContent = t('home.join.errLen'); input.focus(); return; }
   location.href = `play.html?room=${code}`;
 });
 const touch = window.matchMedia('(pointer: coarse)').matches;
 if (canScanQR() && (isApp() || touch)) {
   $('#scanBtn').hidden = false;
-  $('#codeLabel').textContent = 'oppure scrivi il codice che vedi sulla TV';
+  $('#codeLabel').textContent = t('home.join.codeOr');
   $('#scanBtn').addEventListener('click', scanAndGo);
 }
 async function scanAndGo() {
@@ -79,10 +139,10 @@ async function scanAndGo() {
   if (link) { askLink(link); return; }
   const to = routeFromQR(text);
   if (to) location.href = to;
-  else toast('Questo QR non è di GameNight Show.', 'warn');
+  else toast(t('home.join.notOurQR'), 'warn');
 }
 
-/** "Rientra nella serata": solo se la stanza esiste ancora (mai dentro una serata finita senza volerlo). */
+/** "Rientra nella serata" e "La tua regia": solo se la stanza esiste ancora (mai dentro una serata finita senza volerlo). */
 async function paintBack() {
   const last = normalizeCode(ls.get('gnr_room'));
   const hostRoom = normalizeCode(ls.get('gnr_host_room'));
@@ -90,9 +150,10 @@ async function paintBack() {
   if (hostRoom.length === 4 && H.uid) {
     const meta = (await get(roomRef(hostRoom, 'meta')).catch(() => null))?.val();
     if (meta && meta.hostUid === H.uid) {
-      $('#createTitle').textContent = `📺 La tua regia: stanza ${hostRoom}`;
-      $('#createTxt').textContent = `${meta.groupName || 'Serata'}: la serata è ancora aperta.`;
-      $('#createGo').textContent = 'Torna alla regia';
+      $('#tileHost').classList.add('tile--live');
+      $('#createTitle').textContent = t('home.host.liveTitle');
+      $('#createTxt').innerHTML = `<span class="live-dot" aria-hidden="true"></span> ${esc(t('home.host.liveText', { code: hostRoom, group: meta.groupName || t('home.host.noGroup') }))}`;
+      $('#createGo').textContent = t('home.host.back');
     }
   }
   if (last.length !== 4) return;
@@ -106,10 +167,10 @@ async function paintBack() {
     ]);
     if (!meta) { input.value = ''; return; }
     const done = state?.phase === 'awards' && state?.done;
-    box.innerHTML = `<a class="hub-back-link" href="play.html?room=${esc(last)}">
-      ${me ? avatarHTML(me, '2.4rem') : '<span class="hub-ico" aria-hidden="true">↩️</span>'}
-      <span><b>${done ? 'Risultati della serata' : 'Rientra nella serata'} ${esc(last)}</b><small>${esc(meta.groupName || 'Serata senza gruppo')}${done ? ' · finita' : ''}</small></span>
-      <span class="hub-go" aria-hidden="true">›</span></a>`;
+    box.innerHTML = `<a class="back-link hub-back-link" href="play.html?room=${esc(last)}">
+      ${me ? avatarHTML(me, '2.6rem') : '<span class="tile-ico tile-ico--sun" aria-hidden="true">↩️</span>'}
+      <span class="mini-text"><b>${esc(done ? t('home.back.results', { code: last }) : t('home.back.rejoin', { code: last }))}</b><small>${esc(meta.groupName || t('home.back.noGroup'))}${done ? ` · ${esc(t('home.back.ended'))}` : ''}</small></span>
+      <span class="mini-go" aria-hidden="true">›</span></a>`;
     box.hidden = false;
   } catch { /* stanza non leggibile: niente scorciatoia */ }
 }
@@ -118,49 +179,64 @@ async function paintBack() {
 // Profilo personale
 // ---------------------------------------------------------------------------
 
-function paintMe(state = Person.data) {
-  const box = $('#hubMe');
-  if (!isConfigured) {
-    box.innerHTML = '<p class="muted">Profilo non disponibile: Firebase non è ancora configurato (vedi README).</p>';
-    return;
-  }
+function paintHero(d) {
+  const name = d?.info?.name;
+  $('#heroTitle').textContent = name ? t('home.hero.hello', { name }) : t('home.hero.welcome');
+}
+
+function meStats(d) {
+  const groups = Object.keys(d?.groups || {}).length;
+  const arms = armadiList().length;
+  const nights = historyList().length;
+  const stat = (n, label) => `<div class="stat"><b>${n}</b><span>${esc(label)}</span></div>`;
+  return `<div class="stats">${stat(nights, t('home.me.statNights', { n: nights }))}${stat(groups, t('home.me.statGroups', { n: groups }))}${stat(arms, t('home.me.statArmadi', { n: arms }))}</div>`;
+}
+
+/** Riquadro del profilo: compatto nella home (full=false), completo in "Profilo e app". */
+function meHTML(state, full) {
+  if (!isConfigured) return `<p class="muted">${esc(t('home.me.noFirebase'))}</p>`;
   if (state?.revoked || state?.missing) {
-    box.innerHTML = `
-      <h2>👤 Il tuo profilo</h2>
-      <p>${state.revoked ? 'Questo dispositivo è stato scollegato dal profilo da un altro dispositivo.' : 'Il profilo salvato qui non esiste più.'}</p>
-      <div class="hub-row"><button type="button" class="btn" data-act="create">Crea un profilo</button><button type="button" class="btn-sec" data-act="link">🔗 Collega un profilo</button></div>`;
-    return;
+    return `<div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">👤</span><div><h2>${esc(t('home.me.title'))}</h2><p class="tile-sub">${esc(state.revoked ? t('home.me.revoked') : t('home.me.missing'))}</p></div></div>
+      <div class="btn-row"><button type="button" class="ui-btn ui-btn--primary" data-act="create">${esc(t('home.me.create'))}</button><button type="button" class="ui-btn ui-btn--ghost" data-act="link">🔗 ${esc(t('home.me.link'))}</button></div>`;
   }
   const d = state?.info ? state : null;
   if (!d) {
-    box.innerHTML = `
-      <div class="hub-me-new">
-        <span class="hub-ico hub-ico--lg" aria-hidden="true">👤</span>
-        <div><h2>Il tuo profilo</h2><p class="muted">Nome e personaggio pronti per ogni serata, con traguardi e armadi su tutti i tuoi dispositivi (sito e app).</p></div>
-      </div>
-      <div class="hub-row">
-        <button type="button" class="btn" data-act="create">✨ Crea il profilo</button>
-        <button type="button" class="btn-sec" data-act="link">🔗 Ce l’ho già</button>
+    return `<div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">👤</span><div><h2>${esc(t('home.me.title'))}</h2><p class="tile-sub">${esc(t('home.me.intro'))}</p></div></div>
+      <div class="btn-row">
+        <button type="button" class="ui-btn ui-btn--primary" data-act="create">✨ ${esc(t('home.me.createShort'))}</button>
+        <button type="button" class="ui-btn ui-btn--ghost" data-act="link">🔗 ${esc(t('home.me.have'))}</button>
       </div>`;
-    return;
   }
-  const groups = Object.keys(d.groups || {}).length;
-  const arms = Object.keys(d.armadi || {}).length;
-  box.innerHTML = `
-    <div class="hub-me-row">
-      <button type="button" class="hub-av" data-act="edit" aria-label="Modifica il profilo">${avatarHTML(d.info, '4.2rem', 'avatar--shadow')}<i aria-hidden="true">✏️</i></button>
-      <div class="hub-me-text">
-        <span class="hub-hello">Ciao,</span>
-        <b class="hub-name">${esc(d.info.name)}</b>
-        ${d.info.motto ? `<span class="muted small">“${esc(d.info.motto)}”</span>` : ''}
-        <span class="hub-meta">${groups} ${groups === 1 ? 'gruppo' : 'gruppi'} · ${arms} ${arms === 1 ? 'armadio' : 'armadi'} · ${d.devices || 1} ${d.devices === 1 || !d.devices ? 'dispositivo' : 'dispositivi'}</span>
+  const devices = d.devices || 1;
+  return `
+    <div class="me-row">
+      <button type="button" class="me-av hub-av" data-act="edit" aria-label="${esc(t('home.me.editAria'))}">${avatarHTML(d.info, full ? '4.6rem' : '3.6rem', 'avatar--shadow')}<i aria-hidden="true">✏️</i></button>
+      <div class="me-text">
+        <b class="me-name hub-name">${esc(d.info.name)}</b>
+        ${d.info.motto ? `<span class="me-motto">“${esc(d.info.motto)}”</span>` : ''}
+        <span class="me-meta">${esc(t('home.me.devices', { n: devices }))}</span>
       </div>
     </div>
-    <div class="hub-row hub-row--3">
-      <button type="button" class="btn-sec btn-sec--sm" data-act="edit">✏️ <span>Modifica</span></button>
-      <button type="button" class="btn-sec btn-sec--sm" data-act="trophies">🏆 <span>Traguardi</span></button>
-      <button type="button" class="btn-sec btn-sec--sm" data-act="share" title="Usa il profilo su un altro dispositivo">🔗 <span>Dispositivi</span></button>
-    </div>`;
+    ${meStats(d)}
+    ${full ? `<div class="btn-row btn-row--3">
+      <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="edit">✏️ <span>${esc(t('home.me.edit'))}</span></button>
+      <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="trophies">🏆 <span>${esc(t('home.me.trophies'))}</span></button>
+      <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="share" title="${esc(t('home.me.devicesHint'))}">🔗 <span>${esc(t('home.me.devicesBtn'))}</span></button>
+    </div>` : `<a class="ui-btn ui-btn--ghost ui-btn--block ui-btn--sm" href="#altro">${esc(t('home.me.open'))}</a>`}`;
+}
+
+function paintMe(state = Person.data) {
+  $('#hubMe').innerHTML = meHTML(state, false);
+  $('#hubMeFull').innerHTML = `<h2 class="sr-only">${esc(t('home.me.title'))}</h2>${meHTML(state, true)}`;
+  paintHero(state?.info ? state : null);
+  paintSideFoot(state);
+}
+
+function paintSideFoot(state = Person.data) {
+  const d = state?.info ? state : null;
+  $('#sideFoot').innerHTML = `
+    ${d ? `<a class="side-me" href="#altro">${avatarHTML(d.info, '2.4rem')}<span><b>${esc(d.info.name)}</b><small>${esc(t('home.side.profile'))}</small></span></a>` : ''}
+    <button type="button" class="side-ver" data-open="updates"><span>${esc(t('home.side.version', { v: APP_VERSION }))}</span><small>${esc(isApp() ? t('upd.check') : t('home.side.app'))}</small></button>`;
 }
 
 document.addEventListener('click', (e) => {
@@ -187,31 +263,31 @@ function openEditor(info) {
   };
   if (info) f.options[0] = { style: info.style, seed: info.seed };
   const el = Sheet.open(`
-    ${head(info ? 'Il tuo profilo' : 'Crea il tuo profilo')}
+    ${head(esc(info ? t('home.ed.titleEdit') : t('home.ed.titleNew')))}
     <div class="hub-ed-top"><span id="edPrev"></span>
-      <div class="field"><label for="edName">Il tuo nome</label><input class="input" id="edName" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="Es. Giulia" value="${esc(f.name)}"></div>
+      <div class="field"><label for="edName">${esc(t('home.ed.name'))}</label><input class="input" id="edName" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="${esc(t('home.ed.namePh'))}" value="${esc(f.name)}"></div>
     </div>
-    <div class="ph-row"><h3>Personaggio</h3><button type="button" class="btn-sec btn-sec--sm" id="edMore">🔄 <span>Altri</span></button></div>
-    <div class="av-grid av-grid--sm" id="edGrid" role="radiogroup" aria-label="Personaggio"></div>
+    <div class="ph-row"><h3>${esc(t('home.ed.character'))}</h3><button type="button" class="btn-sec btn-sec--sm" id="edMore">🔄 <span>${esc(t('home.ed.more'))}</span></button></div>
+    <div class="av-grid av-grid--sm" id="edGrid" role="radiogroup" aria-label="${esc(t('home.ed.character'))}"></div>
     <div class="av-tools">
-      <label class="btn-sec btn-sec--sm" for="edSelfie">📷 <span>Selfie</span></label><input type="file" id="edSelfie" accept="image/*" capture="user" class="sr-only">
-      <label class="btn-sec btn-sec--sm" for="edGallery">🖼️ <span>Dalla galleria</span></label><input type="file" id="edGallery" accept="image/*" class="sr-only">
-      <button type="button" class="link-btn" id="edNoPhoto" ${f.photo ? '' : 'hidden'}>Togli la foto</button>
+      <label class="btn-sec btn-sec--sm" for="edSelfie">📷 <span>${esc(t('home.ed.selfie'))}</span></label><input type="file" id="edSelfie" accept="image/*" capture="user" class="sr-only">
+      <label class="btn-sec btn-sec--sm" for="edGallery">🖼️ <span>${esc(t('home.ed.gallery'))}</span></label><input type="file" id="edGallery" accept="image/*" class="sr-only">
+      <button type="button" class="link-btn" id="edNoPhoto" ${f.photo ? '' : 'hidden'}>${esc(t('home.ed.noPhoto'))}</button>
     </div>
-    <h3>Il tuo colore</h3>
-    <div class="swatches" id="edColors" role="radiogroup" aria-label="Colore"></div>
-    <div class="field field--stack"><label for="edMotto">Motto <span class="muted">(facoltativo, compare sulla TV)</span></label><input class="input" id="edMotto" maxlength="40" autocomplete="off" placeholder="Es. Stavolta vinco io" value="${esc(f.motto)}"></div>
+    <h3>${esc(t('home.ed.color'))}</h3>
+    <div class="swatches" id="edColors" role="radiogroup" aria-label="${esc(t('home.ed.colorAria'))}"></div>
+    <div class="field field--stack"><label for="edMotto">${esc(t('home.ed.motto'))} <span class="muted">${esc(t('home.ed.mottoHint'))}</span></label><input class="input" id="edMotto" maxlength="40" autocomplete="off" placeholder="${esc(t('home.ed.mottoPh'))}" value="${esc(f.motto)}"></div>
     <p class="form-error" id="edErr" role="alert"></p>
-    <button type="button" class="btn btn-block" id="edSave">${info ? 'Salva' : 'Crea il profilo'}</button>
-    ${info ? '' : '<p class="muted small">Lo usi in tutte le serate senza riscriverlo. Per usarlo anche su un altro dispositivo: "🔗 Dispositivi".</p>'}`, { wide: true });
+    <button type="button" class="btn btn-block" id="edSave">${esc(info ? t('common.save') : t('home.ed.create'))}</button>
+    ${info ? '' : `<p class="muted small">${esc(t('home.ed.newHint'))}</p>`}`, { wide: true });
   const look = () => {
     const o = f.options[f.pick];
-    return { name: cleanName($('#edName', el).value, 16) || 'Tu', style: o.style, seed: o.seed, color: f.color, photo: f.photo, motto: cleanName($('#edMotto', el).value, 40), opts: f.pick === 0 && info && o.style === info.style && o.seed === info.seed ? f.opts : null };
+    return { name: cleanName($('#edName', el).value, 16) || t('home.ed.you'), style: o.style, seed: o.seed, color: f.color, photo: f.photo, motto: cleanName($('#edMotto', el).value, 40), opts: f.pick === 0 && info && o.style === info.style && o.seed === info.seed ? f.opts : null };
   };
   const paint = () => {
     $('#edPrev', el).innerHTML = avatarHTML(look(), '4.6rem', 'avatar--shadow');
-    $('#edGrid', el).innerHTML = f.options.map((o, i) => `<button type="button" class="av-opt" data-pick="${i}" role="radio" aria-checked="${!f.photo && i === f.pick}" aria-label="Personaggio ${i + 1}" style="--pc:${f.color}"><img src="${esc(avatarUri(o.style, o.seed))}" alt="" draggable="false"></button>`).join('');
-    $('#edColors', el).innerHTML = PLAYER_COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="--sc:${c}" role="radio" aria-checked="${c === f.color}" aria-label="Colore ${c}"></button>`).join('');
+    $('#edGrid', el).innerHTML = f.options.map((o, i) => `<button type="button" class="av-opt" data-pick="${i}" role="radio" aria-checked="${!f.photo && i === f.pick}" aria-label="${esc(t('home.ed.characterN', { n: i + 1 }))}" style="--pc:${f.color}"><img src="${esc(avatarUri(o.style, o.seed))}" alt="" draggable="false"></button>`).join('');
+    $('#edColors', el).innerHTML = PLAYER_COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="--sc:${c}" role="radio" aria-checked="${c === f.color}" aria-label="${esc(t('home.ed.colorN', { c }))}"></button>`).join('');
     $('#edNoPhoto', el).hidden = !f.photo;
   };
   paint();
@@ -227,17 +303,17 @@ function openEditor(info) {
   const take = async (inp) => {
     const file = inp.files[0]; inp.value = '';
     if (!file) return;
-    try { f.photo = await squarePhoto(file); paint(); } catch (err) { if (!err.cancelled) toast(err.message || 'Foto non leggibile', 'error'); }
+    try { f.photo = await squarePhoto(file); paint(); } catch (err) { if (!err.cancelled) toast(err.message || t('common.photoUnreadable'), 'error'); }
   };
   $('#edSelfie', el).addEventListener('change', (e) => take(e.target));
   $('#edGallery', el).addEventListener('change', (e) => take(e.target));
   $('#edName', el).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
   $('#edSave', el).addEventListener('click', async (e) => {
     const name = cleanName($('#edName', el).value, 16);
-    if (!name) { $('#edErr', el).textContent = 'Scrivi il tuo nome.'; $('#edName', el).focus(); return; }
+    if (!name) { $('#edErr', el).textContent = t('home.ed.errName'); $('#edName', el).focus(); return; }
     const btn = e.currentTarget;
     btn.disabled = true;
-    btn.textContent = 'Salvo…';
+    btn.textContent = t('common.saving');
     try {
       await H.ready;
       if (info) await Person.saveLook(look());
@@ -245,11 +321,11 @@ function openEditor(info) {
       ls.set('gnr_name', name);
       Sheet.close();
       paintAll();
-      toast(info ? '✓ Profilo aggiornato su tutti i tuoi dispositivi' : `Ciao, ${name}! Il profilo è pronto.`);
+      toast(info ? `✓ ${t('home.ed.saved')}` : t('home.ed.created', { name }));
     } catch (err) {
       $('#edErr', el).textContent = explainError(err);
       btn.disabled = false;
-      btn.textContent = info ? 'Salva' : 'Crea il profilo';
+      btn.textContent = info ? t('common.save') : t('home.ed.create');
     }
   });
 }
@@ -260,23 +336,23 @@ function openShare() {
   const url = Person.linkUrl();
   const code = Person.linkCode();
   const el = Sheet.open(`
-    ${head('Usa il profilo altrove')}
-    <p>Sull’altro dispositivo apri GameNight Show (sito o app), tocca <b>Il tuo profilo › Ce l’ho già</b> e inquadra questo QR, oppure scrivi il codice.</p>
+    ${head(esc(t('home.share.title')))}
+    <p>${t('home.share.text')}</p>
     <div class="hub-qr">${qrSVG(url)}</div>
-    <p class="hub-link-code"><span class="code-chip">${esc(code)}</span><button type="button" class="btn-sec btn-sec--sm" id="shCopy">Copia</button></p>
-    <p class="muted small">Il codice è come una password: dallo solo ai tuoi dispositivi. Nome, personaggio, traguardi e armadi restano uguali ovunque.</p>
-    <details class="hub-details"><summary>Sicurezza</summary>
-      <p class="muted small">Se qualcuno ha visto il codice, rinnovalo: i dispositivi già collegati restano collegati.</p>
-      <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="shRenew">🔁 Nuovo codice</button><button type="button" class="btn-sec btn-sec--sm" id="shOut">🚪 Scollega questo dispositivo</button></div>
+    <p class="hub-link-code"><span class="code-chip">${esc(code)}</span><button type="button" class="btn-sec btn-sec--sm" id="shCopy">${esc(t('common.copy'))}</button></p>
+    <p class="muted small">${esc(t('home.share.secret'))}</p>
+    <details class="hub-details"><summary>${esc(t('home.share.security'))}</summary>
+      <p class="muted small">${esc(t('home.share.renewHint'))}</p>
+      <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="shRenew">🔁 ${esc(t('home.share.renew'))}</button><button type="button" class="btn-sec btn-sec--sm" id="shOut">🚪 ${esc(t('home.share.signOut'))}</button></div>
     </details>`);
   $('#shCopy', el).addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(code); toast('Codice copiato'); } catch { toast(code); }
+    try { await navigator.clipboard.writeText(code); toast(t('home.share.copied')); } catch { toast(code); }
   });
   $('#shRenew', el).addEventListener('click', async () => {
-    try { await Person.renewKey(); Sheet.close(); openShare(); toast('Nuovo codice pronto'); } catch (err) { toast(explainError(err), 'error'); }
+    try { await Person.renewKey(); Sheet.close(); openShare(); toast(t('home.share.renewed')); } catch (err) { toast(explainError(err), 'error'); }
   });
   $('#shOut', el).addEventListener('click', async () => {
-    if (!confirm('Scollegare questo dispositivo dal profilo? Sugli altri dispositivi il profilo resta, e potrai ricollegarlo con il codice.')) return;
+    if (!confirm(t('home.share.signOutConfirm'))) return;
     await Person.signOut();
     Sheet.close();
     paintAll();
@@ -286,50 +362,50 @@ function openShare() {
 /** Collega questo dispositivo a un profilo che esiste già (QR o codice). */
 function openLinkInput() {
   const el = Sheet.open(`
-    ${head('Hai già un profilo?')}
-    <p>Sul dispositivo dove hai il profilo apri <b>Il tuo profilo › 🔗 Dispositivi</b>: compare un QR e un codice.</p>
-    ${canScanQR() ? '<button type="button" class="btn btn-block" id="lkScan">📷 Inquadra il QR</button><p class="hub-or">oppure scrivi il codice</p>' : ''}
-    <label class="sr-only" for="lkCode">Codice del profilo</label>
+    ${head(esc(t('home.link.title')))}
+    <p>${t('home.link.text')}</p>
+    ${canScanQR() ? `<button type="button" class="btn btn-block" id="lkScan">📷 ${esc(t('home.link.scan'))}</button><p class="hub-or">${esc(t('home.link.or'))}</p>` : ''}
+    <label class="sr-only" for="lkCode">${esc(t('home.link.codeAria'))}</label>
     <input class="input code-input code-input--link" id="lkCode" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123-K7Q2XA9F">
     <p class="form-error" id="lkErr" role="alert"></p>
-    <button type="button" class="btn-sec btn-block" id="lkGo">Collega</button>
-    <details class="hub-details"><summary>Ho solo il codice personale di 6 caratteri</summary>
-      <p class="muted small">Il vecchio codice di un gruppo (es. ABC123): lo trovi in "Il mio profilo" durante una serata.</p>
-      <div class="hub-code-row"><input class="input code-input code-input--6" id="lkMember" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123"><button type="button" class="btn-sec" id="lkMemberGo">Ritrova</button></div>
+    <button type="button" class="btn-sec btn-block" id="lkGo">${esc(t('home.link.go'))}</button>
+    <details class="hub-details"><summary>${esc(t('home.link.oldTitle'))}</summary>
+      <p class="muted small">${esc(t('home.link.oldText'))}</p>
+      <div class="hub-code-row"><input class="input code-input code-input--6" id="lkMember" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-label="${esc(t('home.link.oldAria'))}"><button type="button" class="btn-sec" id="lkMemberGo">${esc(t('home.link.oldGo'))}</button></div>
       <p class="form-error" id="lkMemberErr" role="alert"></p>
     </details>`);
   $('#lkCode', el).addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 15); });
   $('#lkMember', el).addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
   $('#lkScan', el)?.addEventListener('click', async () => {
-    const t = await scanQR({ title: '📷 Inquadra il QR del profilo', hint: 'Lo trovi sull’altro dispositivo in Il tuo profilo › 🔗 Dispositivi.' });
-    if (!t) return;
-    const l = parseLinkCode(t);
-    if (!l) { $('#lkErr', el).textContent = 'Questo non è il QR di un profilo.'; return; }
+    const tx = await scanQR({ title: `📷 ${t('home.link.scanTitle')}`, hint: t('home.link.scanHint') });
+    if (!tx) return;
+    const l = parseLinkCode(tx);
+    if (!l) { $('#lkErr', el).textContent = t('home.link.notProfileQR'); return; }
     doLink(l, $('#lkErr', el));
   });
   $('#lkGo', el).addEventListener('click', () => {
     const l = parseLinkCode($('#lkCode', el).value);
-    if (!l) { $('#lkErr', el).textContent = 'Il codice ha 14 caratteri: 6, un trattino e altri 8.'; return; }
+    if (!l) { $('#lkErr', el).textContent = t('home.link.errLen'); return; }
     doLink(l, $('#lkErr', el));
   });
   $('#lkMemberGo', el).addEventListener('click', async () => {
     const id = normalizeCode($('#lkMember', el).value, 6);
     const err = $('#lkMemberErr', el);
-    if (id.length !== 6) { err.textContent = 'Il codice ha 6 caratteri.'; return; }
+    if (id.length !== 6) { err.textContent = t('home.code6.errLen'); return; }
     try { await adoptMember(id); Sheet.close(); paintAll(); } catch (ex) { err.textContent = explainError(ex); }
   });
 }
 
 /** Conferma per i link "…index.html#collega=…" e i QR inquadrati. */
 function askLink(l) {
-  if (Person.local()?.pid === l.pid) { toast('Questo dispositivo usa già questo profilo.'); return; }
+  if (Person.local()?.pid === l.pid) { toast(t('home.link.already')); return; }
   const el = Sheet.open(`
-    ${head('Collega questo dispositivo')}
-    <p>Vuoi usare qui il profilo <b>${esc(l.pid)}</b>? Nome, personaggio, traguardi e armadi saranno gli stessi dell’altro dispositivo.</p>
-    ${Person.local() ? '<p class="muted small">Il profilo che c’è adesso su questo dispositivo viene unito: resta il nome e il personaggio modificati più di recente, gruppi e armadi si sommano.</p>' : ''}
+    ${head(esc(t('home.ask.title')))}
+    <p>${t('home.ask.text', { pid: `<b>${esc(l.pid)}</b>` })}</p>
+    ${Person.local() ? `<p class="muted small">${esc(t('home.ask.merge'))}</p>` : ''}
     <p class="form-error" id="alErr" role="alert"></p>
-    <button type="button" class="btn btn-block" id="alGo">Collega</button>
-    <button type="button" class="link-btn" data-close>Annulla</button>`);
+    <button type="button" class="btn btn-block" id="alGo">${esc(t('home.link.go'))}</button>
+    <button type="button" class="link-btn" data-close>${esc(t('common.cancel'))}</button>`);
   $('#alGo', el).addEventListener('click', () => doLink(l, $('#alErr', el)));
 }
 
@@ -339,7 +415,7 @@ async function doLink(l, errEl) {
     const res = await Person.linkWith(l.pid, l.key);
     Sheet.close();
     paintAll();
-    toast(res.merged ? `✓ Profili uniti: ciao, ${res.info?.name || ''}!` : `✓ Collegato: ciao, ${res.info?.name || ''}!`);
+    toast(`✓ ${res.merged ? t('home.link.merged', { name: res.info?.name || '' }) : t('home.link.done', { name: res.info?.name || '' })}`);
   } catch (err) {
     if (errEl) errEl.textContent = err.user ? err.message : explainError(err);
     else toast(err.user ? err.message : explainError(err), 'error');
@@ -356,20 +432,20 @@ async function loadMember(id) {
 async function adoptMember(id) {
   await H.ready;
   const m = await loadMember(id);
-  if (!m) throw userError('Nessun profilo con questo codice.');
+  if (!m) throw userError(t('home.code6.none'));
   const profs = ls.json('gnr_profiles', {}) || {};
   profs[m.groupId] = m.id;
   ls.set('gnr_profiles', JSON.stringify(profs));
   if (Person.local()) await Person.linkGroup(m.groupId, m.id);
   else await Person.create(m, { groups: { [m.groupId]: m.id } });
-  toast(`Profilo di ${m.name} collegato`);
+  toast(t('home.code6.linked', { name: m.name }));
 }
 
 /** Traguardi di tutti i gruppi del profilo (sommati anche tra profili uniti). */
 async function openTrophies() {
   const d = Person.data;
   if (!d) return;
-  const el = Sheet.open(`${head('🏆 I tuoi traguardi')}<div id="trBody"><p class="muted">Leggo le serate dei tuoi gruppi…</p></div>`, { wide: true });
+  const el = Sheet.open(`${head(`🏆 ${esc(t('home.tr.title'))}`)}<div id="trBody"><p class="muted">${esc(t('home.tr.loading'))}</p></div>`, { wide: true });
   const got = new Map();
   const rows = [];
   for (const gid of Object.keys(d.groups || {})) {
@@ -384,15 +460,15 @@ async function openTrophies() {
   if (!el.isConnected) return;
   $('#trBody', el).innerHTML = rows.length ? `
     <div class="tr-groups">${rows.map((r) => r.locked
-      ? `<div class="tr-group"><b>${esc(r.name)}</b><span class="muted small">Storico privato: lo vedi entrando in una serata del gruppo.</span></div>`
-      : `<div class="tr-group"><b>${esc(r.name)}</b><span class="lv-badge">Lv ${r.pr.level}</span><span class="muted small">${esc(r.pr.levelName)} · ${r.pr.nights} ${r.pr.nights === 1 ? 'serata' : 'serate'} · ${r.pr.wins} vittorie</span><i class="tr-bar"><i style="width:${Math.round(r.pr.levelProgress * 100)}%"></i></i></div>`).join('')}</div>
-    <h3>Sbloccati: ${got.size} su ${ACHIEVEMENTS.length}</h3>
+      ? `<div class="tr-group"><b>${esc(r.name)}</b><span class="muted small">${esc(t('home.tr.private'))}</span></div>`
+      : `<div class="tr-group"><b>${esc(r.name)}</b><span class="lv-badge">${esc(t('home.tr.level', { n: r.pr.level }))}</span><span class="muted small">${esc(r.pr.levelName)} · ${esc(t('home.tr.nights', { n: r.pr.nights }))} · ${esc(t('home.tr.wins', { n: r.pr.wins }))}</span><i class="tr-bar"><i style="width:${Math.round(r.pr.levelProgress * 100)}%"></i></i></div>`).join('')}</div>
+    <h3>${esc(t('home.tr.unlocked', { n: got.size, total: ACHIEVEMENTS.length }))}</h3>
     <ul class="tr-list">${ACHIEVEMENTS.map((a) => {
       const ok = got.has(a.id);
-      if (a.secret && !ok) return '<li class="tr-item is-off"><span>❔</span><div><b>Segreto</b><small>Continua a giocare per scoprirlo</small></div></li>';
+      if (a.secret && !ok) return `<li class="tr-item is-off"><span>❔</span><div><b>${esc(t('home.tr.secret'))}</b><small>${esc(t('home.tr.secretHint'))}</small></div></li>`;
       return `<li class="tr-item ${ok ? '' : 'is-off'}"><span>${a.icon}</span><div><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div></li>`;
     }).join('')}</ul>`
-    : '<p>Ancora nessun gruppo: i traguardi arrivano con la prima serata giocata con il profilo.</p>';
+    : `<p>${esc(t('home.tr.none'))}</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,27 +485,29 @@ const armUrl = (id) => `armadio.html?a=${id}`;
 
 function paintArmadi() {
   const list = armadiList();
-  $('#tileArmTxt').textContent = list.length ? `${list.length} ${list.length === 1 ? 'armadio' : 'armadi'}: ${list.slice(0, 2).map((a) => a.name).join(', ')}${list.length > 2 ? '…' : ''}` : 'I giochi con la foto, pronti per ogni serata.';
+  $('#tileArmTxt').textContent = list.length
+    ? `${t('home.arm.count', { n: list.length })}: ${list.slice(0, 2).map((a) => a.name).join(', ')}${list.length > 2 ? '…' : ''}`
+    : t('home.arm.empty');
   const box = $('#hubArmadi');
   box.innerHTML = `
-    <div class="hub-sec-head"><h2 id="armTitle">📦 I tuoi armadi</h2><button type="button" class="btn-sec btn-sec--sm" id="armNew">➕ <span>Nuovo</span></button></div>
-    ${list.length ? `<ul class="hub-list">${list.map((a) => `<li><a class="hub-item" href="${armUrl(a.id)}"><span class="hub-ico" aria-hidden="true">📦</span><span><b>${esc(a.name)}</b><small>${a.own ? 'Tuo' : a.key ? 'Puoi modificarlo' : 'Da consultare'} · codice ${esc(a.id)}</small></span><span class="hub-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
-      : '<p class="muted">Nessun armadio ancora. Creane uno e aggiungi i giochi con la foto: ogni serata li consulta.</p>'}
-    <details class="hub-details"><summary>Ho il codice di un armadio</summary>
-      <div class="hub-code-row"><input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123"><button type="button" class="btn-sec" id="armCodeGo">Apri</button></div>
+    <div class="sec-row"><h1 class="page-title" id="armTitle">📦 ${esc(t('home.arm.title'))}</h1><button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="armNew">➕ <span>${esc(t('home.arm.new'))}</span></button></div>
+    ${list.length ? `<ul class="rows">${list.map((a) => `<li><a class="row hub-item" href="${armUrl(a.id)}"><span class="tile-ico tile-ico--violet" aria-hidden="true">📦</span><span class="mini-text"><b>${esc(a.name)}</b><small>${esc(a.own ? t('home.arm.own') : a.key ? t('home.arm.editor') : t('home.arm.viewer'))} · ${esc(t('home.arm.code', { code: a.id }))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
+      : `<p class="empty">${esc(t('home.arm.none'))}</p>`}
+    <details class="hub-details"><summary>${esc(t('home.arm.haveCode'))}</summary>
+      <div class="hub-code-row"><input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-label="${esc(t('home.arm.codeAria'))}"><button type="button" class="btn-sec" id="armCodeGo">${esc(t('common.open'))}</button></div>
       <p class="form-error" id="armCodeErr" role="alert"></p>
     </details>
-    ${Person.local() ? '' : '<p class="muted small">Con un profilo gli armadi ti seguono su tutti i tuoi dispositivi.</p>'}`;
+    ${Person.local() ? '' : `<p class="muted small">${esc(t('home.arm.withProfile'))}</p>`}`;
   $('#armNew').addEventListener('click', openNewArmadio);
   $('#armCode').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
   $('#armCodeGo').addEventListener('click', async () => {
     const id = normalizeCode($('#armCode').value, 6);
     const err = $('#armCodeErr');
-    if (id.length !== 6) { err.textContent = 'Il codice ha 6 caratteri.'; return; }
+    if (id.length !== 6) { err.textContent = t('home.code6.errLen'); return; }
     try {
       await H.ready;
       const info = (await get(armadioRef(id, 'info'))).val();
-      if (!info) { err.textContent = 'Nessun armadio con questo codice.'; return; }
+      if (!info) { err.textContent = t('home.arm.notFound'); return; }
       rememberArm(id, info.name);
       await Person.linkArmadio(id, info.name).catch(() => {});
       location.href = armUrl(id);
@@ -441,14 +519,15 @@ function rememberArm(id, name) {
   ls.set('gnr_armadi', JSON.stringify([{ id, name }, ...list].slice(0, 12)));
 }
 function openNewArmadio() {
+  const who = Person.data?.info?.name;
   const el = Sheet.open(`
-    ${head('📦 Nuovo armadio')}
-    <p>Un armadio raccoglie i vostri giochi con la foto. Non dipende da gruppi o stanze: ogni serata lo consulta.</p>
-    <div class="field field--stack"><label for="naName">Nome</label><input class="input" id="naName" maxlength="40" autocomplete="off" placeholder="Es. I giochi di ${esc(Person.data?.info?.name || 'casa')}"></div>
+    ${head(`📦 ${esc(t('home.arm.newTitle'))}`)}
+    <p>${esc(t('home.arm.newText'))}</p>
+    <div class="field field--stack"><label for="naName">${esc(t('home.arm.name'))}</label><input class="input" id="naName" maxlength="40" autocomplete="off" placeholder="${esc(who ? t('home.arm.defaultName', { name: who }) : t('home.arm.defaultHome'))}"></div>
     <p class="form-error" id="naErr" role="alert"></p>
-    <button type="button" class="btn btn-block" id="naGo">Crea e aggiungi i giochi</button>`);
+    <button type="button" class="btn btn-block" id="naGo">${esc(t('home.arm.createGo'))}</button>`);
   $('#naGo', el).addEventListener('click', async (e) => {
-    const name = cleanName($('#naName', el).value, 40) || `I giochi di ${Person.data?.info?.name || 'casa'}`;
+    const name = cleanName($('#naName', el).value, 40) || (who ? t('home.arm.defaultName', { name: who }) : t('home.arm.defaultHome'));
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
@@ -469,53 +548,62 @@ function openNewArmadio() {
     }
   });
 }
-$('#tileArm').addEventListener('click', () => {
-  const box = $('#hubArmadi');
-  box.hidden = false;
-  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
 
 // ---------------------------------------------------------------------------
 // Le tue serate: resoconti di quelle aperte su questo dispositivo
 // ---------------------------------------------------------------------------
 
+function historyList() {
+  return (ls.json('gnr_history', []) || []).filter((n) => /^[A-Z0-9]{4}$/.test(n?.room || ''));
+}
 function paintHistory() {
-  const list = (ls.json('gnr_history', []) || []).filter((n) => /^[A-Z0-9]{4}$/.test(n?.room || ''));
-  $('#tileHistTxt').textContent = list.length ? `${list.length} ${list.length === 1 ? 'serata' : 'serate'}: l’ultima ${new Date(list[0].at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}` : 'Resoconti con voti e vincitori.';
+  const list = historyList();
+  $('#tileHistTxt').textContent = list.length
+    ? t('home.hist.count', { n: list.length, last: fmtDate(list[0].at, { day: 'numeric', month: 'short' }) })
+    : t('home.hist.empty');
   const box = $('#hubHistory');
   box.innerHTML = `
-    <h2 id="histTitle">📋 Le tue serate</h2>
-    ${list.length ? `<ul class="hub-list">${list.map((n) => `<li><a class="hub-item" href="resoconto.html?room=${esc(n.room)}${n.gid ? `&g=${esc(n.gid)}` : ''}"><span class="hub-ico" aria-hidden="true">📋</span><span><b>${esc(n.group || 'Serata')} · ${esc(n.room)}</b><small>${esc(new Date(n.at).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} · resoconto</small></span><span class="hub-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
-      : '<p class="muted">Qui trovi il resoconto delle serate aperte da questo dispositivo: giochi, voti, vincitori e premi.</p>'}`;
+    <h1 class="page-title" id="histTitle">📋 ${esc(t('home.hist.title'))}</h1>
+    ${list.length ? `<ul class="rows">${list.map((n) => `<li><a class="row hub-item" href="resoconto.html?room=${esc(n.room)}${n.gid ? `&g=${esc(n.gid)}` : ''}"><span class="tile-ico tile-ico--teal" aria-hidden="true">📋</span><span class="mini-text"><b>${esc(n.group || t('home.hist.night'))} · ${esc(n.room)}</b><small>${esc(fmtDate(n.at, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} · ${esc(t('home.hist.report'))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
+      : `<p class="empty">${esc(t('home.hist.none'))}</p>`}`;
 }
-$('#tileHist').addEventListener('click', () => {
-  const box = $('#hubHistory');
-  box.hidden = false;
-  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
 
 // ---------------------------------------------------------------------------
-// Gruppi: serata in corso
+// Gruppi: serata in corso (un ascolto leggero per gruppo, su "current")
 // ---------------------------------------------------------------------------
 
+function groupIds() {
+  const groups = { ...(ls.json('gnr_profiles', {}) || {}), ...(Person.data?.groups || {}) };
+  return Object.keys(groups).filter((g) => CODE6.test(g));
+}
+function groupRowHTML(gid) {
+  const g = H.groups[gid] || {};
+  const name = g.name || gid;
+  if (g.live) {
+    return `<a class="row hub-item hub-item--live" href="play.html?room=${esc(g.live.room)}"><span class="tile-ico tile-ico--${g.live.done ? 'sun' : 'live'}" aria-hidden="true">${g.live.done ? '🏆' : '🔴'}</span><span class="mini-text"><b>${esc(name)}</b><small>${esc(g.live.done ? t('home.groups.ended') : t('home.groups.live', { code: g.live.room }))}</small></span><span class="mini-go" aria-hidden="true">›</span></a>`;
+  }
+  return `<div class="row hub-item"><span class="tile-ico tile-ico--violet" aria-hidden="true">🎲</span><span class="mini-text"><b>${esc(name)}</b><small>${esc(g.checked ? t('home.groups.idle') : t('home.groups.checking'))}</small></span></div>`;
+}
+function renderGroups() {
+  const ids = groupIds();
+  const full = $('#hubGroups');
+  full.innerHTML = `<h1 class="page-title" id="grpTitle">👥 ${esc(t('home.groups.title'))}</h1>
+    ${ids.length ? `<ul class="rows" id="grpList">${ids.map((g) => `<li id="grp_${esc(g)}">${groupRowHTML(g)}</li>`).join('')}</ul>` : `<p class="empty">${esc(t('home.groups.none'))}</p>`}`;
+  const live = ids.filter((g) => H.groups[g]?.live && !H.groups[g].live.done);
+  const order = [...live, ...ids.filter((g) => !live.includes(g))].slice(0, 3);
+  $('#grpMini').innerHTML = ids.length
+    ? `<ul class="rows rows--mini">${order.map((g) => `<li>${groupRowHTML(g)}</li>`).join('')}</ul>${ids.length > 3 ? `<p class="muted small">${esc(t('home.groups.more', { n: ids.length - 3 }))}</p>` : ''}`
+    : `<p class="empty empty--sm">${esc(t('home.groups.none'))}</p>`;
+}
 function paintGroups() {
   H.groupStops.forEach((f) => { try { f(); } catch { /* niente */ } });
   H.groupStops = [];
-  const groups = { ...(ls.json('gnr_profiles', {}) || {}), ...(Person.data?.groups || {}) };
-  const ids = Object.keys(groups).filter((g) => CODE6.test(g));
-  const box = $('#hubGroups');
-  box.hidden = !ids.length;
-  if (!ids.length) return;
-  box.innerHTML = `<h2 id="grpTitle">👥 I tuoi gruppi</h2><ul class="hub-list" id="grpList">${ids.map((g) => `<li id="grp_${esc(g)}"><div class="hub-item"><span class="hub-ico" aria-hidden="true">🎲</span><span><b>…</b><small>Controllo se c’è una serata…</small></span></div></li>`).join('')}</ul>`;
+  const ids = groupIds();
+  renderGroups();
   for (const gid of ids) {
-    get(groupRef(gid, 'info')).then((s) => {
-      const li = document.getElementById(`grp_${gid}`);
-      const name = s.val()?.name || gid;
-      if (li) li.querySelector('b').textContent = name;
-    }).catch(() => {});
+    H.groups[gid] ||= {};
+    get(groupRef(gid, 'info')).then((s) => { H.groups[gid].name = s.val()?.name || gid; renderGroups(); }).catch(() => {});
     H.groupStops.push(onValue(groupRef(gid, 'current'), async (snap) => {
-      const li = document.getElementById(`grp_${gid}`);
-      if (!li) return;
       const cur = snap.val();
       let live = null;
       if (cur?.room) {
@@ -523,62 +611,91 @@ function paintGroups() {
         const st = meta ? (await get(roomRef(cur.room, 'state')).catch(() => null))?.val() : null;
         if (meta) live = { room: cur.room, done: st?.phase === 'awards' && st?.done };
       }
-      const name = li.querySelector('b')?.textContent || gid;
-      li.innerHTML = live
-        ? `<a class="hub-item hub-item--live" href="play.html?room=${esc(live.room)}"><span class="hub-ico" aria-hidden="true">${live.done ? '🏆' : '🔴'}</span><span><b>${esc(name)}</b><small>${live.done ? 'Serata finita: vedi i risultati' : `Serata in corso · stanza ${esc(live.room)}`}</small></span><span class="hub-go" aria-hidden="true">›</span></a>`
-        : `<div class="hub-item"><span class="hub-ico" aria-hidden="true">🎲</span><span><b>${esc(name)}</b><small>Nessuna serata in corso</small></span></div>`;
-    }, () => {}));
+      H.groups[gid].live = live;
+      H.groups[gid].checked = true;
+      renderGroups();
+    }, () => { H.groups[gid].checked = true; renderGroups(); }));
   }
 }
 
 // ---------------------------------------------------------------------------
-// App Android
+// App Android e aggiornamenti
 // ---------------------------------------------------------------------------
 
+function appTileHead() {
+  return `<div class="tile-head"><span class="tile-ico tile-ico--green" aria-hidden="true">🤖</span><div><h2>${esc(t('home.app.title'))}</h2><p class="tile-sub">${esc(t('home.app.text'))}</p></div></div>`;
+}
 function paintApp() {
   const box = $('#hubApp');
-  // Nell'app la sezione sta nelle Impostazioni (e nell'avviso degli aggiornamenti)
-  if (isApp() || !apkUrl()) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = `
-    <div class="hub-sec-head"><h2>📲 Scarica GameNight</h2></div>
-    <p>L’app per Android si apre a schermo intero, legge il QR della TV e usa lo stesso profilo del sito. È gratuita.</p>
-    <div id="hubVerPanel" class="ver-panel"></div>`;
-  mountUpdatePanel($('#hubVerPanel'), { qrSVG, toast, showQR: !isAndroid() });
+  // Nell'app la sezione sta in "Profilo e app" e nelle Impostazioni (e nell'avviso degli aggiornamenti)
+  const hide = isApp() || !apkUrl();
+  box.hidden = hide;
+  box.parentElement.classList.toggle('no-app', hide);
+  if (hide) return;
+  box.innerHTML = `${appTileHead()}<div id="hubVerPanel" class="ver-panel ver-panel--tile"></div>`;
+  H.appPanel = mountUpdatePanel($('#hubVerPanel'), { qrSVG, toast, showQR: !isAndroid() });
+}
+function mountAppFull() {
+  if (H.appFull) return;
+  const box = $('#hubAppFull');
+  if (!apkUrl()) { box.innerHTML = `${appTileHead()}<p class="muted small">${esc(t('upd.err.noconfig'))}</p>`; H.appFull = true; return; }
+  box.innerHTML = `${appTileHead()}<div id="altroVerPanel" class="ver-panel"></div>`;
+  H.appFull = mountUpdatePanel($('#altroVerPanel'), { qrSVG, toast, showQR: true });
 }
 
 /** Sezione "Scarica GameNight" in una finestra: versioni, aggiornamenti, download e QR per un altro telefono. */
-function openUpdates() {
-  const el = Sheet.open(`${head('📲 Scarica GameNight')}
+function openUpdates(force = false) {
+  const el = Sheet.open(`${head(`📲 ${esc(t('home.app.sheetTitle'))}`)}
     <div id="stVerPanel" class="ver-panel"></div>`, { wide: true });
-  mountUpdatePanel($('#stVerPanel', el), { qrSVG, toast, showQR: true });
+  const p = mountUpdatePanel($('#stVerPanel', el), { qrSVG, toast, showQR: true });
+  if (force) { p.refresh(); refreshLinks().catch(() => {}); }
 }
+$('#hubCheckUpd').addEventListener('click', () => openUpdates(true));
+
+// ---------------------------------------------------------------------------
+// Link ufficiali (GitHub, Discord, Ko-fi…): tutti da config/links.json, vedi js/links.js
+// ---------------------------------------------------------------------------
+
+function paintLinksStatus() {
+  const el = $('#linksStatus');
+  if (!el) return;
+  const s = links.status();
+  const date = s.updated ? fmtDate(new Date(`${s.updated}T12:00:00`), { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  el.textContent = !date ? '' : t(s.source === 'baseline' && s.remote ? 'links.st.base' : 'links.st.remote', { date });
+}
+bindLinks();
+links.subscribe(paintLinksStatus);
+links.ready().then(paintLinksStatus, () => {});
+window.addEventListener('gnr-lang', () => setTimeout(paintLinksStatus, 0));
 
 // ---------------------------------------------------------------------------
 // Impostazioni e introduzione
 // ---------------------------------------------------------------------------
 
-$('#hubSettings').addEventListener('click', () => {
+function openSettings() {
   const el = Sheet.open(`
-    ${head('⚙️ Impostazioni')}
-    <h3>Tema</h3>${themeSwitchHTML('hubTheme')}
-    <h3>Accessibilità</h3>${a11yHTML('hubA11y')}
-    <h3>Aiuto</h3>
-    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stIntro">👋 Rivedi l’introduzione</button><a class="btn-sec btn-sec--sm" href="test.html">🩺 Verifica Firebase</a></div>
-    ${Person.local() ? '<div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stShare">🔗 Profilo sugli altri dispositivi</button></div>' : ''}
-    <h3>Versione</h3>
-    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stUpd">📲 Aggiornamenti e download dell’app</button></div>
+    ${head(`⚙️ ${esc(t('home.nav.settings'))}`)}
+    <h3 id="stLangT">${esc(t('common.language'))}</h3>${langSwitchHTML('hubLang')}
+    <p class="muted small">${esc(t('home.set.langHint'))}</p>
+    <h3>${esc(t('home.set.theme'))}</h3>${themeSwitchHTML('hubTheme')}
+    <h3>${esc(t('home.set.a11y'))}</h3>${a11yHTML('hubA11y')}
+    <h3>${esc(t('home.set.help'))}</h3>
+    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stIntro">👋 ${esc(t('home.set.intro'))}</button><a class="btn-sec btn-sec--sm" href="test.html">🩺 ${esc(t('home.info.firebase'))}</a></div>
+    ${Person.local() ? `<div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stShare">🔗 ${esc(t('home.set.share'))}</button></div>` : ''}
+    <h3>${esc(t('home.set.version'))}</h3>
+    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stUpd">🔄 ${esc(t('upd.check'))}</button></div>
     <p class="muted small" id="stVer"></p>`, { wide: true });
-  $('#stUpd', el).addEventListener('click', () => { Sheet.close(); openUpdates(); });
+  $('#stUpd', el).addEventListener('click', () => { Sheet.close(); openUpdates(true); });
   $('#stIntro', el).addEventListener('click', () => { Sheet.close(); showIntro(true); });
   $('#stShare', el)?.addEventListener('click', () => { Sheet.close(); openShare(); });
   $('#stVer', el).textContent = $('#hubVer').textContent;
-});
+}
+$('#hubSettings').addEventListener('click', openSettings);
 
 const INTRO = [
-  { ico: '📺', t: 'La TV fa lo show', d: 'Sul PC collegato alla TV crei la serata: compare un QR. La TV svela i voti, fa la classifica e premia il gioco migliore.' },
-  { ico: '📱', t: 'Il telefono è il telecomando', d: 'Inquadri il QR ed entri con il tuo profilo. Voti in segreto ogni gioco, fai pronostici, tieni il segnapunti.' },
-  { ico: '👤', t: 'Un profilo, ovunque', d: 'Crea il profilo una volta: nome, personaggio, traguardi e armadi dei giochi sono gli stessi sul sito e nell’app.' }
+  { ico: '📺', k: 'tv' },
+  { ico: '📱', k: 'phone' },
+  { ico: '👤', k: 'profile' }
 ];
 function showIntro(force = false) {
   if (!force && ls.get('gnr_intro_done') === '1') return;
@@ -587,9 +704,9 @@ function showIntro(force = false) {
   const paint = () => {
     const s = INTRO[i];
     $('#inBody', el).innerHTML = `
-      <div class="intro-step"><span class="intro-ico" aria-hidden="true">${s.ico}</span><h2>${esc(s.t)}</h2><p>${esc(s.d)}</p></div>
+      <div class="intro-step"><span class="intro-ico" aria-hidden="true">${s.ico}</span><h2>${esc(t(`home.intro.${s.k}.t`))}</h2><p>${esc(t(`home.intro.${s.k}.d`))}</p></div>
       <div class="intro-dots" aria-hidden="true">${INTRO.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="hub-row hub-row--end"><button type="button" class="link-btn" data-close>Salta</button><button type="button" class="btn" id="inNext">${i < INTRO.length - 1 ? 'Avanti' : (Person.local() ? 'Iniziamo' : 'Crea il profilo')}</button></div>`;
+      <div class="hub-row hub-row--end"><button type="button" class="link-btn" data-close>${esc(t('home.intro.skip'))}</button><button type="button" class="btn" id="inNext">${esc(i < INTRO.length - 1 ? t('home.intro.next') : (Person.local() ? t('home.intro.start') : t('home.me.createShort')))}</button></div>`;
     $('#inNext', el).addEventListener('click', () => {
       if (i < INTRO.length - 1) { i++; paint(); return; }
       Sheet.close();
@@ -599,9 +716,28 @@ function showIntro(force = false) {
   paint();
 }
 
+// Cambio di lingua: si ridisegna tutto senza ricaricare (nessun dato si perde).
+window.addEventListener('gnr-lang', (e) => {
+  e.preventDefault();
+  applyStatic(document);
+  paintStatic();
+  paintAll();
+  if (H.appPanel) paintApp();
+  if (H.appFull && H.appFull !== true) { H.appFull = null; if (H.view === 'altro') mountAppFull(); }
+  if (Sheet.el) { const reopen = Sheet.el.querySelector('#hubLang'); Sheet.close(); if (reopen) openSettings(); }
+  paintBack();
+});
+
 // ---------------------------------------------------------------------------
 // Avvio
 // ---------------------------------------------------------------------------
+
+function paintStatic() {
+  const v = t('home.side.version', { v: APP_VERSION });
+  $('#hubVer').textContent = v;
+  $('#infoVer').textContent = `${v} · ${t('common.languageName')}`;
+  if ($('#scanBtn').hidden === false) $('#codeLabel').textContent = t('home.join.codeOr');
+}
 
 function paintAll() {
   paintMe(Person.data);
@@ -611,12 +747,14 @@ function paintAll() {
 }
 
 async function boot() {
-  fetch('version.json', { cache: 'no-cache' }).then((r) => r.json()).then((v) => { $('#hubVer').textContent = `versione ${v.version}`; }).catch(() => {});
+  paintStatic();
+  showView(viewFromHash());
   paintApp();
   const cached = Person.cached();
   paintMe(cached);
   paintArmadi();
   paintHistory();
+  renderGroups();
   if (!isConfigured) { paintMe(null); return; }
   let readyResolve;
   H.ready = new Promise((r) => { readyResolve = r; });
@@ -639,7 +777,7 @@ async function boot() {
       const profs = ls.json('gnr_profiles', {}) || {};
       let found = 0;
       for (const [gid, mid] of Object.entries(remote)) if (CODE6.test(gid) && CODE6.test(mid) && !profs[gid]) { profs[gid] = mid; found++; }
-      if (found) { ls.set('gnr_profiles', JSON.stringify(profs)); toast(found === 1 ? 'Ho ritrovato il tuo profilo su questo dispositivo' : `Ho ritrovato ${found} profili su questo dispositivo`); }
+      if (found) { ls.set('gnr_profiles', JSON.stringify(profs)); toast(t('home.found', { n: found })); }
     } catch { /* regole vecchie o rete assente */ }
   }
   let state = null;
@@ -655,11 +793,4 @@ async function boot() {
 }
 boot();
 // Avviso "È disponibile GameNight Show …" nell'app, e link diretto alla sezione (index.html#aggiornamenti)
-if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); } else autoCheck({ onOpen: openUpdates }).catch(() => {});
-window.addEventListener('hashchange', () => {
-  if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); return; }
-  const l = parseLinkCode(location.hash);
-  if (!l) return;
-  history.replaceState(null, '', location.pathname);
-  H.ready?.then(() => askLink(l));
-});
+if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); } else autoCheck({ onOpen: () => openUpdates() }).catch(() => {});

@@ -16,6 +16,7 @@
 import { connect, dbRef, memberRef, get, set, update, remove } from './fb.js';
 import { randomCode, normalizeCode, cleanName } from './util.js';
 import { publicUrl } from './native.js';
+import { t } from './i18n.js';
 
 const LS = 'gnr_person';
 const CACHE = 'gnr_person_cache';
@@ -30,7 +31,7 @@ const write = (k, v) => { try { if (v == null) localStorage.removeItem(k); else 
 /** Solo i campi che il database accetta per l'aspetto della persona. */
 export function lookOf(src = {}) {
   const out = {
-    name: cleanName(src.name || '', 16) || 'Giocatore',
+    name: cleanName(src.name || '', 16) || t('person.defaultName'),
     style: String(src.style || 'adventurer').slice(0, 30),
     seed: String(src.seed || 'gnr').slice(0, 40),
     color: /^#[0-9A-Fa-f]{6}$/.test(src.color || '') ? src.color : '#FF5A4E'
@@ -227,10 +228,10 @@ export const Person = {
     try {
       await this.claim(pid, key);
     } catch (err) {
-      throw Object.assign(new Error('Codice non valido: controlla di averlo copiato bene, oppure inquadra il QR dall’altro dispositivo.'), { user: true, cause: err });
+      throw Object.assign(new Error(t('person.err.badCode')), { user: true, cause: err });
     }
     const target = (await get(dbRef(`people/${pid}`))).val();
-    if (!target?.info) throw Object.assign(new Error('Questo profilo non esiste più.'), { user: true });
+    if (!target?.info) throw Object.assign(new Error(t('person.err.gone')), { user: true });
     const upd = {};
     let merged = false;
     if (old) {
@@ -337,7 +338,7 @@ export const Person = {
 };
 
 function cleanArm(a = {}) {
-  const out = { name: cleanName(a.name || '', 40) || 'Armadio', at: Number(a.at) || Date.now() };
+  const out = { name: cleanName(a.name || '', 40) || t('person.armadio'), at: Number(a.at) || Date.now() };
   const k = normalizeCode(a.key || '', 8);
   if (CODE8.test(k)) out.key = k;
   if (a.own) out.own = true;

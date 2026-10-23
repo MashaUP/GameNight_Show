@@ -6,11 +6,15 @@
 //
 // Fonte unica delle informazioni (niente server in più):
 // - version.json del sito: versione, data, novità, Android minimo (scritto a ogni rilascio);
-// - la release "app-android" del repository GitHub, aggiornata dal workflow a ogni build:
-//   l'APK (sempre allo stesso indirizzo) e, nella descrizione, i dati della build
-//   <!-- gamenight-apk: {"version","versionCode","sha256","size","date",...} -->
-//   letti con l'API pubblica di GitHub (gratuita, senza chiavi).
+// - l'ultima release pubblicata a mano su GitHub (tag vX.Y.Z), letta con l'API pubblica
+//   (releases/latest, gratuita, senza chiavi). Il workflow ci aggiunge solo i file, senza modificarla:
+//   GameNight-Show.apk con l'etichetta "GameNight Show X.Y.Z · build N"; l'impronta SHA-256 la calcola
+//   GitHub stesso (campo "digest" del file). Versione dal tag, novità da version.json.
+//   Indirizzo stabile dell'APK: https://github.com/<utente>/<repo>/releases/latest/download/GameNight-Show.apk
+// - Compatibilità: le release scritte dai workflow fino alla 1.4 (release "app-android", dati nella
+//   descrizione <!-- gamenight-apk: {...} -->) vengono ancora lette.
 import { APP_VERSION } from './version.js';
+import { t, lang, fmtDate, fmtNum } from './i18n.js';
 import { isApp, isAndroid, apkUrl, publicUrl, versionUrl, nativeCall } from './native.js';
 
 const CACHE_KEY = 'gnr_release';
@@ -60,15 +64,30 @@ export function semverCmp(a, b) {
   return 0;
 }
 
-/** Repository GitHub della release ufficiale, ricavato dall'indirizzo ufficiale dell'APK (mai inventato). */
+/**
+ * Repository GitHub della release ufficiale, ricavato dall'indirizzo ufficiale dell'APK (mai inventato).
+ * Accetta l'indirizzo stabile (releases/latest/download/…) e quello dei workflow fino alla 1.4 (download/app-android/…).
+ */
 export function releaseSource(url = apkUrl()) {
-  const m = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})\/releases\/download\/app-android\/GameNight-Show\.apk$/.exec(url || '');
+  const m = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})\/releases\/(?:latest\/download|download\/app-android)\/GameNight-Show\.apk$/.exec(url || '');
   if (!m) return null;
+  const base = `https://github.com/${m[1]}/${m[2]}`;
   return {
-    owner: m[1], repo: m[2], apk: url,
-    api: `https://api.github.com/repos/${m[1]}/${m[2]}/releases/tags/app-android`,
-    page: `https://github.com/${m[1]}/${m[2]}/releases/tag/app-android`
+    owner: m[1], repo: m[2],
+    apk: `${base}/releases/latest/download/GameNight-Show.apk`,
+    api: `https://api.github.com/repos/${m[1]}/${m[2]}/releases/latest`,
+    page: `${base}/releases/latest`
   };
+}
+
+/**
+ * Il file è l'APK di una release del repository ufficiale? Restituisce il tag (es. "v1.5.0") oppure ''.
+ * Utente e repository senza distinguere maiuscole e minuscole (il sito li vede in minuscolo, GitHub come sono).
+ */
+export function officialAssetTag(url, src = releaseSource()) {
+  const m = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})\/releases\/download\/([A-Za-z0-9._-]{1,100})\/GameNight-Show\.apk$/.exec(url || '');
+  if (!m || !src) return '';
+  return m[1].toLowerCase() === src.owner.toLowerCase() && m[2].toLowerCase() === src.repo.toLowerCase() ? m[3] : '';
 }
 /** Stesso indirizzo dell'APK ufficiale (https, senza distinguere maiuscole e minuscole). */
 export function sameUrl(a, b) {
@@ -77,45 +96,64 @@ export function sameUrl(a, b) {
 /** Pagina ufficiale di download (sul sito): stabile, è quella del QR. */
 export function downloadPageUrl() { return publicUrl('scarica.html').href; }
 
-const cleanNotes = (n) => (Array.isArray(n) ? n : []).filter((x) => typeof x === 'string' && x.trim()).slice(0, 12).map((x) => x.trim().slice(0, 240));
+const cleanList = (n) => (Array.isArray(n) ? n : []).filter((x) => typeof x === 'string' && x.trim()).slice(0, 12).map((x) => x.trim().slice(0, 240));
+/**
+ * Novità nella lingua scelta. Formati accettati (version.json e dati della build):
+ *   notes: [...]  (italiano, formato fino alla 1.3) con eventuale notesEn: [...]
+ *   notes: { it: [...], en: [...] }
+ * Se manca la lingua scelta si usa l'italiano.
+ */
+export function pickNotes(src) {
+  const n = src?.notes;
+  const byLang = n && typeof n === 'object' && !Array.isArray(n) ? n : { it: n, en: src?.notesEn };
+  const mine = cleanList(byLang[lang()]);
+  return mine.length ? mine : cleanList(byLang.it);
+}
+const cleanNotes = (src) => pickNotes(src);
 const cleanDate = (d) => (typeof d === 'string' && !Number.isNaN(Date.parse(d)) ? d : '');
 
 /** version.json: solo campi controllati. */
 export function parseWebVersion(v) {
   if (!v || typeof v !== 'object' || !isVersion(v.version)) return null;
-  return { version: v.version.trim(), date: cleanDate(v.date), notes: cleanNotes(v.notes), minAndroid: isVersion(v.minAndroid) ? v.minAndroid : MIN_ANDROID };
+  return { version: v.version.trim(), date: cleanDate(v.date), notes: cleanNotes(v), minAndroid: isVersion(v.minAndroid) ? v.minAndroid : MIN_ANDROID };
 }
 
 /**
- * Risposta dell'API di GitHub per la release "app-android" → dati della build, controllati uno per uno.
- * Restituisce null se manca l'APK ufficiale. Se mancano i dati della build (workflow vecchio) la versione
- * si ricava dal titolo e l'hash resta sconosciuto (si verifica solo la dimensione).
+ * Risposta dell'API di GitHub (ultima release) → dati della build, controllati uno per uno.
+ * Restituisce null se manca l'APK ufficiale (release senza APK, di un altro repository, bozza o anteprima).
+ * Versione: dai dati della build se ci sono (workflow fino alla 1.4), altrimenti dal tag (v1.5.0) o dal titolo.
+ * Impronta: dai dati della build oppure dal "digest" calcolato da GitHub; se manca, si verifica solo la dimensione.
  */
 export function parseRelease(json, officialApk = apkUrl()) {
-  if (!json || typeof json !== 'object' || !Array.isArray(json.assets)) return null;
+  if (!json || typeof json !== 'object' || !Array.isArray(json.assets) || json.draft === true || json.prerelease === true) return null;
+  const src = releaseSource(officialApk);
   const asset = json.assets.find((a) => a && a.name === APK_NAME);
-  // Nomi di utente e repository su GitHub non distinguono maiuscole e minuscole: il sito
-  // (mashaup.github.io) li vede in minuscolo, la release li scrive come sono (MashaUP).
-  if (!asset || !sameUrl(asset.browser_download_url, officialApk)) return null;
+  const tag = asset ? officialAssetTag(asset.browser_download_url, src) : '';
+  // Il file deve stare nella release stessa (stesso tag), nel repository ufficiale.
+  if (!tag || (typeof json.tag_name === 'string' && json.tag_name !== tag)) return null;
   const size = Number.isInteger(asset.size) && asset.size > 0 ? asset.size : 0;
   let meta = {};
   const m = /<!--\s*gamenight-apk:\s*(\{[\s\S]*?\})\s*-->/.exec(String(json.body || ''));
   if (m) { try { meta = JSON.parse(m[1]) || {}; } catch { meta = {}; } }
+  const fromTag = (/^v?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$/.exec(tag) || [])[1];
   const fromTitle = (/(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)/.exec(String(json.name || '')) || [])[1];
-  const version = isVersion(meta.version) ? meta.version : (isVersion(fromTitle) ? fromTitle : '');
+  const version = [meta.version, fromTag, fromTitle].find(isVersion) || '';
   if (!version) return null;
-  const sha = typeof meta.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(meta.sha256) ? meta.sha256.toLowerCase() : '';
+  const digest = (/^sha256:([a-f0-9]{64})$/i.exec(String(asset.digest || '')) || [])[1] || '';
+  const sha = typeof meta.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(meta.sha256) ? meta.sha256.toLowerCase() : digest.toLowerCase();
   const metaSize = Number.isInteger(meta.size) && meta.size > 0 ? meta.size : 0;
+  const labelCode = Number((/build\s+(\d{1,9})\b/i.exec(String(asset.label || '')) || [])[1]);
+  const code = Number.isInteger(meta.versionCode) && meta.versionCode > 0 ? meta.versionCode : (labelCode > 0 ? labelCode : null);
   return {
     version,
-    versionCode: Number.isInteger(meta.versionCode) && meta.versionCode > 0 ? meta.versionCode : null,
+    versionCode: code,
     url: asset.browser_download_url,
     size: size || metaSize,
     // Dimensione dei dati della build diversa da quella del file: l'APK è cambiata dopo (build in corso)
     sizeMismatch: Boolean(size && metaSize && size !== metaSize),
     sha256: sha,
     date: cleanDate(meta.date) || cleanDate(asset.updated_at) || cleanDate(json.published_at),
-    notes: cleanNotes(meta.notes),
+    notes: cleanNotes(meta),
     minAndroid: isVersion(meta.minAndroid) ? meta.minAndroid : MIN_ANDROID
   };
 }
@@ -151,8 +189,13 @@ export async function getRelease({ force = false } = {}) {
   const fresh = c && c.api === src.api && Date.now() - c.at < TTL && c.release;
   if (fresh && !force) return { release: c.release, at: c.at, cached: true };
   try {
-    const rel = parseRelease(await fetchJSON(src.api), src.apk);
-    if (!rel) return { release: null, error: 'invalid', stale: c?.api === src.api ? c.release : null };
+    const json = await fetchJSON(src.api);
+    const rel = parseRelease(json, src.apk);
+    if (!rel) {
+      // Release appena pubblicata, APK ancora in costruzione (5-8 minuti): non è un errore.
+      const building = json && typeof json === 'object' && typeof json.tag_name === 'string' && Array.isArray(json.assets) && !json.assets.some((a) => a && a.name === APK_NAME);
+      return { release: null, error: building ? 'preparing' : 'invalid', building: building ? json.tag_name.replace(/^v/, '') : '', stale: c?.api === src.api ? c.release : null };
+    }
     ls.set(CACHE_KEY, { api: src.api, at: Date.now(), release: rel });
     return { release: rel, at: Date.now(), cached: false };
   } catch (err) {
@@ -183,8 +226,11 @@ export async function checkUpdates({ force = false } = {}) {
   const [r, web] = await Promise.all([getRelease({ force }), getWebVersion().catch(() => null)]);
   const out = { installed, web, release: r.release, error: r.error || '', stale: r.stale || null, at: r.at || r.staleAt || 0, cached: Boolean(r.cached) };
   if (r.error === 'noconfig') return { ...out, status: 'noconfig' };
+  if (r.error === 'preparing') return { ...out, error: '', status: 'preparing', web: web || { version: r.building, notes: [] } };
   if (!r.release) return { ...out, status: 'error' };
-  const rel = r.release;
+  // Le novità stanno in version.json (le release fatte a mano non contengono dati per l'app).
+  const rel = !r.release.notes.length && web && semverCmp(web.version, r.release.version) === 0 ? { ...r.release, notes: web.notes } : r.release;
+  out.release = rel;
   const cmp = semverCmp(rel.version, installed.version);
   const webAhead = web && semverCmp(web.version, rel.version) === 1;
   // Nel browser il sito è sempre l'ultimo: qui conta solo quale APK si può scaricare.
@@ -219,10 +265,9 @@ const removeLocal = () => nativeCall('Filesystem', 'deleteFile', { path: LOCAL_A
  * 'incomplete', 'hash'. Se un controllo fallisce il file viene cancellato: non si installa mai.
  */
 export async function downloadApk(rel, { onProgress, onVerify } = {}) {
-  if (!isApp()) throw fail('notapp', 'Il download con installazione si fa dall’app Android.');
-  const official = apkUrl();
-  if (!rel || !official || !sameUrl(rel.url, official)) throw fail('url', 'Indirizzo dell’APK non ufficiale: download annullato.');
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw fail('offline', 'Sei offline: collegati a internet e riprova.');
+  if (!isApp()) throw fail('notapp', t('upd.err.notapp'));
+  if (!rel || !officialAssetTag(rel.url)) throw fail('url', t('upd.err.url'));
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw fail('offline', t('upd.err.dlOffline'));
   await removeLocal();
   const cap = window.Capacitor;
   let sub = null;
@@ -233,18 +278,18 @@ export async function downloadApk(rel, { onProgress, onVerify } = {}) {
   } catch (err) {
     await removeLocal();
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    throw fail(offline ? 'offline' : 'network', offline ? 'Connessione persa durante il download: riprova quando sei di nuovo online.' : `Download non riuscito (${String(err?.message || err).slice(0, 120)}). Riprova.`);
+    throw fail(offline ? 'offline' : 'network', offline ? t('upd.err.dlLost') : t('upd.err.dlFailed', { why: String(err?.message || err).slice(0, 120) }));
   } finally { try { await sub?.remove?.(); } catch { /* niente */ } }
   onVerify?.();
   const st = await nativeCall('Filesystem', 'stat', { path: LOCAL_APK, directory: 'CACHE' }).catch(() => null);
   const size = Number(st?.size) || 0;
-  if (!size) { await removeLocal(); throw fail('empty', 'Il file scaricato è vuoto: riprova più tardi.'); }
-  if (rel.size && size !== rel.size) { await removeLocal(); throw fail('incomplete', `Il file scaricato è incompleto (${fmtSize(size)} su ${fmtSize(rel.size)}): riprova.`); }
+  if (!size) { await removeLocal(); throw fail('empty', t('upd.err.empty')); }
+  if (rel.size && size !== rel.size) { await removeLocal(); throw fail('incomplete', t('upd.err.incomplete', { got: fmtSize(size), total: fmtSize(rel.size) })); }
   let verified = 'size';
   if (rel.sha256) {
     const r = await nativeCall('Filesystem', 'readFile', { path: LOCAL_APK, directory: 'CACHE' });
     const hex = await sha256Hex(b64ToBytes(r?.data || ''));
-    if (hex !== rel.sha256) { await removeLocal(); throw fail('hash', 'Il file non corrisponde a quello pubblicato (controllo SHA-256 non superato): non lo installo. Ricontrolla gli aggiornamenti e riprova.'); }
+    if (hex !== rel.sha256) { await removeLocal(); throw fail('hash', t('upd.err.hash')); }
     verified = 'sha256';
   }
   return { path: res?.path || st?.uri || '', uri: st?.uri || '', size, verified };
@@ -256,11 +301,11 @@ export async function downloadApk(rel, { onProgress, onVerify } = {}) {
  * "Installa app sconosciute" per GameNight Show).
  */
 export async function openInstaller(file) {
-  if (!isApp() || !file?.path) throw fail('notapp', 'Niente da installare.');
+  if (!isApp() || !file?.path) throw fail('notapp', t('upd.err.nothing'));
   try {
     await nativeCall('FileOpener', 'openFile', { path: file.path, mimeType: 'application/vnd.android.package-archive' });
   } catch (err) {
-    throw fail('installer', `Android non ha aperto l’installazione (${String(err?.message || err).slice(0, 100)}).`);
+    throw fail('installer', t('upd.err.installer', { why: String(err?.message || err).slice(0, 100) }));
   }
 }
 /** L'APK installata ha già il componente per aprire l'installazione? (le versioni prima della 1.3 no) */
@@ -274,35 +319,27 @@ export function canInstallInApp() {
 
 export function fmtSize(n) {
   if (!n) return '';
-  return n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+  return n >= 1048576 ? `${fmtNum(n / 1048576, 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 export function fmtDay(d) {
-  const t = Date.parse(d || '');
-  return Number.isNaN(t) ? '' : new Date(t).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+  const ms = Date.parse(d || '');
+  return Number.isNaN(ms) ? '' : fmtDate(ms, { day: 'numeric', month: 'long', year: 'numeric' });
 }
-const ERR_TEXT = {
-  offline: 'Nessuna connessione: GameNight Show funziona lo stesso, ricontrolla quando sei online.',
-  network: 'Il servizio degli aggiornamenti non risponde: riprova più tardi. La versione installata funziona normalmente.',
-  limit: 'GitHub ha ricevuto troppe richieste da questa rete: riprova tra un’ora.',
-  missing: 'Non c’è ancora un’APK pubblicata nelle Releases del repository.',
-  invalid: 'Le informazioni sulla versione pubblicata non sono valide: riprova più tardi.',
-  http: 'Il servizio degli aggiornamenti ha risposto con un errore: riprova più tardi.',
-  noconfig: 'Indirizzo ufficiale dell’APK non configurato: il sito non è su GitHub Pages (vedi README, “App Android”).'
-};
-export const errorText = (k) => ERR_TEXT[k] || ERR_TEXT.network;
+const ERR_KEYS = ['offline', 'network', 'limit', 'missing', 'invalid', 'http', 'noconfig'];
+export const errorText = (k) => t(`upd.err.${ERR_KEYS.includes(k) ? k : 'network'}`);
 
 /** Riga di stato (testo semplice) per un risultato di checkUpdates. */
 export function statusText(s) {
   const r = s.release;
   switch (s.status) {
-    case 'update': return `È disponibile GameNight Show ${r.version} (hai la ${s.installed.version}).`;
-    case 'build': return `C’è una build più recente della ${r.version} (n. ${r.versionCode}, hai la n. ${s.installed.build}): contiene correzioni.`;
-    case 'preparing': return s.installed.app
-      ? `La versione ${s.web.version} è stata pubblicata: l’APK è in preparazione, ricontrolla tra qualche minuto.`
-      : `La versione ${s.web.version} è appena uscita: l’APK è in preparazione (adesso si scarica la ${r.version}).`;
-    case 'available': return `App Android stabile: versione ${r.version}.`;
-    case 'older': return `Hai una versione più nuova di quella pubblicata (${r.version}).`;
-    case 'uptodate': return s.installed.app ? `GameNight Show è aggiornato (versione ${s.installed.version}).` : `Versione stabile dell’app: ${r.version}.`;
+    case 'update': return t('upd.st.update', { v: r.version, mine: s.installed.version });
+    case 'build': return t('upd.st.build', { v: r.version, code: String(r.versionCode), mine: String(s.installed.build) });
+    case 'preparing': return s.installed.app || !r
+      ? t('upd.st.preparingApp', { v: s.web?.version || '' })
+      : t('upd.st.preparingWeb', { v: s.web.version, r: r.version });
+    case 'available': return t('upd.st.available', { v: r.version });
+    case 'older': return t('upd.st.older', { v: r.version });
+    case 'uptodate': return s.installed.app ? t('upd.st.uptodate', { v: s.installed.version }) : t('upd.st.stable', { v: r.version });
     case 'noconfig': return errorText('noconfig');
     default: return errorText(s.error);
   }
@@ -340,9 +377,9 @@ function showBanner(s, onOpen) {
   el.id = 'updBanner';
   el.className = 'upd-banner upd-banner--app';
   el.setAttribute('role', 'status');
-  el.innerHTML = `<span class="upd-text"><b>È disponibile GameNight Show ${esc(r.version)}</b><small>Hai la ${esc(s.installed.version)}${r.notes[0] ? ` · ${esc(r.notes[0])}` : ''}</small></span>
-    <button type="button" class="btn-sec btn-sec--sm" data-updopen>Vedi e scarica</button>
-    <button type="button" class="upd-x" aria-label="Più tardi" title="Più tardi">✕</button>`;
+  el.innerHTML = `<span class="upd-text"><b>${esc(t('upd.banner.title', { v: r.version }))}</b><small>${esc(t('upd.banner.mine', { v: s.installed.version }))}${r.notes[0] ? ` · ${esc(r.notes[0])}` : ''}</small></span>
+    <button type="button" class="btn-sec btn-sec--sm" data-updopen>${esc(t('upd.banner.open'))}</button>
+    <button type="button" class="upd-x" aria-label="${esc(t('common.later'))}" title="${esc(t('common.later'))}" data-close>✕</button>`;
   el.querySelector('[data-updopen]').addEventListener('click', () => {
     el.remove();
     if (onOpen) onOpen(s); else location.href = 'index.html#aggiornamenti';
@@ -370,43 +407,43 @@ export function mountUpdatePanel(box, { qrSVG, toast, showQR = false, page = fal
     const inst = s?.installed || { version: APP_VERSION, app };
     const notes = (r?.notes?.length ? r.notes : s?.web?.notes) || [];
     const phaseText = {
-      checking: '<span class="ver-state ver-state--busy">⏳ Controllo in corso…</span>',
-      downloading: `<span class="ver-state ver-state--busy">⬇️ Download in corso… ${st.progress[1] ? `${Math.floor((st.progress[0] / st.progress[1]) * 100)}% · ` : ''}${fmtSize(st.progress[0])}${st.progress[1] ? ` di ${fmtSize(st.progress[1])}` : ''}</span>`,
-      verifying: '<span class="ver-state ver-state--busy">🔎 Controllo del file…</span>',
-      ready: `<span class="ver-state ver-state--ok">✅ Download completato e controllato (${st.file?.verified === 'sha256' ? 'SHA-256 e dimensione' : 'dimensione'}).</span>`,
-      installing: '<span class="ver-state ver-state--ok">📲 Installazione da confermare: segui la schermata di Android.</span>',
+      checking: `<span class="ver-state ver-state--busy">⏳ ${esc(t('upd.p.checking'))}</span>`,
+      downloading: `<span class="ver-state ver-state--busy">⬇️ ${esc(t('upd.p.downloading'))} ${st.progress[1] ? `${Math.floor((st.progress[0] / st.progress[1]) * 100)}% · ` : ''}${fmtSize(st.progress[0])}${st.progress[1] ? ` ${esc(t('upd.p.of'))} ${fmtSize(st.progress[1])}` : ''}</span>`,
+      verifying: `<span class="ver-state ver-state--busy">🔎 ${esc(t('upd.p.verifying'))}</span>`,
+      ready: `<span class="ver-state ver-state--ok">✅ ${esc(t(st.file?.verified === 'sha256' ? 'upd.p.readySha' : 'upd.p.readySize'))}</span>`,
+      installing: `<span class="ver-state ver-state--ok">📲 ${esc(t('upd.p.installing'))}</span>`,
       failed: `<span class="ver-state ver-state--err">❌ ${esc(st.err)}</span>`
     }[st.phase] || '';
     const statusCls = !s ? '' : ({ update: 'ver-state--new', build: 'ver-state--new', uptodate: 'ver-state--ok', older: 'ver-state--ok', available: 'ver-state--ok', preparing: 'ver-state--wait', error: 'ver-state--err', noconfig: 'ver-state--err' })[s.status] || '';
     const canDl = app && r && s && ['update', 'build', 'uptodate', 'older'].includes(s.status) && !s.error;
     const showDl = r && s && s.status !== 'noconfig';
     box.innerHTML = `
-      <p class="ver-status" role="status" aria-live="polite">${st.phase !== 'idle' && st.phase !== 'checking' ? phaseText : s ? `<span class="ver-state ${statusCls}">${esc(statusText(s))}</span>${s.stale ? ' <small class="muted">(dati dell’ultimo controllo riuscito)</small>' : ''}` : phaseText}</p>
+      <p class="ver-status" role="status" aria-live="polite">${st.phase !== 'idle' && st.phase !== 'checking' ? phaseText : s ? `<span class="ver-state ${statusCls}">${esc(statusText(s))}</span>${s.stale ? ` <small class="muted">(${esc(t('upd.p.stale'))})</small>` : ''}` : phaseText}</p>
       <div class="ver-grid">
-        ${app ? `<div class="ver-kv"><span>Installata</span><b>${esc(inst.version)}${inst.build ? ` <small>build ${esc(inst.build)}</small>` : ''}</b></div>` : ''}
-        <div class="ver-kv"><span>${app ? 'Ultima pubblicata' : 'App Android stabile'}</span><b>${r ? `${esc(r.version)}${r.versionCode ? ` <small>build ${esc(r.versionCode)}</small>` : ''}` : '—'}</b></div>
-        ${r?.date ? `<div class="ver-kv"><span>Pubblicata il</span><b>${esc(fmtDay(r.date))}</b></div>` : ''}
-        ${r?.size ? `<div class="ver-kv"><span>Dimensione</span><b>${esc(fmtSize(r.size))}</b></div>` : ''}
-        <div class="ver-kv ver-kv--wide"><span>Richiede</span><b>Android ${esc(r?.minAndroid || MIN_ANDROID)} o più recente</b></div>
+        ${app ? `<div class="ver-kv"><span>${esc(t('upd.p.installed'))}</span><b>${esc(inst.version)}${inst.build ? ` <small>${esc(t('upd.p.build', { n: String(inst.build) }))}</small>` : ''}</b></div>` : ''}
+        <div class="ver-kv"><span>${esc(app ? t('upd.p.latest') : t('upd.p.stableApk'))}</span><b>${r ? `${esc(r.version)}${r.versionCode ? ` <small>${esc(t('upd.p.build', { n: String(r.versionCode) }))}</small>` : ''}` : '—'}</b></div>
+        ${r?.date ? `<div class="ver-kv"><span>${esc(t('upd.p.date'))}</span><b>${esc(fmtDay(r.date))}</b></div>` : ''}
+        ${r?.size ? `<div class="ver-kv"><span>${esc(t('upd.p.size'))}</span><b>${esc(fmtSize(r.size))}</b></div>` : ''}
+        <div class="ver-kv ver-kv--wide"><span>${esc(t('upd.p.requires'))}</span><b>${esc(t('upd.p.android', { v: r?.minAndroid || MIN_ANDROID }))}</b></div>
       </div>
       ${st.phase === 'downloading' ? `<div class="ver-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${st.progress[1] ? Math.floor((st.progress[0] / st.progress[1]) * 100) : 0}"><i style="width:${st.progress[1] ? Math.min(100, (st.progress[0] / st.progress[1]) * 100) : 8}%"></i></div>` : ''}
-      ${notes.length ? `<details class="hub-details ver-notes" ${s?.status === 'update' || page ? 'open' : ''}><summary>Novità della ${esc(r?.version || s?.web?.version || '')}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
+      ${notes.length ? `<details class="hub-details ver-notes" ${s?.status === 'update' || page ? 'open' : ''}><summary>${esc(t('upd.p.notes', { v: r?.version || s?.web?.version || '' }))}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
       <div class="hub-row ver-actions">
-        <button type="button" class="btn-sec" data-ver="check" ${['checking', 'downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>🔄 Controlla aggiornamenti</button>
+        <button type="button" class="btn-sec" data-ver="check" ${['checking', 'downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>🔄 ${esc(t('upd.check'))}</button>
         ${app
     ? (st.phase === 'ready' || st.phase === 'installing'
-      ? '<button type="button" class="btn" data-ver="install">📲 Installa</button>'
+      ? `<button type="button" class="btn" data-ver="install">📲 ${esc(t('upd.p.install'))}</button>`
       : canDl && canInstallInApp()
-        ? `<button type="button" class="${s.status === 'update' || s.status === 'build' ? 'btn' : 'btn-sec'}" data-ver="download" ${['downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>⬇️ Scarica APK${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</button>`
-        : canDl ? `<a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">⬇️ Scarica APK nel browser</a>` : '')
-    : (showDl && !tooOld && (r.url || '') ? `<a class="btn" href="${esc(r.url)}" rel="noopener" data-ver="link">⬇️ Scarica APK${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</a>` : '')}
+        ? `<button type="button" class="${s.status === 'update' || s.status === 'build' ? 'btn' : 'btn-sec'}" data-ver="download" ${['downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>⬇️ ${esc(t('upd.p.download'))}${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</button>`
+        : canDl ? `<a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">⬇️ ${esc(t('upd.p.downloadBrowser'))}</a>` : '')
+    : (showDl && !tooOld && (r.url || '') ? `<a class="btn" href="${esc(r.url)}" rel="noopener" data-ver="link">⬇️ ${esc(t('upd.p.download'))}${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</a>` : '')}
       </div>
-      ${app && st.phase === 'installing' ? '<p class="muted small">Se Android dice che non può installare app da questa fonte: tocca <b>Impostazioni</b>, attiva <b>Consenti da questa fonte</b> per GameNight Show, poi torna indietro e tocca di nuovo <b>Installa</b>. I tuoi dati restano: l’aggiornamento non cancella profilo e armadi.</p>' : ''}
-      ${app && canDl && !canInstallInApp() ? '<p class="muted small">Questa versione dell’app non sa aprire l’installazione da sola: l’APK si scarica nel browser, poi aprila dalle notifiche.</p>' : ''}
-      ${!app && tooOld ? `<p class="form-error">Questo telefono ha Android ${esc(androidVer)}: GameNight Show richiede Android ${esc(r?.minAndroid || MIN_ANDROID)} o più recente. Puoi usare il sito dal browser.</p>` : ''}
-      ${!app && showDl && !page ? `<p class="muted small">${isAndroid() ? 'Dopo il download apri il file: Android chiede di permettere l’installazione da questa fonte.' : 'Dal computer: inquadra il QR con il telefono Android. Su iPhone usa il sito (Safari › Condividi › Aggiungi alla schermata Home).'}</p>` : ''}
-      ${showQR && qrSVG ? `<div class="ver-qr"><h3>Installa GameNight su un altro dispositivo</h3><p class="muted small">Inquadra il QR con il telefono Android: si apre la pagina ufficiale di download, sempre con l’ultima versione.</p><div class="hub-qr">${qrSVG(downloadPageUrl(), 4)}</div><p class="muted small ver-url"><a href="${esc(downloadPageUrl())}" target="_blank" rel="noopener">${esc(downloadPageUrl().replace(/^https?:\/\//, ''))}</a></p></div>` : ''}
-      ${r?.sha256 && (page || !app) ? `<details class="hub-details"><summary>Impronta SHA-256 (per i più tecnici)</summary><code class="ver-sha">${esc(r.sha256)}</code></details>` : ''}`;
+      ${app && st.phase === 'installing' ? `<p class="muted small">${t('upd.p.installHelp')}</p>` : ''}
+      ${app && canDl && !canInstallInApp() ? `<p class="muted small">${esc(t('upd.p.oldApp'))}</p>` : ''}
+      ${!app && tooOld ? `<p class="form-error">${esc(t('upd.p.tooOld', { v: androidVer, min: r?.minAndroid || MIN_ANDROID }))}</p>` : ''}
+      ${!app && showDl && !page ? `<p class="muted small">${esc(isAndroid() ? t('upd.p.afterDl') : t('upd.p.fromPc'))}</p>` : ''}
+      ${showQR && qrSVG ? `<div class="ver-qr"><h3>${esc(t('upd.p.qrTitle'))}</h3><p class="muted small">${esc(t('upd.p.qrText'))}</p><div class="hub-qr">${qrSVG(downloadPageUrl(), 4)}</div><p class="muted small ver-url"><a href="${esc(downloadPageUrl())}" target="_blank" rel="noopener">${esc(downloadPageUrl().replace(/^https?:\/\//, ''))}</a></p></div>` : ''}
+      ${r?.sha256 && (page || !app) ? `<details class="hub-details"><summary>${esc(t('upd.p.sha'))}</summary><code class="ver-sha">${esc(r.sha256)}</code></details>` : ''}`;
   };
   const run = async (force) => {
     st.phase = 'checking'; st.file = null; paint();

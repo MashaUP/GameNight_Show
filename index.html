@@ -2,91 +2,185 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#FFF4DE">
+  <meta name="theme-color" content="#0E0A26">
+  <meta name="gnr-title" content="home.title">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="GameNight">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/favicon-48.png" type="image/png" sizes="48x48">
+  <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
   <link rel="preload" href="assets/fonts/fredoka-600.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/atkinson-500.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/ui.css">
   <title>GameNight Show</title>
 </head>
-<body class="hub-body">
-  <main class="home hub" id="hub">
-    <header class="hub-stage">
-      <i class="stage-beam stage-beam--l" aria-hidden="true"></i><i class="stage-beam stage-beam--r" aria-hidden="true"></i>
-      <img class="hub-mark" src="assets/logo-mark.svg" alt="" width="96" height="96">
-      <div class="hub-title">
-        <h1 class="logo logo--hub">GameNight <span class="logo-tag">Show</span></h1>
-        <p class="hub-lead">Votate i party game dal telefono: la TV svela i voti e premia il gioco migliore.</p>
-      </div>
-      <button type="button" class="hub-gear" id="hubSettings" aria-label="Impostazioni" title="Impostazioni">⚙️</button>
+<body class="hub-body ui-body">
+  <a class="skip-link" href="#main" data-i18n="common.skip">Vai al contenuto</a>
+  <div class="shell" id="hub">
+    <!-- Barra laterale (computer e tablet orizzontale) -->
+    <aside class="side" aria-labelledby="sideBrand">
+      <a class="brand-lockup" href="#home" id="sideBrand">
+        <img class="brand-die" src="assets/brand/logo-256.webp" alt="" width="48" height="48">
+        <span class="brand-word">GameNight <span class="brand-tag">Show</span></span>
+      </a>
+      <nav class="side-nav" aria-label="Sezioni" data-i18n-attr="aria-label:home.nav.label">
+        <a href="#home" data-nav="home"><span class="nav-ico" aria-hidden="true">🏠</span><span data-i18n="home.nav.home">Home</span></a>
+        <a href="#armadi" data-nav="armadi"><span class="nav-ico" aria-hidden="true">📦</span><span data-i18n="home.nav.armadi">Armadi</span></a>
+        <a href="#serate" data-nav="serate"><span class="nav-ico" aria-hidden="true">📋</span><span data-i18n="home.nav.serate">Serate</span></a>
+        <a href="#gruppi" data-nav="gruppi"><span class="nav-ico" aria-hidden="true">👥</span><span data-i18n="home.nav.gruppi">Gruppi</span></a>
+        <a href="#altro" data-nav="altro"><span class="nav-ico" aria-hidden="true">👤</span><span data-i18n="home.nav.profilo">Profilo e app</span></a>
+        <button type="button" data-open="settings"><span class="nav-ico" aria-hidden="true">⚙️</span><span data-i18n="home.nav.settings">Impostazioni</span></button>
+      </nav>
+      <div class="side-foot" id="sideFoot"></div>
+    </aside>
+
+    <!-- Barra in alto (telefono) -->
+    <header class="topbar">
+      <a class="brand-lockup brand-lockup--sm" href="#home">
+        <img class="brand-die" src="assets/brand/logo-256.webp" alt="" width="40" height="40">
+        <span class="brand-word">GameNight <span class="brand-tag">Show</span></span>
+      </a>
+      <button type="button" class="icon-round" id="hubSettings" aria-label="Impostazioni" title="Impostazioni" data-i18n-attr="aria-label:home.nav.settings;title:home.nav.settings">⚙️</button>
     </header>
 
-    <section class="card hub-join" aria-labelledby="joinTitle">
-      <h2 id="joinTitle">🎉 Entra nella stanza</h2>
-      <div id="backBox" class="hub-back" hidden></div>
-      <button type="button" class="btn btn-block hub-scan" id="scanBtn" hidden>📷 <span>Inquadra il QR della TV</span></button>
-      <form id="joinForm" class="hub-code" novalidate>
-        <label class="hub-or" for="homeCode" id="codeLabel">Scrivi il codice che vedi sulla TV</label>
-        <div class="hub-code-row">
-          <input class="input code-input" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" inputmode="text">
-          <button class="btn" type="submit" id="joinGo">Entra</button>
+    <main class="main" id="main" tabindex="-1">
+      <!-- ===================== HOME ===================== -->
+      <section class="view" data-view="home" aria-labelledby="heroTitle">
+        <header class="hero">
+          <div class="hero-text">
+            <h1 id="heroTitle" class="hero-title" data-i18n="home.hero.welcome">Benvenuto!</h1>
+            <p class="hero-sub" data-i18n="home.hero.sub">La tua serata di giochi inizia da qui.</p>
+          </div>
+          <img class="hero-art" src="assets/brand/logo-512.webp" alt="" width="180" height="180">
+        </header>
+
+        <div id="backBox" class="back-box" hidden></div>
+
+        <div class="grid grid--top">
+          <section class="tile tile--join" aria-labelledby="joinTitle">
+            <div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">🚪</span><div><h2 id="joinTitle" data-i18n="home.join.title">Entra in una stanza</h2><p class="tile-sub" data-i18n="home.join.sub">Il codice è sulla TV, sotto il QR.</p></div></div>
+            <button type="button" class="ui-btn ui-btn--primary ui-btn--block" id="scanBtn" hidden><span aria-hidden="true">📷</span> <span data-i18n="home.join.scan">Inquadra il QR della TV</span></button>
+            <form id="joinForm" class="join-form" novalidate>
+              <label class="join-label" for="homeCode" id="codeLabel" data-i18n="home.join.codeLabel">Codice della stanza</label>
+              <div class="join-row">
+                <input class="ui-input code-field" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" inputmode="text">
+                <button class="ui-btn ui-btn--accent" type="submit" id="joinGo" data-i18n="home.join.go">Entra</button>
+              </div>
+              <p class="form-error" id="homeErr" role="alert"></p>
+            </form>
+          </section>
+
+          <section class="tile tile--host" id="tileHost" aria-labelledby="createTitle">
+            <div class="tile-head"><span class="tile-ico tile-ico--sun" aria-hidden="true">📺</span><div><h2 id="createTitle" data-i18n="home.host.title">Crea una stanza</h2><p class="tile-sub" id="createTxt" data-i18n="home.host.sub">Sul PC collegato alla TV (o da qui): compare il QR e guidi lo show.</p></div></div>
+            <a class="ui-btn ui-btn--primary ui-btn--block" href="host.html" id="createGo" data-i18n="home.host.go">Crea la stanza</a>
+          </section>
+
+          <section class="tile tile--me" id="hubMe" aria-live="polite">
+            <p class="muted" data-i18n="home.me.loading">Carico il tuo profilo…</p>
+          </section>
         </div>
-        <p class="form-error" id="homeErr" role="alert"></p>
-      </form>
-    </section>
 
-    <section class="card hub-join hub-create" aria-labelledby="createTitle" id="tileHost">
-      <h2 id="createTitle">📺 Crea la stanza</h2>
-      <p class="muted small" id="createTxt">Sul PC collegato alla TV (o da qui): crei la stanza, compare il QR e guidi lo show.</p>
-      <a class="btn btn-block hub-create-btn" href="host.html" id="createGo">Crea la stanza</a>
-    </section>
+        <div class="grid grid--mid">
+          <section class="tile tile--coll" aria-labelledby="collTitle">
+            <h2 class="sec-title" id="collTitle" data-i18n="home.coll.title">La tua collezione</h2>
+            <div class="coll">
+              <a class="mini" href="#armadi" id="tileArm">
+                <span class="tile-ico tile-ico--violet" aria-hidden="true">📦</span>
+                <span class="mini-text"><b data-i18n="home.arm.title">I tuoi armadi</b><small id="tileArmTxt"></small></span>
+                <span class="mini-go" aria-hidden="true">›</span>
+              </a>
+              <a class="mini" href="#serate" id="tileHist">
+                <span class="tile-ico tile-ico--teal" aria-hidden="true">📋</span>
+                <span class="mini-text"><b data-i18n="home.hist.title">Le tue serate</b><small id="tileHistTxt"></small></span>
+                <span class="mini-go" aria-hidden="true">›</span>
+              </a>
+            </div>
+          </section>
+          <section class="tile tile--groups" aria-labelledby="grpMiniTitle">
+            <div class="sec-row"><h2 class="sec-title" id="grpMiniTitle" data-i18n="home.groups.title">I tuoi gruppi</h2><a class="sec-link" href="#gruppi" data-i18n="home.groups.all">Tutti</a></div>
+            <div id="grpMini"></div>
+          </section>
+        </div>
 
-    <section class="card hub-me" id="hubMe" aria-live="polite">
-      <p class="muted">Carico il tuo profilo…</p>
-    </section>
-
-    <section class="hub-tiles" aria-label="Le tue cose">
-      <button type="button" class="card hub-tile" id="tileArm">
-        <span class="hub-ico" aria-hidden="true">📦</span>
-        <b>I tuoi armadi</b>
-        <small id="tileArmTxt">I giochi con la foto, pronti per ogni serata.</small>
-      </button>
-      <button type="button" class="card hub-tile" id="tileHist">
-        <span class="hub-ico" aria-hidden="true">📋</span>
-        <b>Le tue serate</b>
-        <small id="tileHistTxt">Resoconti con voti e vincitori.</small>
-      </button>
-    </section>
-
-    <div class="hub-more">
-      <section class="card hub-sec" id="hubArmadi" hidden aria-labelledby="armTitle"></section>
-      <section class="card hub-sec" id="hubHistory" hidden aria-labelledby="histTitle"></section>
-      <section class="card hub-sec" id="hubGroups" hidden aria-labelledby="grpTitle"></section>
-    </div>
-    <div class="hub-extra">
-      <section class="card hub-sec hub-app" id="hubApp" hidden></section>
-  
-      <section class="card home-donate" aria-labelledby="donateTitle">
-        <h2 id="donateTitle">☕ Donazioni</h2>
-        <p>GameNight Show è gratis e senza pubblicità. Se le vostre serate sono più divertenti, potete offrirmi un caffè: aiuta a pagare il tempo per le prossime novità.</p>
-        <a class="btn kofi-btn" href="https://ko-fi.com/mashaup" target="_blank" rel="noopener noreferrer">❤️ <span>Sostienimi su Ko-fi</span></a>
+        <div class="grid grid--bottom">
+          <section class="tile tile--app" id="hubApp" hidden></section>
+          <section class="tile tile--donate home-donate" aria-labelledby="donateTitle" data-link-box>
+            <div class="tile-head"><span class="tile-ico tile-ico--pink" aria-hidden="true">❤️</span><div><h2 id="donateTitle" data-i18n="home.donate.title">Sostieni GameNight</h2></div></div>
+            <p class="tile-sub" data-i18n="home.donate.text">GameNight Show è gratis e senza pubblicità. Se le vostre serate sono più divertenti, potete offrirmi un caffè: aiuta a pagare il tempo per le prossime novità.</p>
+            <a class="ui-btn ui-btn--pink ui-btn--block kofi-btn" data-link="kofi" target="_blank" rel="noopener noreferrer" hidden><span aria-hidden="true">☕</span> <span data-i18n="home.donate.go">Sostienimi su Ko-fi</span></a>
+          </section>
+          <section class="tile tile--info" aria-labelledby="infoTitle">
+            <div class="tile-head"><span class="tile-ico tile-ico--sky" aria-hidden="true">ℹ️</span><div><h2 id="infoTitle" data-i18n="home.info.title">Informazioni</h2><p class="tile-sub" id="infoVer"></p></div></div>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" id="hubCheckUpd"><span aria-hidden="true">🔄</span> <span data-i18n="upd.check">Cerca aggiornamento</span></button>
+            <a class="ui-btn ui-btn--ghost ui-btn--block" href="test.html"><span aria-hidden="true">🩺</span> <span data-i18n="home.info.firebase">Verifica Firebase</span></a>
+          </section>
+        </div>
       </section>
-    </div>
 
-    <footer class="hub-foot">
-      <p class="credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>
-      <p><a href="test.html">Verifica la configurazione di Firebase</a> · <span id="hubVer"></span></p>
-    </footer>
-  </main>
-  <noscript>Per usare GameNight Show serve JavaScript attivo.</noscript>
+      <!-- ===================== ARMADI ===================== -->
+      <section class="view" data-view="armadi" hidden aria-labelledby="armTitle">
+        <section class="tile tile--page hub-sec" id="hubArmadi"></section>
+      </section>
+
+      <!-- ===================== SERATE ===================== -->
+      <section class="view" data-view="serate" hidden aria-labelledby="histTitle">
+        <section class="tile tile--page hub-sec" id="hubHistory"></section>
+      </section>
+
+      <!-- ===================== GRUPPI ===================== -->
+      <section class="view" data-view="gruppi" hidden aria-labelledby="grpTitle">
+        <section class="tile tile--page hub-sec" id="hubGroups"></section>
+      </section>
+
+      <!-- ===================== PROFILO E APP ===================== -->
+      <section class="view" data-view="altro" hidden aria-labelledby="altroTitle">
+        <h1 class="page-title" id="altroTitle" data-i18n="home.altro.title">Profilo e app</h1>
+        <div class="grid grid--altro">
+          <section class="tile" id="hubMeFull"></section>
+          <section class="tile tile--app" id="hubAppFull"></section>
+          <section class="tile tile--donate home-donate" data-link-box>
+            <div class="tile-head"><span class="tile-ico tile-ico--pink" aria-hidden="true">❤️</span><div><h2 data-i18n="home.donate.title">Sostieni GameNight</h2></div></div>
+            <p class="tile-sub" data-i18n="home.donate.text">GameNight Show è gratis e senza pubblicità.</p>
+            <a class="ui-btn ui-btn--pink ui-btn--block kofi-btn" data-link="kofi" target="_blank" rel="noopener noreferrer" hidden><span aria-hidden="true">☕</span> <span data-i18n="home.donate.go">Sostienimi su Ko-fi</span></a>
+          </section>
+          <section class="tile tile--links" aria-labelledby="linksTitle" data-link-box>
+            <div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">💬</span><div><h2 id="linksTitle" data-i18n="links.title">Community e supporto</h2><p class="tile-sub" data-i18n="links.sub">Codice, community, guida e segnalazioni.</p></div></div>
+            <ul class="link-list" data-link-list data-link-exclude="kofi"></ul>
+            <p class="muted small links-status" id="linksStatus"></p>
+          </section>
+          <section class="tile">
+            <div class="tile-head"><span class="tile-ico tile-ico--sky" aria-hidden="true">⚙️</span><div><h2 data-i18n="home.nav.settings">Impostazioni</h2><p class="tile-sub" data-i18n="home.altro.settingsSub">Lingua, tema, accessibilità, aiuto.</p></div></div>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="settings" data-i18n="home.altro.openSettings">Apri le impostazioni</button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="updates"><span aria-hidden="true">🔄</span> <span data-i18n="upd.check">Cerca aggiornamento</span></button>
+          </section>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <div class="foot-row">
+          <p class="dot-sep"><span id="hubVer"></span><a href="test.html" data-i18n="home.foot.firebase">Verifica la configurazione di Firebase</a><a data-link="kofi" target="_blank" rel="noopener noreferrer" hidden>Ko-fi</a></p>
+          <span class="link-icons" role="group" data-link-icons="github,discord" data-i18n-attr="aria-label:links.footLabel" aria-label="GameNight Show in rete" hidden></span>
+        </div>
+        <p class="credits" data-i18n="home.foot.credits">Avatar generati con DiceBear: Adventurer di Lisa Wischofsky, Big Smile di Ashley Seo e Toon Head di Johan Melin (CC BY 4.0).</p>
+      </footer>
+    </main>
+
+    <!-- Barra in basso (telefono) -->
+    <nav class="tabbar" aria-label="Sezioni" data-i18n-attr="aria-label:home.nav.label">
+      <a href="#home" data-nav="home"><span aria-hidden="true">🏠</span><span data-i18n="home.nav.home">Home</span></a>
+      <a href="#armadi" data-nav="armadi"><span aria-hidden="true">📦</span><span data-i18n="home.nav.armadi">Armadi</span></a>
+      <a href="#serate" data-nav="serate"><span aria-hidden="true">📋</span><span data-i18n="home.nav.serate">Serate</span></a>
+      <a href="#gruppi" data-nav="gruppi"><span aria-hidden="true">👥</span><span data-i18n="home.nav.gruppi">Gruppi</span></a>
+      <a href="#altro" data-nav="altro"><span aria-hidden="true">👤</span><span data-i18n="home.nav.altro">Altro</span></a>
+    </nav>
+  </div>
+  <noscript>Per usare GameNight Show serve JavaScript attivo. · GameNight Show needs JavaScript.</noscript>
   <script src="vendor/qrcode.js"></script>
   <script src="js/stale.js"></script>
   <script type="module" src="js/home.js"></script>

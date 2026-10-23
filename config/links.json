@@ -1,0 +1,44 @@
+{
+  "schema": "mashaup.links",
+  "schemaVersion": 1,
+  "project": "gamenight-show",
+  "updated": "2026-10-23",
+  "links": {
+    "github": {
+      "url": "https://github.com/MashaUP/GameNight_Show",
+      "enabled": true,
+      "icon": "github",
+      "order": 10
+    },
+    "discord": {
+      "url": "https://discord.gg/EPsbQCuAkx",
+      "enabled": true,
+      "icon": "discord",
+      "order": 20
+    },
+    "kofi": {
+      "url": "https://ko-fi.com/mashaup",
+      "enabled": true,
+      "icon": "kofi",
+      "order": 30
+    },
+    "docs": {
+      "url": "https://github.com/MashaUP/GameNight_Show#readme",
+      "enabled": true,
+      "icon": "docs",
+      "order": 40
+    },
+    "bugs": {
+      "url": "https://github.com/MashaUP/GameNight_Show/issues/new?template=bug.yml",
+      "enabled": true,
+      "icon": "bug",
+      "order": 50
+    },
+    "ideas": {
+      "url": "https://github.com/MashaUP/GameNight_Show/issues/new?template=idea.yml",
+      "enabled": true,
+      "icon": "idea",
+      "order": 60
+    }
+  }
+}

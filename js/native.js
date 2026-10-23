@@ -1,6 +1,7 @@
 // App Android (Capacitor): le poche cose che cambiano rispetto al sito aperto nel browser.
 // Nel browser questo modulo non fa niente: isApp() è falso e tutto resta com'era.
 import { SITE_URL, APK_URL } from './site.js';
+import { t } from './i18n.js';
 
 /** Vero quando la pagina gira dentro l'app Android. */
 export function isApp() {
@@ -29,7 +30,7 @@ export function apkUrl() {
   if (!m) return '';
   const repo = location.pathname.split('/').filter(Boolean)[0];
   if (!repo || /\.html?$/i.test(repo)) return '';
-  return `https://github.com/${m[1]}/${repo}/releases/download/app-android/GameNight-Show.apk`;
+  return `https://github.com/${m[1]}/${repo}/releases/latest/download/GameNight-Show.apk`;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ const cancelled = (err) => /cancel|annull|dismiss/i.test(String(err?.message || 
 async function shareFile(data, name, title, text) {
   const { uri } = await nativeCall('Filesystem', 'writeFile', { path: `condivisi/${name}`, data, directory: 'CACHE', recursive: true });
   try {
-    await nativeCall('Share', 'share', { title: title || 'GameNight Show', text: text || undefined, files: [uri], dialogTitle: title || 'Condividi' });
+    await nativeCall('Share', 'share', { title: title || 'GameNight Show', text: text || undefined, files: [uri], dialogTitle: title || t('common.share') });
     return 'shared';
   } catch (err) {
     if (cancelled(err)) return 'cancelled';
@@ -80,7 +81,7 @@ export async function nativeFile(blob, filename, { mode = 'save', title = '', te
   if (mode === 'save') {
     try {
       await nativeCall('Filesystem', 'writeFile', { path: `GameNight Show/${name}`, data, directory: 'DOCUMENTS', recursive: true });
-      return { result: 'saved', where: `Documenti/GameNight Show/${name}` };
+      return { result: 'saved', where: `${t('file.documents')}/GameNight Show/${name}` };
     } catch { /* cartella non scrivibile su questo telefono: si passa a "Condividi" */ }
   }
   return { result: await shareFile(data, name, title, text), where: '' };
@@ -139,7 +140,7 @@ function closeOverlay(el) {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   setTimeout(() => {
     if (!el.isConnected || !el.getClientRects().length) return;
-    const btn = el.querySelector('[data-close], [data-sheetclose], .sheet-x, [aria-label^="Chiudi"], [id$="Close"], .tour-skip');
+    const btn = el.querySelector('[data-close], [data-sheetclose], .sheet-x, [aria-label^="Chiudi"], [aria-label^="Close"], [id$="Close"], .tour-skip');
     if (btn) { btn.click(); return; }
     // Ultima possibilità: un tocco sullo sfondo (quasi tutte le finestre si chiudono così).
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -180,7 +181,7 @@ export const canScanQR = () => Boolean(navigator.mediaDevices?.getUserMedia);
  * Apre la fotocamera e restituisce il testo del primo QR letto (null se si chiude).
  * Usa il lettore del telefono se c'è, altrimenti jsQR (caricato solo in quel momento).
  */
-export function scanQR({ title = '📷 Inquadra il QR della TV', hint = 'Tieni il telefono fermo davanti al QR che si vede sulla TV.' } = {}) {
+export function scanQR({ title = `📷 ${t('scan.title')}`, hint = t('scan.hint') } = {}) {
   return new Promise((resolve) => {
     const el = document.createElement('div');
     el.className = 'overlay overlay--sheet';
@@ -189,7 +190,7 @@ export function scanQR({ title = '📷 Inquadra il QR della TV', hint = 'Tieni i
         <h2 id="qrScTitle"></h2>
         <div class="scan-view scan-view--qr"><video playsinline muted></video><i class="scan-frame" aria-hidden="true"></i></div>
         <p class="muted small" data-hint></p>
-        <button type="button" class="btn-sec btn-block" data-close>Chiudi</button>
+        <button type="button" class="btn-sec btn-block" data-close>${t('common.close')}</button>
       </div>`;
     el.querySelector('#qrScTitle').textContent = title;
     el.querySelector('[data-hint]').textContent = hint;
@@ -246,7 +247,7 @@ export function scanQR({ title = '📷 Inquadra il QR della TV', hint = 'Tieni i
         }, 300);
       } catch {
         const h = el.querySelector('[data-hint]');
-        if (h) h.textContent = 'Non riesco ad aprire la fotocamera: controlla il permesso nelle impostazioni del telefono, oppure scrivi il codice a mano.';
+        if (h) h.textContent = t('scan.noCamera');
         el.querySelector('.scan-view')?.remove();
       }
     })();

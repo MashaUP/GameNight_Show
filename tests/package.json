@@ -1,11 +1,14 @@
 {
   "name": "gamenight-show-tests",
   "private": true,
-  "description": "Controlli automatici di GameNight Show (regole del database e file del sito)",
+  "description": "Controlli automatici di GameNight Show (file, codice, regole del database, link)",
   "scripts": {
-    "test": "node check.mjs && node rules.test.js"
+    "lint": "cd .. && eslint -c tests/eslint.config.mjs --no-config-lookup js sw.js",
+    "test": "node check.mjs && npm run lint && node rules.test.js && node --test links.test.mjs"
   },
   "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0",
     "targaryen": "^3.1.0"
   }
 }

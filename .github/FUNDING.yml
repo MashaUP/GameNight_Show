@@ -1,0 +1,3 @@
+# Pulsante "Sponsor" nella pagina del repository su GitHub (porta a Ko-fi).
+# È un file di GitHub, non dell'app: nell'app il link Ko-fi viene da config/links.json.
+ko_fi: mashaup

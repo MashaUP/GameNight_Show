@@ -1,33 +1,64 @@
-# App Android: a ogni caricamento su GitHub prepara l'APK di GameNight Show e la pubblica
-# nella pagina "Releases" del repository (release "app-android"), sempre allo stesso indirizzo:
-#   https://github.com/<utente>/<repository>/releases/download/app-android/GameNight-Show.apk
-# Si può anche avviare a mano: scheda "Actions" → "App Android" → "Run workflow".
+# App Android: si costruisce SOLO quando pubblichi tu una release su GitHub.
+# I caricamenti di codice, le modifiche ai link e ogni altro push NON avviano questo lavoro
+# (per quelli c'è solo "Verifica", che non tocca le Releases).
+#
+# Come pubblicare una versione (dopo aver caricato i file con il nuovo numero in version.json):
+#   Releases › Draft a new release › Choose a tag › scrivi v1.5.0 › "Create new tag: v1.5.0 on publish"
+#   › titolo e testo come vuoi › Publish release
+# Il tag deve corrispondere a "version" in version.json (v1.5 vale come 1.5.0), altrimenti il lavoro si ferma.
+#
+# Cosa fa il lavoro, senza creare né modificare release (quindi nessun evento in più per i webhook):
+#   - aggiunge GameNight-Show.apk e GameNight-Show.json alla TUA release (l'impronta SHA-256 la calcola GitHub);
+#   - l'app e la pagina di download leggono l'ultima release pubblicata:
+#       https://github.com/<utente>/<repository>/releases/latest/download/GameNight-Show.apk
+#   - solo finché esiste la vecchia release "app-android": aggiorna anche quella, perché le app 1.3
+#     già installate la leggono ancora. Quando tutti hanno la 1.5 o più recente, cancellala (vedi README).
 name: App Android
 
 on:
-  push:
-    branches: [main, master]
-    paths-ignore:
-      - 'README.md'
-      - 'tests/**'
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
+# Una pubblicazione alla volta, senza interrompere quella in corso.
 concurrency:
   group: app-android
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # Solo release con un tag di versione (v1.5.0, v1.5), pubblicate dal proprietario del repository.
+    if: startsWith(github.event.release.tag_name, 'v') && github.actor == github.repository_owner
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+
+      # Il tag deve essere la versione scritta in version.json: niente APK con il numero sbagliato.
+      - name: Tag e versione
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ver="$(node -p "require('./version.json').version")"
+          norm() { local v="${1#v}"; case "$v" in *.*.*) echo "$v";; *.*) echo "$v.0";; *) echo "$v.0.0";; esac; }
+          if [ "$(norm "$TAG")" != "$(norm "$ver")" ]; then
+            echo "::error::Il tag $TAG non corrisponde alla versione $ver di version.json. Cancella la release e il tag, correggi version.json (o il tag) e pubblica di nuovo."
+            exit 1
+          fi
+          echo "Versione $ver, tag $TAG"
+
+      # Gli stessi controlli di "Verifica" (versioni, file, traduzioni, regole del database, link):
+      # se qualcosa non va, l'APK non viene pubblicata.
+      - name: Controlli prima della pubblicazione
+        working-directory: tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test
 
       - uses: actions/setup-java@v5
         with:
@@ -54,7 +85,7 @@ jobs:
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           if [ -n "$SITE_VAR" ]; then site="$SITE_VAR"; else site="https://${owner}.github.io/${name}/"; fi
           echo "site=$site" >> "$GITHUB_OUTPUT"
-          echo "apk=https://github.com/${REPO}/releases/download/app-android/GameNight-Show.apk" >> "$GITHUB_OUTPUT"
+          echo "apk=https://github.com/${REPO}/releases/latest/download/GameNight-Show.apk" >> "$GITHUB_OUTPUT"
           echo "Sito: $site"
 
       - name: Strumenti dell'app
@@ -114,17 +145,19 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Dati della build per il controllo degli aggiornamenti nell'app e nella pagina scarica.html:
-      # versione, numero di build, impronta SHA-256, dimensione, data e novità (da version.json).
+      # versione, numero di build, impronta SHA-256, dimensione, data e novità in italiano e inglese (da version.json).
       - name: Dati della versione
         run: |
           node -e '
             const fs = require("fs"), crypto = require("crypto");
             const v = JSON.parse(fs.readFileSync("version.json", "utf8"));
             const apk = fs.readFileSync("GameNight-Show.apk");
+            const clean = (l) => (Array.isArray(l) ? l : []).slice(0, 12).map((n) => String(n).replace(/-->/g, "→").slice(0, 240));
             const meta = {
               app: "GameNight Show", version: v.version, versionCode: Number(process.env.GITHUB_RUN_NUMBER),
               sha256: crypto.createHash("sha256").update(apk).digest("hex"), size: apk.length,
-              date: new Date().toISOString(), notes: Array.isArray(v.notes) ? v.notes.slice(0, 12).map((n) => String(n).replace(/-->/g, "→").slice(0, 240)) : [],
+              // Novità in italiano (notes, letto anche dalle app 1.3) e in inglese (notesEn, dalla 1.4)
+              date: new Date().toISOString(), notes: clean(Array.isArray(v.notes) ? v.notes : v.notes && v.notes.it), notesEn: clean(v.notesEn || (v.notes && v.notes.en)),
               minAndroid: v.minAndroid || "7.0", commit: process.env.GITHUB_SHA
             };
             if (!/^\d+\.\d+(\.\d+)?/.test(meta.version) || !(meta.versionCode > 0) || !meta.size) throw new Error("dati della versione non validi");
@@ -139,20 +172,34 @@ jobs:
             GameNight-Show.apk
             GameNight-Show.json
 
-      # Ordine: prima l'APK, poi i dati che la descrivono. Così l'app non legge mai l'impronta di un'APK
-      # che non è ancora stata caricata (se trova l'APK nuova con i dati vecchi, il controllo fallisce e
-      # chiede di riprovare: non installa niente).
-      - name: Pubblicazione nelle Releases
+      # L'APK va nella release che hai pubblicato tu. Si caricano solo file (con l'etichetta che dice
+      # versione e build): la release non viene modificata, quindi nessun evento "edited" per i webhook.
+      - name: APK nella tua release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ver="$(node -p "require('./version.json').version")"
+          gh release upload "$TAG" "GameNight-Show.apk#GameNight Show ${ver} · build ${GITHUB_RUN_NUMBER}" --clobber
+          gh release upload "$TAG" "GameNight-Show.json#Dati della build ${GITHUB_RUN_NUMBER}" --clobber
+          echo "APK caricata nella release $TAG"
+
+      # Ponte per le app 1.3 già installate, che leggono la vecchia release "app-android".
+      # Gira solo se quella release esiste ancora e solo per le versioni definitive (non le anteprime).
+      # Cancella "app-android" (release e tag) quando tutti hanno la 1.5 o più recente: da lì questo passo si salta.
+      - name: Ponte per le app 1.3 (release app-android)
+        if: ${{ !github.event.release.prerelease }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if ! gh release view app-android >/dev/null 2>&1; then
+            echo "Nessuna release app-android: niente da fare."
+            exit 0
+          fi
           ver="$(node -p "require('./version.json').version")"
           meta="$(node -p "JSON.stringify(require('./GameNight-Show.json'))")"
           sha="$(node -p "require('./GameNight-Show.json').sha256")"
-          notes="$(printf 'App Android di GameNight Show, versione %s (build %s).\n\nScarica GameNight-Show.apk e aprila sul telefono Android (7.0 o più recente). Pagina con le istruzioni: scarica.html sul sito.\n\nSHA-256: %s\n\n<!-- gamenight-apk: %s -->' "$ver" "$GITHUB_RUN_NUMBER" "$sha" "$meta")"
-          if ! gh release view app-android >/dev/null 2>&1; then
-            gh release create app-android --title "App Android ${ver}" --notes "In preparazione…" --target "$GITHUB_SHA"
-          fi
+          notes="$(printf 'Release di compatibilità per le app GameNight Show 1.3: porta alla versione %s. Le versioni nuove sono nelle release con il tag vX.Y.Z.\n\nSHA-256: %s\n\n<!-- gamenight-apk: %s -->' "$ver" "$sha" "$meta")"
           gh release upload app-android GameNight-Show.apk --clobber
           gh release upload app-android GameNight-Show.json --clobber
-          gh release edit app-android --title "App Android ${ver}" --notes "$notes"
+          gh release edit app-android --title "App Android ${ver}" --notes "$notes" --latest=false

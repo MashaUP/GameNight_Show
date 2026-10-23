@@ -1,4 +1,4 @@
-# Verifica della versione 1.3.1
+# Verifica della versione 1.5.0
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
@@ -7,6 +7,37 @@ I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 16
 - **con le regole vere** di `database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
+
+## Novità della 1.5.0 · Link ufficiali e configurazione remota
+
+Prove nuove: `tests/links.test.mjs` (23 prove, Node), `tests/e2e/links.py` (browser), controlli in `tests/check.mjs` (sezione 8).
+
+| Funzione | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Un'unica fonte dei link | ✅ | `check.mjs` cerca indirizzi di GitHub (`MashaUP`), Discord e Ko-fi in tutte le pagine e i moduli; prova al contrario con una pagina finta che li contiene. | Nessun indirizzo a mano; la pagina finta viene segnalata. I 3 pulsanti Ko-fi e le icone prendono l'indirizzo dal JSON. |
+| Validazione degli indirizzi | ✅ | 23 indirizzi sbagliati (`http:`, `javascript:`, `data:`, `file:`, credenziali, porta, IP, `github.com.evil.com`, spazi, caratteri `<>"`, troppo lunghi, tipi non testo) e regole per id (`discord` verso GitHub). Nel browser: `javascript:`, `http:` e un dominio estraneo nel JSON. | Tutti rifiutati; nessun indirizzo pericoloso nella pagina; la voce sbagliata sparisce e le altre restano. |
+| Schema e file rotti | ✅ | JSON rotto, non oggetto, schema diverso, versione dello schema futura, progetto sbagliato, `links` non oggetto, file oltre 64 KB, oltre 50 link, voci con campi di tipo sbagliato. | Rifiutati senza eccezioni; voci sbagliate scartate una per una. |
+| Copia remota valida (app Android) | ✅ | App simulata (Capacitor finto, porta 8766) con il file del sito che contiene un nuovo invito Discord. | L'icona passa al nuovo invito senza nuova versione; copia salvata in `gnr_links`; riaprendo l'app nessuna nuova richiesta (6 ore). |
+| "Cerca aggiornamento" aggiorna i link | ✅ | Secondo invito pubblicato, tocco su Cerca aggiornamento in Profilo e app. | Richiesta immediata, icona aggiornata. |
+| Server non disponibile, JSON rotto, timeout, offline | ✅ | Unit: 404, 500, rete assente, JSON troncato, progetto sbagliato, schema futuro, server che non risponde (timeout). Browser: 500 e 503, JSON rotto, file di un altro progetto; sito con il file irraggiungibile. | Restano i link inclusi o l'ultima copia buona; errore nel registro, nessun avviso a schermo; dopo un errore niente nuovi tentativi per 30 minuti. |
+| Copia salvata vecchia o manomessa | ✅ | Unit: copia più vecchia della versione installata, copia con indirizzo estraneo, dati rovinati, `localStorage` che lancia eccezioni, archivio asincrono come `chrome.storage.local`. | Ignorata o rivalidata; funziona anche senza memoria. |
+| Link spenti o mancanti | ✅ | `"enabled": false` per Discord, Ko-fi con indirizzo non valido. | Icona assente, pulsanti Ko-fi nascosti, riquadro "Sostieni" nascosto: nessun elemento cliccabile verso il nulla. |
+| Icone GitHub e Discord | ✅ | Computer 1280 px (tema Show) e telefono 360 px (tema Giorno): dimensioni, etichette, tastiera, passaggio del mouse, cambio di lingua. Screenshot controllati. | Icone di 18 px in un'area di 36 px; `aria-label` "GitHub (si apre in una nuova scheda)" e suggerimento; raggiungibili con Tab con contorno giallo di 3 px; colore diverso al passaggio; nessuno scorrimento laterale a 360 px; etichette in inglese senza ricaricare. |
+| Community e supporto | ✅ | Sezione Profilo e app. | GitHub, Discord, Guida, Segnala un problema, Proponi un'idea, in ordine, senza doppioni; data dei link. |
+| `go.html` | ✅ | `?to=discord`, `?to=github`; link spento; id sconosciuto; indirizzo al posto dell'id; vuoto. | Porta all'invito e al repository; negli altri casi resta sulla pagina e mostra gli altri link (nessun "open redirect"). ✋ L'indirizzo pubblico funziona dopo il caricamento della 1.5.0 su GitHub Pages. |
+| Invito Discord | ✅ | Letto dall'API pubblica degli inviti di Discord il 23/10/2026. | Valido, senza scadenza. |
+| File dei link nell'APK | ✅ | `prepare-www.mjs` eseguito in locale. | `www/config/links.json` presente. |
+| Workflow APK solo sui tag | ⚠️ | YAML validato; controllo tag/versione provato in locale (`v1.5`=`1.5.0` sì, `v1.5.1`≠`1.5.0` no); script delle note della release provato in locale. | ✋ Non eseguito su GitHub da qui (serve un tag sul repository): controlla la scheda Actions dopo il primo tag. |
+| Moduli di segnalazione su GitHub | ⚠️ | YAML validato. | ✋ L'aspetto si vede su GitHub dopo il caricamento. |
+
+## Novità della 1.4.0 (pubblicate con la 1.5.0)
+
+| Funzione | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Home nuova, sezioni, impostazioni | ✅ | `hub.py`, `hubjoin.py`, `look.py` (360–1920 px, italiano e inglese, temi Show e Giorno). | Nessuno scorrimento laterale, controlli di almeno 40 px. |
+| Lingue | ✅ | `i18n.py` (lingua del dispositivo, cambio senza ricaricare, persistenza, numeri e date), `check.mjs` (parità delle chiavi e dei parametri). | 921 testi in italiano e inglese. |
+| Telefono in inglese (1.5) | ✅ | Prova nuova `phone_en.py`: TV in italiano, un telefono in inglese e uno in italiano, ingresso, voto, reveal, time-out, fine serata; più la suite completa in italiano dopo la traduzione di `play.js` e `stats.js`. | Ogni telefono nella sua lingua, nessun testo mancante; nel database il time-out e i titoli dei premi sono codici (`bathroom`, `mvp`…) e la TV italiana mostra “Pausa bagno”. La suite completa ha trovato un errore vero (titolo in carica sul telefono, import mancante): corretto e aggiunto il controllo ESLint che lo avrebbe fermato. |
+| Regole `members` | ✅ | `rules.test.js` (234/234). | Cancellazione e cambio di gruppo vietati. |
 
 ## Correzione della 1.3.1
 
@@ -112,9 +143,13 @@ Quattro test che seguivano il vecchio percorso dell’armadio (armadio, arm2, im
 
 ## Controlli generali
 
-- Regole del database: **184/184** casi come previsto (`tests/rules.test.js`).
-- Controlli dei file del sito: tutti superati (`tests/check.mjs`).
-- Prove di regressione delle versioni precedenti (serata completa, gruppi, statistiche, armadio, immagini, app, iniezioni HTML): rieseguite dopo le modifiche, vedi il messaggio di consegna.
+Eseguiti il 23 ottobre 2026 sulla versione 1.5.0:
+
+- Controlli dei file del sito: **7.497** controlli superati (`tests/check.mjs`: versioni, 78 file offline, 49 moduli, 921 testi in 2 lingue, link).
+- Controllo del codice: ESLint senza errori su tutti i moduli e su `sw.js` (`npm run lint`).
+- Regole del database: **234/234** casi come previsto (`tests/rules.test.js`).
+- Sistema dei link: **23/23** (`tests/links.test.mjs`). Proxy BoardGameGeek: **14/14**.
+- Prove nel browser: suite completa (31 prove) **27/31** al primo giro; le 4 fallite avevano due cause, entrambe corrette: un import mancante in `play.js` (errore vero, 3 prove) e la copia remota dei link non simulata nella prova dell'app. Rieseguite le 4 più `phone_en` (nuova), `upd13` e `i18n` (modificate): **7/7**. Infine la selezione che esegue GitHub (`--ci`, 14 prove, codice definitivo): **14/14**.
 
 ## Non verificabile qui
 
@@ -122,3 +157,6 @@ Quattro test che seguivano il vecchio percorso dell’armadio (armadio, arm2, im
 - Telefono vero: barra di stato, tasto Indietro fisico, fotocamera e QR, vibrazione.
 - Audio udibile sulla TV.
 - Firebase vero: le regole sono provate con il simulatore. Sul tuo progetto usa `test.html` dopo aver ricopiato `database.rules.json`.
+- Workflow **App Android** avviato da un tag (`v1.5.0`): va controllato nella scheda Actions dopo il primo tag.
+- Indirizzi pubblici della 1.5.0 (`config/links.json` e `go.html` su GitHub Pages): esistono solo dopo il caricamento.
+- Apertura dei link dall'app Android vera (devono aprirsi nel browser del telefono, come gli altri link esterni).

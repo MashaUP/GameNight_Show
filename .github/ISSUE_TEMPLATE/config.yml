@@ -1,0 +1,6 @@
+blank_issues_enabled: true
+contact_links:
+  # Collegamento stabile: porta sempre all'invito Discord attuale scritto in config/links.json.
+  - name: 💬 Community su Discord
+    url: https://mashaup.github.io/GameNight_Show/go.html?to=discord
+    about: Domande, aiuto e chiacchiere sulle serate.

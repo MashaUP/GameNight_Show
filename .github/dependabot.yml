@@ -1,0 +1,23 @@
+# Dependabot: una volta al mese propone (con una pull request) gli aggiornamenti
+# delle azioni usate dai workflow e degli strumenti di prova. Gratuito.
+# L'app Android (android-app/) è esclusa di proposito: un aggiornamento di Capacitor
+# va provato con una build vera, meglio farlo a mano.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      azioni:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /tests
+    schedule:
+      interval: monthly
+    groups:
+      strumenti-di-prova:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

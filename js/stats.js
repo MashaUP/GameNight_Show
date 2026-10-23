@@ -1,11 +1,15 @@
 // Calcolo di medie, classifica e premi finali.
 import { fmt, dbKey } from './util.js';
+import { t, lang, fmtList, fmtDate } from './i18n.js';
 
-export const CRITERIA = [
-  { key: 'coinv', label: 'Coinvolgimento', short: 'Coinv.', hint: '1 = aspettavo il turno, 5 = sempre dentro', color: '#2EC4B6' },
-  { key: 'sempl', label: 'Semplicità', short: 'Sempl.', hint: '1 = regole complicate, 5 = si capisce subito', color: '#FFC93C' },
-  { key: 'rigioc', label: 'Rigiocabilità', short: 'Rigioc.', hint: '1 = una volta basta, 5 = subito un’altra', color: '#FF8FB1' }
-];
+// Testi dei criteri nella lingua scelta (js/lang: crit.<chiave>.label/short/hint).
+const crit = (key, color) => ({
+  key, color,
+  get label() { return t(`crit.${key}.label`); },
+  get short() { return t(`crit.${key}.short`); },
+  get hint() { return t(`crit.${key}.hint`); }
+});
+export const CRITERIA = [crit('coinv', '#2EC4B6'), crit('sempl', '#FFC93C'), crit('rigioc', '#FF8FB1')];
 
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
@@ -16,7 +20,7 @@ export function activeCriteria(voting) {
   const base = CRITERIA.filter((c) => v[c.key] !== false);
   const custom = (Array.isArray(v.custom) ? v.custom : Object.values(v.custom || {}))
     .filter((q) => q && String(q.label || '').trim()).slice(0, 2)
-    .map((q, i) => ({ key: `c${i + 1}`, label: String(q.label).trim().slice(0, 40), short: String(q.label).trim().slice(0, 9), hint: '1 = per niente, 5 = moltissimo', color: i ? '#4D96FF' : '#C77DFF', custom: true }));
+    .map((q, i) => ({ key: `c${i + 1}`, label: String(q.label).trim().slice(0, 40), short: String(q.label).trim().slice(0, 9), get hint() { return t('crit.custom.hint'); }, color: i ? '#4D96FF' : '#C77DFF', custom: true }));
   return [...base, ...custom];
 }
 const ALL_CRIT_KEYS = ['coinv', 'sempl', 'rigioc', 'c1', 'c2'];
@@ -73,16 +77,16 @@ export function gameStats(votes, playing = null) {
 
 /** Commento automatico mostrato al reveal. */
 export function verdict(st) {
-  if (!st || !st.n) return 'Nessun voto';
-  if (st.n > 1 && st.std === 0) return 'Tutti d’accordo!';
-  if (st.n > 2 && st.std >= 2.2) return 'Gioco divisivo!';
+  if (!st || !st.n) return t('verdict.none');
+  if (st.n > 1 && st.std === 0) return t('verdict.agree');
+  if (st.n > 2 && st.std >= 2.2) return t('verdict.divisive');
   const a = st.avg;
-  if (a >= 9) return 'Capolavoro della serata!';
-  if (a >= 8) return 'Promosso a pieni voti!';
-  if (a >= 7) return 'Bella partita!';
-  if (a >= 6) return 'Promosso, senza lode';
-  if (a >= 5) return 'Così così…';
-  return 'Bocciato!';
+  if (a >= 9) return t('verdict.9');
+  if (a >= 8) return t('verdict.8');
+  if (a >= 7) return t('verdict.7');
+  if (a >= 6) return t('verdict.6');
+  if (a >= 5) return t('verdict.5');
+  return t('verdict.fail');
 }
 
 /** Classifica dei giochi già svelati, dal migliore al peggiore. */
@@ -118,22 +122,36 @@ function bestBy(rows, getValue, minN = 1) {
   return best;
 }
 
+// Titoli dei premi: chiave → testo nella lingua scelta. Le serate salvate fino alla 1.3 contengono
+// i titoli in italiano: awardTitle li riconosce e li traduce (gli altri testi restano come sono).
+const AWARD_KEYS = ['coinv', 'sempl', 'rigioc', 'div', 'mvp', 'wins', 'seer', 'generous', 'critic', 'rebel', 'oracle', 'twins'];
+const AWARD_IT = {
+  'Il più coinvolgente': 'coinv', 'Il più semplice': 'sempl', 'Il più richiesto': 'rigioc', 'Il più divisivo': 'div',
+  'MVP della serata': 'mvp', 'Il più vincente': 'wins', 'Il veggente': 'seer', 'Il più generoso': 'generous',
+  'Il critico': 'critic', 'Il bastian contrario': 'rebel', 'L’oracolo': 'oracle', 'Anime gemelle': 'twins'
+};
+/** Titolo di un premio: da chiave ("mvp") o da un titolo salvato in italiano. */
+export function awardTitle(x) {
+  const k = AWARD_KEYS.includes(x) ? x : AWARD_IT[x];
+  return k ? t(`aw.${k}`) : String(x ?? '');
+}
+
 /** Premi speciali di fine serata. */
 export function buildAwards(board, votes, players) {
   const awards = [];
   if (!board.length) return awards;
 
   const coinv = bestBy(board, (r) => r.stats.crit.coinv);
-  if (coinv) awards.push({ key: 'coinv', kind: 'game', title: 'Il più coinvolgente', game: coinv.row, value: `${fmt(coinv.value)} / 5 di coinvolgimento`, color: '#2EC4B6' });
+  if (coinv) awards.push({ key: 'coinv', kind: 'game', title: awardTitle('coinv'), game: coinv.row, value: t('aw.v.coinv', { n: fmt(coinv.value) }), color: '#2EC4B6' });
 
   const sempl = bestBy(board, (r) => r.stats.crit.sempl);
-  if (sempl) awards.push({ key: 'sempl', kind: 'game', title: 'Il più semplice', game: sempl.row, value: `${fmt(sempl.value)} / 5 di semplicità`, color: '#FFC93C' });
+  if (sempl) awards.push({ key: 'sempl', kind: 'game', title: awardTitle('sempl'), game: sempl.row, value: t('aw.v.sempl', { n: fmt(sempl.value) }), color: '#FFC93C' });
 
   const rigioc = bestBy(board, (r) => r.stats.crit.rigioc);
-  if (rigioc) awards.push({ key: 'rigioc', kind: 'game', title: 'Il più richiesto', game: rigioc.row, value: `${fmt(rigioc.value)} / 5 di rigiocabilità`, color: '#FF8FB1' });
+  if (rigioc) awards.push({ key: 'rigioc', kind: 'game', title: awardTitle('rigioc'), game: rigioc.row, value: t('aw.v.rigioc', { n: fmt(rigioc.value) }), color: '#FF8FB1' });
 
   const div = bestBy(board, (r) => (r.stats.std > 0 ? r.stats.std : null), 2);
-  if (div) awards.push({ key: 'div', kind: 'game', title: 'Il più divisivo', game: div.row, value: `Voti da ${div.row.stats.min} a ${div.row.stats.max}`, color: '#7B5CFA' });
+  if (div) awards.push({ key: 'div', kind: 'game', title: awardTitle('div'), game: div.row, value: t('aw.v.div', { min: div.row.stats.min, max: div.row.stats.max }), color: '#7B5CFA' });
 
   // MVP della serata: somma dei voti MVP ricevuti in tutti i giochi svelati.
   const total = {};
@@ -145,22 +163,22 @@ export function buildAwards(board, votes, players) {
   const top = Math.max(0, ...Object.values(total));
   if (top > 0) {
     const uids = Object.keys(total).filter((uid) => total[uid] === top);
-    const people = uids.map((uid) => ({ uid, ...(players?.[uid] || { name: 'Ex giocatore' }) }));
-    awards.push({ key: 'mvp', kind: 'player', title: 'MVP della serata', players: people, value: `${top} ${top === 1 ? 'voto' : 'voti'} MVP`, color: '#FF5A4E' });
+    const people = uids.map((uid) => ({ uid, ...(players?.[uid] || { name: t('ph.exPlayer') }) }));
+    awards.push({ key: 'mvp', kind: 'player', title: awardTitle('mvp'), players: people, value: t('aw.v.mvp', { n: top }), color: '#FF5A4E' });
   }
   // Il più vincente: chi ha vinto più partite (le vittorie le segna la TV).
   const wins = winsByPlayer(board);
   const topWins = Math.max(0, ...Object.values(wins));
   if (topWins > 0) {
     const uids = Object.keys(wins).filter((uid) => wins[uid] === topWins);
-    awards.push({ key: 'wins', kind: 'player', title: 'Il più vincente', players: uids.map((uid) => ({ uid, ...(players?.[uid] || { name: 'Ex giocatore' }) })), value: `${topWins} ${topWins === 1 ? 'vittoria' : 'vittorie'}`, color: '#FFC93C' });
+    awards.push({ key: 'wins', kind: 'player', title: awardTitle('wins'), players: uids.map((uid) => ({ uid, ...(players?.[uid] || { name: t('ph.exPlayer') }) })), value: t('home.tr.wins', { n: topWins }), color: '#FFC93C' });
   }
   // Il veggente: chi ha indovinato più vincitori con i pronostici
   const seers = seersByPlayer(board);
   const topSeer = Math.max(0, ...Object.values(seers));
   if (topSeer > 0) {
     const uids = Object.keys(seers).filter((uid) => seers[uid] === topSeer).slice(0, 3);
-    awards.push({ key: 'seer', kind: 'player', title: 'Il veggente', players: uids.map((uid) => ({ uid, ...(players?.[uid] || { name: 'Ex giocatore' }) })), value: `${topSeer} ${topSeer === 1 ? 'pronostico azzeccato' : 'pronostici azzeccati'}`, color: '#C77DFF' });
+    awards.push({ key: 'seer', kind: 'player', title: awardTitle('seer'), players: uids.map((uid) => ({ uid, ...(players?.[uid] || { name: t('ph.exPlayer') }) })), value: t('aw.v.seer', { n: topSeer }), color: '#C77DFF' });
   }
   awards.push(...playerAwards(board, players));
   return awards;
@@ -226,18 +244,18 @@ export function winsByPlayer(board) {
 export function rankLine(board, gameId) {
   const row = board.find((r) => r.id === gameId);
   if (!row) return '';
-  if (board.length === 1) return 'Il primo gioco della serata';
-  if (row.rank === 1) return `Primo in classifica su ${board.length} giochi!`;
-  return `${row.rank}° in classifica su ${board.length} giochi`;
+  if (board.length === 1) return t('rank.first');
+  if (row.rank === 1) return t('rank.top', { n: board.length });
+  return t('rank.nth', { rank: row.rank, n: board.length });
 }
 
 /** Esporta la classifica in CSV (separatore ; per Excel in italiano). */
 export function boardCSV(board, players) {
-  const head = ['Posizione', 'Gioco', 'Media', 'Coinvolgimento', 'Semplicità', 'Rigiocabilità', 'Voti', 'MVP', 'Vincitori'];
+  const head = [t('csv.rank'), t('csv.game'), t('csv.avg'), t('crit.coinv.label'), t('crit.sempl.label'), t('crit.rigioc.label'), t('csv.votes'), 'MVP', t('csv.winners')];
   const lines = [head.join(';')];
   for (const r of board) {
-    const mvp = r.stats.mvp.winners.map((uid) => players?.[uid]?.name || 'Ex giocatore').join(' / ');
-    const won = Object.keys(r.winners || {}).map((uid) => players?.[uid]?.name || 'Ex giocatore').join(' / ');
+    const mvp = r.stats.mvp.winners.map((uid) => players?.[uid]?.name || t('ph.exPlayer')).join(' / ');
+    const won = Object.keys(r.winners || {}).map((uid) => players?.[uid]?.name || t('ph.exPlayer')).join(' / ');
     lines.push([
       r.rank,
       `"${String(r.name).replace(/"/g, '""')}"`,
@@ -276,7 +294,7 @@ export function playerAwards(board, players) {
     .filter(([, games]) => Object.keys(games).length >= minGames)
     .map(([uid, games]) => ({ uid, games, list: Object.values(games) }));
   if (people.length < 2) return out;
-  const who = (uids) => uids.map((uid) => ({ uid, ...(players?.[uid] || { name: 'Ex giocatore' }) }));
+  const who = (uids) => uids.map((uid) => ({ uid, ...(players?.[uid] || { name: t('ph.exPlayer') }) }));
   const pick = (arr, better) => {
     let best = null;
     for (const x of arr) if (x.value !== null && (!best || better(x.value, best[0].value))) best = [x];
@@ -289,8 +307,8 @@ export function playerAwards(board, players) {
   const hi = pick(given, (a, b) => a > b);
   const lo = pick(given, (a, b) => a < b);
   if (hi.length && lo.length && hi[0].value - lo[0].value >= 0.3) {
-    out.push({ key: 'generous', kind: 'player', title: 'Il più generoso', players: who(hi.map((x) => x.uid)), value: `Media dei voti dati: ${fmt(hi[0].value)}`, color: PLAYER_AWARD_COLORS.generous });
-    out.push({ key: 'critic', kind: 'player', title: 'Il critico', players: who(lo.map((x) => x.uid)), value: `Media dei voti dati: ${fmt(lo[0].value)}`, color: PLAYER_AWARD_COLORS.critic });
+    out.push({ key: 'generous', kind: 'player', title: awardTitle('generous'), players: who(hi.map((x) => x.uid)), value: t('aw.v.given', { n: fmt(hi[0].value) }), color: PLAYER_AWARD_COLORS.generous });
+    out.push({ key: 'critic', kind: 'player', title: awardTitle('critic'), players: who(lo.map((x) => x.uid)), value: t('aw.v.given', { n: fmt(lo[0].value) }), color: PLAYER_AWARD_COLORS.critic });
   }
 
   // Distanza media dal resto del gruppo (solo giochi votati da almeno 3 persone)
@@ -300,7 +318,7 @@ export function playerAwards(board, players) {
   });
   const rebel = pick(rebels, (a, b) => a > b);
   if (rebel.length && rebel[0].value >= 1) {
-    out.push({ key: 'rebel', kind: 'player', title: 'Il bastian contrario', players: who(rebel.map((x) => x.uid)), value: `In media a ${fmt(rebel[0].value)} punti dagli altri`, color: PLAYER_AWARD_COLORS.rebel });
+    out.push({ key: 'rebel', kind: 'player', title: awardTitle('rebel'), players: who(rebel.map((x) => x.uid)), value: t('aw.v.rebel', { n: fmt(rebel[0].value) }), color: PLAYER_AWARD_COLORS.rebel });
   }
 
   // L'oracolo: chi indovina meglio la media dei giochi
@@ -313,7 +331,7 @@ export function playerAwards(board, players) {
   });
   const oracle = pick(oracles, (a, b) => a < b);
   if (oracle.length) {
-    out.push({ key: 'oracle', kind: 'player', title: 'L’oracolo', players: who(oracle.map((x) => x.uid)), value: oracle[0].value < 0.05 ? 'Ha indovinato le medie al decimo!' : `In media sbaglia la media di ${fmt(oracle[0].value)}`, color: '#00B4D8' });
+    out.push({ key: 'oracle', kind: 'player', title: awardTitle('oracle'), players: who(oracle.map((x) => x.uid)), value: oracle[0].value < 0.05 ? t('aw.v.oracleExact') : t('aw.v.oracle', { n: fmt(oracle[0].value) }), color: '#00B4D8' });
   }
 
   // Coppia con i voti più simili
@@ -328,7 +346,7 @@ export function playerAwards(board, players) {
     }
   }
   if (twins) {
-    out.push({ key: 'twins', kind: 'player', title: 'Anime gemelle', players: who(twins.uids), value: twins.d === 0 ? 'Sempre lo stesso voto!' : `In media a ${fmt(twins.d)} punti di distanza`, color: PLAYER_AWARD_COLORS.twins });
+    out.push({ key: 'twins', kind: 'player', title: awardTitle('twins'), players: who(twins.uids), value: twins.d === 0 ? t('aw.v.twinsSame') : t('aw.v.twins', { n: fmt(twins.d) }), color: PLAYER_AWARD_COLORS.twins });
   }
   return out;
 }
@@ -437,7 +455,7 @@ export function nightSummary(board, players, meta, awards = []) {
     for (const pl of a.players || []) {
       const p = players?.[pl.uid];
       if (!p?.name) continue;
-      (titles[personKey(p)] ||= []).push(a.title);
+      (titles[personKey(p)] ||= []).push(a.key || a.title);
     }
   }
   const at = Number(meta?.createdAt) || Date.now();
@@ -558,7 +576,7 @@ export function trophies(nights, exclude = null) {
     const top = Math.max(0, ...mv.map(([, m]) => Number(m?.votes) || 0));
     if (top > 0) mv.filter(([, m]) => Number(m?.votes) === top).forEach(([k]) => { get(k).crown = true; });
     for (const [k, t] of Object.entries(last.titles || {})) {
-      const title = toArray(t).find((x) => x !== 'MVP della serata');
+      const title = toArray(t).find((x) => x !== 'mvp' && x !== 'MVP della serata');
       if (title) get(k).title = title;
     }
   }
@@ -608,9 +626,9 @@ export function lastPlayed(nights) {
 /** Testo breve per un gioco dell’armadio: "Mai giocato" o "Non lo giocate da 3 serate". */
 export function freshnessLabel(item, played) {
   const k = dbKey(item?.name || '');
-  if (!(k in played)) return 'Mai giocato insieme';
+  if (!(k in played)) return t('fresh.never');
   const n = played[k];
-  return n >= 2 ? `Non lo giocate da ${n} serate` : '';
+  return n >= 2 ? t('fresh.ago', { n }) : '';
 }
 
 
@@ -646,8 +664,8 @@ export function recommend({ library, nights, present, playedTonight = new Set(),
     const dur = durationOf(it);
     if (maxMinutes && dur && dur > maxMinutes) continue;
     const reasons = [];
-    const t = tastes[gk] || {};
-    const likes = present.map((p) => (t[p.key] ? mean(t[p.key]) : null));
+    const tg = tastes[gk] || {};
+    const likes = present.map((p) => (tg[p.key] ? mean(tg[p.key]) : null));
     const known = likes.filter((x) => x !== null);
     const fans = present.filter((p, i) => likes[i] !== null && likes[i] >= 7).length;
     const haters = present.filter((p, i) => likes[i] !== null && likes[i] <= 4);
@@ -655,21 +673,21 @@ export function recommend({ library, nights, present, playedTonight = new Set(),
     if (known.length) {
       score = mean(known) * 10;
       kind = 'top';
-      reasons.push(`piace a ${fans} su ${n} presenti`);
+      reasons.push(t('rec.likes', { fans, n }));
     } else if (gk in played) {
-      const all = Object.values(t).flat();
+      const all = Object.values(tg).flat();
       score = all.length ? mean(all) * 10 - 5 : 60;
       kind = 'top';
-      reasons.push('i presenti non l’hanno ancora votato');
+      reasons.push(t('rec.notVoted'));
     } else {
       score = 70;
       kind = 'new';
-      reasons.push('mai giocato insieme');
+      reasons.push(t('rec.never'));
     }
-    if (haters.length) { score -= 15 * haters.length; reasons.push(`${haters.map((h) => h.name).join(' e ')} non lo ama`); }
+    if (haters.length) { score -= 15 * haters.length; reasons.push(t('rec.haters', { names: fmtList(haters.map((h) => h.name)), n: haters.length })); }
     const ago = played[gk];
-    if (ago >= 3) { score += Math.min(10, ago * 2); reasons.push(`non lo giocate da ${ago} serate`); }
-    if (dur) reasons.push(`dura circa ${dur} minuti`);
+    if (ago >= 3) { score += Math.min(10, ago * 2); reasons.push(t('rec.ago', { n: ago })); }
+    if (dur) reasons.push(t('rec.dur', { n: dur }));
     score = Math.max(1, Math.min(99, Math.round(score)));
     out.push({ id, item: it, score, kind, ago, dusty: ago >= 3 && score >= 60, reasons });
   }
@@ -686,27 +704,28 @@ export function recommend({ library, nights, present, playedTonight = new Set(),
 // Progressione: XP, livelli, traguardi, record
 // ---------------------------------------------------------------------------
 
-const LEVEL_NAMES = [[1, 'Novellino'], [3, 'Giocatore'], [5, 'Stratega'], [8, 'Veterano'], [12, 'Leggenda']];
+// Nomi dei livelli e dei traguardi: testi in js/lang (chiavi level.N e ach.<id>.name/desc).
+const LEVEL_NAMES = [1, 3, 5, 8, 12].map((lv) => [lv, `level.${lv}`]);
 
 export const ACHIEVEMENTS = [
-  { id: 'first', icon: '🎲', name: 'Prima serata', desc: 'Hai partecipato a una serata', test: (s) => s.nights >= 1 },
-  { id: 'regular', icon: '🪑', name: 'Habitué', desc: '5 serate giocate', test: (s) => s.nights >= 5, progress: (s) => [s.nights, 5] },
-  { id: 'veteran', icon: '🎖️', name: 'Veterano', desc: '10 serate giocate', test: (s) => s.nights >= 10, progress: (s) => [s.nights, 10] },
-  { id: 'loyal', icon: '📅', name: 'Fedelissimo', desc: '3 serate di fila del gruppo', test: (s) => s.streak >= 3, progress: (s) => [s.streak, 3] },
-  { id: 'explorer', icon: '🧭', name: 'Esploratore', desc: '10 giochi diversi provati', test: (s) => s.distinct >= 10, progress: (s) => [s.distinct, 10] },
-  { id: 'explorer2', icon: '🗺️', name: 'Grande esploratore', desc: '20 giochi diversi provati', test: (s) => s.distinct >= 20, progress: (s) => [s.distinct, 20] },
-  { id: 'social', icon: '🤝', name: 'Socievole', desc: 'Hai giocato con 5 persone diverse', test: (s) => s.people >= 5, progress: (s) => [s.people, 5] },
-  { id: 'winner', icon: '🏆', name: 'Vincente', desc: '5 vittorie', test: (s) => s.wins >= 5, progress: (s) => [s.wins, 5] },
-  { id: 'machine', icon: '⚙️', name: 'Macchina da guerra', desc: '3 vittorie nella stessa serata', test: (s) => s.bestNightWins >= 3 },
-  { id: 'marathon', icon: '🏃', name: 'Maratoneta', desc: '6 giochi nella stessa serata', test: (s) => s.bestNightGames >= 6 },
-  { id: 'star', icon: '⭐', name: 'Beniamino', desc: '10 voti MVP ricevuti', test: (s) => s.mvp >= 10, progress: (s) => [s.mvp, 10] },
-  { id: 'oracle', icon: '🔮', name: 'Oracolo', desc: 'Hai indovinato la media 5 volte', test: (s) => s.oracle >= 5, progress: (s) => [s.oracle, 5] },
-  { id: 'seer', icon: '🧿', name: 'Veggente', desc: 'Hai pronosticato il vincitore 5 volte', test: (s) => s.seer >= 5, progress: (s) => [s.seer, 5] },
-  { id: 'rebel', icon: '💀', name: 'Bastian contrario', desc: 'Il tuo voto è stato il più lontano dalla media 3 volte', test: (s) => s.rebel >= 3, progress: (s) => [s.rebel, 3] },
-  { id: 'complete', icon: '📚', name: 'Completista', desc: 'Hai provato tutti i giochi dell’armadio (almeno 5)', test: (s) => s.libSize >= 5 && s.libDone >= s.libSize, progress: (s) => [s.libDone, s.libSize] },
-  { id: 'harsh', icon: '🧊', name: 'Critico implacabile', desc: 'Media dei voti dati sotto il 6 (dopo 10 voti)', secret: true, test: (s) => s.votes >= 10 && s.avgGiven < 6 },
-  { id: 'gold', icon: '💛', name: 'Cuore d’oro', desc: 'Media dei voti dati sopra l’8,5 (dopo 10 voti)', secret: true, test: (s) => s.votes >= 10 && s.avgGiven > 8.5 },
-  { id: 'night-owl', icon: '🦉', name: 'Nottambulo', desc: '10 giochi nella stessa serata', secret: true, test: (s) => s.bestNightGames >= 10 }
+  { id: 'first', icon: '🎲', get name() { return t('ach.first.name'); }, get desc() { return t('ach.first.desc'); }, test: (s) => s.nights >= 1 },
+  { id: 'regular', icon: '🪑', get name() { return t('ach.regular.name'); }, get desc() { return t('ach.regular.desc'); }, test: (s) => s.nights >= 5, progress: (s) => [s.nights, 5] },
+  { id: 'veteran', icon: '🎖️', get name() { return t('ach.veteran.name'); }, get desc() { return t('ach.veteran.desc'); }, test: (s) => s.nights >= 10, progress: (s) => [s.nights, 10] },
+  { id: 'loyal', icon: '📅', get name() { return t('ach.loyal.name'); }, get desc() { return t('ach.loyal.desc'); }, test: (s) => s.streak >= 3, progress: (s) => [s.streak, 3] },
+  { id: 'explorer', icon: '🧭', get name() { return t('ach.explorer.name'); }, get desc() { return t('ach.explorer.desc'); }, test: (s) => s.distinct >= 10, progress: (s) => [s.distinct, 10] },
+  { id: 'explorer2', icon: '🗺️', get name() { return t('ach.explorer2.name'); }, get desc() { return t('ach.explorer2.desc'); }, test: (s) => s.distinct >= 20, progress: (s) => [s.distinct, 20] },
+  { id: 'social', icon: '🤝', get name() { return t('ach.social.name'); }, get desc() { return t('ach.social.desc'); }, test: (s) => s.people >= 5, progress: (s) => [s.people, 5] },
+  { id: 'winner', icon: '🏆', get name() { return t('ach.winner.name'); }, get desc() { return t('ach.winner.desc'); }, test: (s) => s.wins >= 5, progress: (s) => [s.wins, 5] },
+  { id: 'machine', icon: '⚙️', get name() { return t('ach.machine.name'); }, get desc() { return t('ach.machine.desc'); }, test: (s) => s.bestNightWins >= 3 },
+  { id: 'marathon', icon: '🏃', get name() { return t('ach.marathon.name'); }, get desc() { return t('ach.marathon.desc'); }, test: (s) => s.bestNightGames >= 6 },
+  { id: 'star', icon: '⭐', get name() { return t('ach.star.name'); }, get desc() { return t('ach.star.desc'); }, test: (s) => s.mvp >= 10, progress: (s) => [s.mvp, 10] },
+  { id: 'oracle', icon: '🔮', get name() { return t('ach.oracle.name'); }, get desc() { return t('ach.oracle.desc'); }, test: (s) => s.oracle >= 5, progress: (s) => [s.oracle, 5] },
+  { id: 'seer', icon: '🧿', get name() { return t('ach.seer.name'); }, get desc() { return t('ach.seer.desc'); }, test: (s) => s.seer >= 5, progress: (s) => [s.seer, 5] },
+  { id: 'rebel', icon: '💀', get name() { return t('ach.rebel.name'); }, get desc() { return t('ach.rebel.desc'); }, test: (s) => s.rebel >= 3, progress: (s) => [s.rebel, 3] },
+  { id: 'complete', icon: '📚', get name() { return t('ach.complete.name'); }, get desc() { return t('ach.complete.desc'); }, test: (s) => s.libSize >= 5 && s.libDone >= s.libSize, progress: (s) => [s.libDone, s.libSize] },
+  { id: 'harsh', icon: '🧊', get name() { return t('ach.harsh.name'); }, get desc() { return t('ach.harsh.desc'); }, secret: true, test: (s) => s.votes >= 10 && s.avgGiven < 6 },
+  { id: 'gold', icon: '💛', get name() { return t('ach.gold.name'); }, get desc() { return t('ach.gold.desc'); }, secret: true, test: (s) => s.votes >= 10 && s.avgGiven > 8.5 },
+  { id: 'night-owl', icon: '🦉', get name() { return t('ach.night-owl.name'); }, get desc() { return t('ach.night-owl.desc'); }, secret: true, test: (s) => s.bestNightGames >= 10 }
 ];
 
 /** Tutti i numeri della progressione di una persona (chiave persona) nelle serate del gruppo. */
@@ -746,7 +765,7 @@ export function progressFor(nights, key, library = {}) {
   const prevXp = 150 * (st.level - 1) * (st.level - 1);
   st.nextXp = nextXp;
   st.levelProgress = Math.min(1, (st.xp - prevXp) / Math.max(1, nextXp - prevXp));
-  st.levelName = [...LEVEL_NAMES].reverse().find(([lv]) => st.level >= lv)[1];
+  st.levelName = t([...LEVEL_NAMES].reverse().find(([lv]) => st.level >= lv)[1]);
   st.achievements = ACHIEVEMENTS.map((a) => ({ id: a.id, icon: a.icon, name: a.name, desc: a.desc, secret: Boolean(a.secret), got: a.test(st), progress: a.progress ? a.progress(st) : null }));
   return st;
 }
@@ -775,10 +794,10 @@ export function records(nights) {
       if (pp.nightWins && (!bestWins || pp.nightWins > bestWins.wins)) bestWins = { name: pp.name, wins: pp.nightWins };
     }
   }
-  if (bestGame) rec.push({ title: 'Media più alta in una serata', value: `${bestGame.name}: ${fmt(bestGame.avg)}` });
-  if (longest) rec.push({ title: 'Partita più lunga', value: `${longest.name}: ${longest.min} minuti` });
-  if (busiest?.count) rec.push({ title: 'Serata con più giochi', value: `${busiest.count} giochi` });
-  if (bestWins) rec.push({ title: 'Più vittorie in una serata', value: `${bestWins.name}: ${bestWins.wins}` });
+  if (bestGame) rec.push({ title: t('rec2.bestAvg'), value: `${bestGame.name}: ${fmt(bestGame.avg)}` });
+  if (longest) rec.push({ title: t('rec2.longest'), value: `${longest.name}: ${t('rec2.minutes', { n: longest.min })}` });
+  if (busiest?.count) rec.push({ title: t('rec2.busiest'), value: t('ph.mem.games', { n: busiest.count }) });
+  if (bestWins) rec.push({ title: t('rec2.wins'), value: `${bestWins.name}: ${bestWins.wins}` });
   return rec;
 }
 
@@ -795,8 +814,10 @@ export function groupLevel(nights) {
 // Armadio avanzata: stato, scheda del gioco, ricerca
 // ---------------------------------------------------------------------------
 
-export const GAME_STATUS = { posseduto: 'Disponibile', prestato: 'Prestato', 'non disponibile': 'Non disponibile', venduto: 'Venduto' };
-export const GAME_MODES = { competitivo: 'Competitivo', cooperativo: 'Cooperativo', squadre: 'A squadre', misto: 'Misto' };
+// Stato e modalità: i codici (posseduto, cooperativo…) restano nel database, le etichette sono nella lingua scelta.
+const labels = (prefix, codes) => Object.defineProperties({}, Object.fromEntries(codes.map((c) => [c, { enumerable: true, get: () => t(`${prefix}.${c.replace(/\s+/g, '_')}`) }])));
+export const GAME_STATUS = labels('status', ['posseduto', 'prestato', 'non disponibile', 'venduto']);
+export const GAME_MODES = labels('mode', ['competitivo', 'cooperativo', 'squadre', 'misto']);
 
 export function isAvailable(item) {
   return !item?.status || item.status === 'posseduto';
@@ -881,7 +902,7 @@ export function searchLibrary(library, f, nights) {
       if (f.available && !isAvailable(it)) return false;
       return true;
     })
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'it'));
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), lang()));
 }
 
 /**
@@ -889,30 +910,33 @@ export function searchLibrary(library, f, nights) {
  * che non giochiamo da almeno un mese". people: [{ key, name }].
  */
 export function parseQuery(q, people = [], tags = []) {
+  // Capisce l'italiano e l'inglese, qualunque sia la lingua scelta (chi scrive usa la sua).
   const t = String(q || '').toLowerCase();
   const f = {};
-  const num = (x) => ({ un: 1, uno: 1, una: 1, due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6, sette: 7, otto: 8, nove: 9, dieci: 10 })[x] ?? Number(x);
-  const np = t.match(/(\d+|due|tre|quattro|cinque|sei|sette|otto|nove|dieci)\s*(persone|giocatori|player)/);
+  const num = (x) => ({ un: 1, uno: 1, una: 1, due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6, sette: 7, otto: 8, nove: 9, dieci: 10, a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 })[x] ?? Number(x);
+  const np = t.match(/(\d+|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|two|three|four|five|six|seven|eight|nine|ten)\s*(persone|giocatori|players?|people)/);
   if (np) f.players = num(np[1]);
   else if (/siamo in (\d+)/.test(t)) f.players = Number(t.match(/siamo in (\d+)/)[1]);
-  const mm = t.match(/(?:massimo|max|entro|meno di|sotto(?: i)?|al massimo|abbiamo)\s*(\d+)\s*(?:min|minuti)/) || t.match(/(\d+)\s*(?:min|minuti)/);
+  else if (/we(?:'re| are) (\d+)/.test(t)) f.players = Number(t.match(/we(?:'re| are) (\d+)/)[1]);
+  const mm = t.match(/(?:massimo|max|entro|meno di|sotto(?: i)?|al massimo|abbiamo|under|less than|at most|within|up to)\s*(\d+)\s*(?:min|minuti|minutes|mins)/) || t.match(/(\d+)\s*(?:min|minuti|minutes|mins)/);
   if (mm) f.maxMin = Number(mm[1]);
-  if (/mezz'?ora|mezzora/.test(t)) f.maxMin = 30;
-  else if (/un'?ora e mezza/.test(t)) f.maxMin = 90;
-  else if (/un'?ora/.test(t) && !f.maxMin) f.maxMin = 60;
+  if (/mezz'?ora|mezzora|half an hour/.test(t)) f.maxMin = 30;
+  else if (/un'?ora e mezza|an hour and a half|hour and a half/.test(t)) f.maxMin = 90;
+  else if (/un'?ora|an hour|one hour/.test(t) && !f.maxMin) f.maxMin = 60;
   for (const p of people) {
-    const n = String(p.name).toLowerCase();
-    if (new RegExp(`(?:che|a cui)\\s+${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+non\\s+(?:odia|detesta|sopporta|piace)`).test(t)) f.notHatedBy = p.key;
+    const n = String(p.name).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(?:che|a cui)\\s+${n}\\s+non\\s+(?:odia|detesta|sopporta|piace)`).test(t)
+      || new RegExp(`${n}\\s+(?:doesn'?t|does not)\\s+(?:hate|dislike|mind)`).test(t)) f.notHatedBy = p.key;
   }
-  const st = t.match(/da almeno\s+(\d+|un|una|due|tre|quattro|sei)\s+(giorn|settiman|mes|ann)/);
-  if (st) f.staleDays = num(st[1]) * ({ giorn: 1, settiman: 7, mes: 30, ann: 365 })[st[2]];
-  if (/mai giocat|mai provat|nuov/.test(t)) f.never = true;
-  if (/cooperativ|coop\b/.test(t)) f.mode = 'cooperativo';
-  else if (/a squadre|squadre/.test(t)) f.mode = 'squadre';
+  const st = t.match(/da almeno\s+(\d+|un|una|due|tre|quattro|sei)\s+(giorn|settiman|mes|ann)/) || t.match(/(?:in|for) (?:at least )?(\d+|a|an|one|two|three|four|six)\s+(day|week|month|year)/);
+  if (st) f.staleDays = num(st[1]) * ({ giorn: 1, settiman: 7, mes: 30, ann: 365, day: 1, week: 7, month: 30, year: 365 })[st[2]];
+  if (/mai giocat|mai provat|nuov|never played|not played|new/.test(t)) f.never = true;
+  if (/cooperativ|co-?op\b/.test(t)) f.mode = 'cooperativo';
+  else if (/a squadre|squadre|teams?\b/.test(t)) f.mode = 'squadre';
   else if (/competitiv/.test(t)) f.mode = 'competitivo';
-  if (/facil|legger|semplic/.test(t)) f.maxWeight = 2;
-  if (/impegnativ|pesant|stratégic|strategic|complicat/.test(t)) f.minWeight = 3;
-  if (/disponibil|in casa|ce l'abbiamo/.test(t)) f.available = true;
+  if (/facil|legger|semplic|easy|light|simple/.test(t)) f.maxWeight = 2;
+  if (/impegnativ|pesant|stratégic|strategic|complicat|heavy|complex/.test(t)) f.minWeight = 3;
+  if (/disponibil|in casa|ce l'abbiamo|available|we have/.test(t)) f.available = true;
   const tag = tags.find((tg) => new RegExp(`\\b${tg.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(t));
   if (tag) f.tag = tag;
   return f;
@@ -931,7 +955,7 @@ export function nightsList(nights) {
 export function nightFacts(n) {
   const m = Number(n.minutes) || 0;
   const dur = m ? (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`) : '';
-  return [`${n.playersCount} ${n.playersCount === 1 ? 'giocatore' : 'giocatori'}`, `${n.gamesCount} ${n.gamesCount === 1 ? 'gioco' : 'giochi'}`, dur].filter(Boolean).join(' · ');
+  return [t('lib.players', { n: n.playersCount }), t('ph.mem.games', { n: n.gamesCount }), dur].filter(Boolean).join(' · ');
 }
 
 export function nightHighlights(n) {
@@ -987,7 +1011,6 @@ export function wrapped(nights, year) {
   const gl = Object.values(games);
   const pl = Object.values(people);
   const top = (arr, f, min = 1) => { const v = arr.filter((x) => f(x) >= min).sort((a, b) => f(b) - f(a)); return v[0] || null; };
-  const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
   const bestMonth = Object.entries(months).sort((a, b) => b[1] - a[1])[0];
   const loved = gl.filter((g) => g.n >= 3).sort((a, b) => b.sum / b.n - a.sum / a.n)[0] || null;
   const raters = pl.filter((p) => p.n >= 5);
@@ -1009,7 +1032,7 @@ export function wrapped(nights, year) {
     seer: top(pl, (p) => p.seer),
     critic: raters.length >= 2 ? [...raters].sort((a, b) => a.sum / a.n - b.sum / b.n)[0] : null,
     generous: raters.length >= 2 ? [...raters].sort((a, b) => b.sum / b.n - a.sum / a.n)[0] : null,
-    bestMonth: bestMonth ? { name: MONTHS[bestMonth[0]], nights: bestMonth[1] } : null,
+    bestMonth: bestMonth ? { name: fmtDate(new Date(2000, Number(bestMonth[0]), 15), { month: 'long' }), nights: bestMonth[1] } : null,
     first: list[list.length - 1].at
   };
 }
@@ -1112,7 +1135,7 @@ export function personInsights(nights, key, library) {
           const d = g.playedMin || durByKey[gk];
           if (d) likedDur.push(d);
           if (toArray(g.pl).length) likedPlayers.push(toArray(g.pl).length);
-          for (const t of tagsByKey[gk] || []) likedTags[t] = (likedTags[t] || 0) + 1;
+          for (const tg of tagsByKey[gk] || []) likedTags[tg] = (likedTags[tg] || 0) + 1;
         }
       }
       const pl = toArray(g.pl);
@@ -1201,13 +1224,13 @@ export function pairsMap(nights) {
 // Stagioni, rivalità testa a testa, figurine
 // ---------------------------------------------------------------------------
 
-const SEASON_NAMES = ['Inverno', 'Primavera', 'Estate', 'Autunno'];
+const seasonName = (q) => t(`season.${q}`);
 
 /** Stagione di una data: una ogni tre mesi (gen-mar Inverno, apr-giu Primavera, lug-set Estate, ott-dic Autunno). */
 export function seasonOf(at) {
   const d = new Date(Number(at) || Date.now());
   const q = Math.floor(d.getMonth() / 3);
-  return { id: `${d.getFullYear()}-${q + 1}`, name: `${SEASON_NAMES[q]} ${d.getFullYear()}`, year: d.getFullYear(), q };
+  return { id: `${d.getFullYear()}-${q + 1}`, name: `${seasonName(q)} ${d.getFullYear()}`, year: d.getFullYear(), q };
 }
 
 /** Punti "campioni" di una persona in una serata salvata (vittoria 3, MVP 1, pronostico 1, media indovinata 1). */
@@ -1301,10 +1324,10 @@ export function rivalsOf(nights, key) {
 
 /** Rarità della figurina in base al livello. */
 export function cardRarity(level) {
-  if (level >= 12) return { key: 'leggendaria', label: 'Leggendaria', stars: 4 };
-  if (level >= 7) return { key: 'epica', label: 'Epica', stars: 3 };
-  if (level >= 3) return { key: 'rara', label: 'Rara', stars: 2 };
-  return { key: 'comune', label: 'Comune', stars: 1 };
+  if (level >= 12) return { key: 'leggendaria', label: t('rarity.leggendaria'), stars: 4 };
+  if (level >= 7) return { key: 'epica', label: t('rarity.epica'), stars: 3 };
+  if (level >= 3) return { key: 'rara', label: t('rarity.rara'), stars: 2 };
+  return { key: 'comune', label: t('rarity.comune'), stars: 1 };
 }
 
 /** Dati della figurina di una persona: livello, rarità, statistiche principali e il gioco del cuore. */

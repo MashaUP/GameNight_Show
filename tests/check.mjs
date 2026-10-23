@@ -21,7 +21,10 @@ ok(v1 && v1 === v2 && v2 === v3, `Versioni diverse: version.json ${v1}, js/versi
 // 2. Ogni file nella lista del service worker esiste, e ogni modulo js è nella lista
 const shell = [...read('sw.js').matchAll(/^\s*"([^"]+)",?$/gm)].map((m) => m[1]).filter((f) => f !== './');
 for (const f of shell) ok(fs.existsSync(path.join(ROOT, f)), `sw.js elenca un file che non esiste: ${f}`);
-const jsFiles = fs.readdirSync(path.join(ROOT, 'js')).filter((f) => f.endsWith('.js'));
+const jsFiles = [
+  ...fs.readdirSync(path.join(ROOT, 'js')).filter((f) => f.endsWith('.js')),
+  ...fs.readdirSync(path.join(ROOT, 'js', 'lang')).filter((f) => f.endsWith('.js')).map((f) => `lang/${f}`)
+];
 for (const f of jsFiles) ok(shell.includes(`js/${f}`), `js/${f} manca dalla lista del service worker (offline non funzionerebbe)`);
 
 // 3. Sintassi dei moduli
@@ -67,8 +70,49 @@ for (const html of fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'))) {
 // 6. Regole del database: JSON valido con la radice "rules"
 try { ok(Boolean(JSON.parse(read('database.rules.json')).rules), 'database.rules.json senza "rules"'); } catch (e) { fail(`database.rules.json non è JSON valido: ${e.message}`); }
 
+// 7. Lingue: stesse chiavi in italiano e inglese, stessi {parametri}, stesse forme del plurale,
+//    nessun testo vuoto, e ogni chiave usata nel codice esiste.
+const LANGS = ['it', 'en'];
+const dicts = {};
+for (const l of LANGS) dicts[l] = (await import(path.join(ROOT, 'js', 'lang', `${l}.js`))).default;
+const params = (v) => [...new Set([...(typeof v === 'object' ? Object.values(v).join(' ') : String(v)).matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort().join(',');
+for (const l of LANGS.slice(1)) {
+  for (const k of Object.keys(dicts.it)) ok(k in dicts[l], `Traduzione mancante in ${l}: ${k}`);
+  for (const k of Object.keys(dicts[l])) ok(k in dicts.it, `Chiave in ${l} che non esiste in italiano: ${k}`);
+}
+for (const k of Object.keys(dicts.it)) {
+  const vals = LANGS.map((l) => dicts[l][k]).filter((v) => v !== undefined);
+  for (const v of vals) ok(typeof v === 'string' ? v.trim() !== '' : (v && typeof v === 'object' && typeof v.other === 'string' && v.other.trim() !== ''), `Testo vuoto o non valido: ${k}`);
+  ok(new Set(vals.map(params)).size <= 1, `Parametri diversi tra le lingue per ${k}: ${vals.map(params).join(' / ')}`);
+  ok(new Set(vals.map((v) => typeof v)).size <= 1, `Forma diversa (testo/plurale) tra le lingue per ${k}`);
+}
+const used = new Set();
+for (const f of jsFiles.filter((x) => !x.startsWith('lang/'))) for (const m of read(`js/${f}`).matchAll(/\bt\(\s*'([a-z][\w.-]+)'/g)) used.add(m[1]);
+for (const html of fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'))) {
+  const src = read(html);
+  for (const m of src.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)) used.add(m[1]);
+  for (const m of src.matchAll(/data-i18n-attr="([^"]+)"/g)) for (const pair of m[1].split(';')) { const k = pair.split(':')[1]?.trim(); if (k) used.add(k); }
+  for (const m of src.matchAll(/name="gnr-title" content="([^"]+)"/g)) used.add(m[1]);
+}
+for (const k of used) ok(k in dicts.it, `Chiave usata nel codice ma assente nei dizionari: ${k}`);
+
+// 8. Link ufficiali: config/links.json valido con le regole del codice, e nessun indirizzo
+//    di GitHub, Discord o Ko-fi scritto a mano nelle pagine o nei moduli (unica fonte: il JSON).
+{
+  const { parseConfig } = await import('../js/links-core.js');
+  const { PROJECT, LINK_POLICY } = await import('../js/links-policy.js');
+  const p = parseConfig(read('config/links.json'), { project: PROJECT, policy: LINK_POLICY });
+  ok(p.ok, `config/links.json non valido: ${p.error}`);
+  if (p.ok) ok(!p.errors.length, `config/links.json: voci scartate (${p.errors.join(', ')})`);
+  ok(shell.includes('config/links.json'), 'config/links.json manca dalla lista del service worker');
+  ok(read('android-app/scripts/prepare-www.mjs').includes("'config'"), "la cartella config non viene copiata nell'app Android");
+  const HARD = /https:\/\/(?:www\.)?(?:ko-fi\.com|discord\.gg|discord\.com\/invite|github\.com\/MashaUP)/i;
+  const files = [...fs.readdirSync(ROOT).filter((f) => f.endsWith('.html')), ...jsFiles.map((f) => `js/${f}`)];
+  for (const f of files) ok(!HARD.test(read(f)), `${f} contiene un link ufficiale scritto a mano: usa config/links.json (data-link / js/links.js)`);
+}
+
 if (errors.length) {
   console.error(`✗ ${errors.length} problemi trovati:\n\n• ${errors.join('\n• ')}`);
   process.exit(1);
 }
-console.log(`✓ ${checks} controlli superati (versione ${v1}, ${jsFiles.length} moduli, ${shell.length} file offline)`);
+console.log(`✓ ${checks} controlli superati (versione ${v1}, ${jsFiles.length} moduli, ${shell.length} file offline, ${Object.keys(dicts.it).length} testi in ${LANGS.length} lingue)`);

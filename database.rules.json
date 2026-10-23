@@ -276,7 +276,7 @@
     "members": {
       "$mid": {
         ".read": "auth != null",
-        ".write": "auth != null",
+        ".write": "auth != null && (newData.exists() ? (!data.exists() || newData.child('groupId').val() === data.child('groupId').val()) : root.child('groups').child(data.child('groupId').val()).child('info').child('ownerUid').val() === auth.uid)",
         ".validate": "$mid.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['name', 'groupId', 'style', 'seed', 'color']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 16 && newData.child('color').isString() && newData.child('color').val().matches(/^#[0-9A-Fa-f]{6}$/)",
         "photo": {
           ".validate": "newData.isString() && newData.val().beginsWith('data:image/') && newData.val().length < 120000 && !newData.val().contains('\"') && !newData.val().contains(\"'\") && !newData.val().contains('<') && !newData.val().contains('>')"

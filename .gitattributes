@@ -1,0 +1,17 @@
+# Fine riga uniformi (LF) anche caricando i file da Windows; i file binari non vengono toccati.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.jks binary
+*.keystore binary
+*.jar binary
+
+# Statistiche dei linguaggi su GitHub: le librerie incluse e i file generati non contano.
+vendor/** linguist-vendored
+android-app/android/gradlew linguist-vendored
+**/package-lock.json linguist-generated

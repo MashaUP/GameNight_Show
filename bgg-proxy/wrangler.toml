@@ -1,0 +1,16 @@
+# Configurazione del Worker Cloudflare (piano gratuito) che fa da proxy verso BoardGameGeek.
+# Guida passo passo: bgg-proxy/README.md
+name = "gamenight-bgg"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+# Origini che possono usare il proxy: il sito su GitHub Pages e l'app Android (https://localhost).
+# Se il tuo sito ha un altro indirizzo, scrivilo qui (senza la parte dopo il dominio).
+ALLOWED_ORIGINS = "https://mashaup.github.io,https://localhost"
+# Richieste per indirizzo IP ogni 10 minuti
+RATE_LIMIT = "120"
+
+# Il token di BoardGameGeek NON va scritto qui: è un segreto.
+#   npx wrangler secret put BGG_TOKEN

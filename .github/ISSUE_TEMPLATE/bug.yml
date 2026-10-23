@@ -1,0 +1,43 @@
+name: 🐞 Segnala un problema / Report a problem
+description: Qualcosa non funziona in GameNight Show? Raccontaci cosa è successo.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie! Non scrivere dati personali, codici dei gruppi o chiavi: questa segnalazione è pubblica.
+        Thanks! Don't include personal data, group codes or keys: this report is public.
+  - type: textarea
+    id: what
+    attributes:
+      label: Cosa è successo? / What happened?
+      description: Cosa stavi facendo, cosa ti aspettavi e cosa è successo invece.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Come riprodurlo / Steps to reproduce
+      placeholder: |
+        1. Apri la TV (host.html)…
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Versione / Version
+      description: La trovi in fondo alla home o in Impostazioni → Versione.
+      placeholder: "1.5.0"
+  - type: dropdown
+    id: where
+    attributes:
+      label: Dove? / Where?
+      options:
+        - Sito, TV o computer / Website, TV or computer
+        - Telefono, browser / Phone, browser
+        - App Android
+        - Non so / Not sure
+  - type: textarea
+    id: log
+    attributes:
+      label: Registro errori (facoltativo) / Error log (optional)
+      description: Sulla TV, negli strumenti → "Registro errori" → "Scarica il registro". Allega il file o incolla le righe utili.

@@ -1,0 +1,16 @@
+name: 💡 Proponi un'idea / Suggest an idea
+description: Una funzione che renderebbe migliori le vostre serate.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: L'idea / The idea
+      description: Cosa vorresti poter fare?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Perché ti serve / Why it helps
+      description: Raccontaci la situazione della serata in cui ti sarebbe utile.

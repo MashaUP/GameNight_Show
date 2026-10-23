@@ -14,7 +14,7 @@ import {
   CRITERIA, gameStats, verdict, buildBoard, buildAwards, buildAllTime, personalStats, personKey, trophies, affinities,
   activeCriteria, progressFor, newAchievements, recommend,
   nightsList, wrapped, yearsOf, personInsights, searchLibrary, parseQuery, tagsOf, isAvailable, GAME_STATUS, GAME_MODES, nightFacts,
-  nightChampions
+  nightChampions, awardTitle
 } from './stats.js';
 import { confettiBurst } from './fx.js';
 import { publicUrl, isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
@@ -24,6 +24,7 @@ import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from '
 import { SFX_META } from './sfx.js';
 import { setRoomSafeMode } from './safe.js';
 import { Person, lookOf } from './person.js';
+import { t, has, lang, fmtDate, fmtList, fmtNum, langSwitchHTML } from './i18n.js';
 import { saveGame, newGameId, logEvent as armLog } from './collection.js';
 
 const app = $('#app');
@@ -104,7 +105,7 @@ async function syncDeviceProfiles() {
     let found = 0;
     for (const [gid, mid] of Object.entries(remote)) if (!local[gid] && /^[A-Z0-9]{6}$/.test(mid)) { saveProfile(gid, mid, false); found++; }
     for (const [gid, mid] of Object.entries(local)) if (remote[gid] !== mid) set(dbRef(`deviceProfiles/${P.uid}/${gid}`), mid).catch(() => {});
-    if (found) toast(found === 1 ? 'Ho ritrovato il tuo profilo su questo telefono' : `Ho ritrovato ${found} profili su questo telefono`);
+    if (found) toast(t('ph.found', { n: found }));
   } catch { /* regole vecchie o rete assente: pazienza */ }
 }
 /** Un profilo del gruppo con lo stesso nome (dallo storico delle serate), non ancora in stanza. */
@@ -152,7 +153,7 @@ function isIOS() {
 /** Nell'app: pulsante per inquadrare il QR della TV (la fotocamera del telefono aprirebbe il browser). */
 function qrScanButtonHTML() {
   const touch = window.matchMedia?.('(pointer: coarse)').matches;
-  return canScanQR() && (isApp() || touch) ? '<button type="button" class="btn btn-block qr-scan-btn" data-scanqr>📷 Inquadra il QR della TV</button>' : '';
+  return canScanQR() && (isApp() || touch) ? `<button type="button" class="btn btn-block qr-scan-btn" data-scanqr>📷 ${esc(t('scan.title'))}</button>` : '';
 }
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-scanqr]');
@@ -162,30 +163,26 @@ document.addEventListener('click', async (e) => {
   if (!text) return;
   const to = routeFromQR(text);
   if (to) location.href = to;
-  else toast('Questo QR non è di GameNight Show.', 'warn');
+  else toast(t('home.join.notOurQR'), 'warn');
 });
 
 /** Suggerimento per installare l'app sul telefono (non compare se è già installata). */
 function installHintHTML(code = '') {
   if (isStandalone() || isApp()) return '';
   const apk = isAndroid() ? apkUrl() : '';
-  const how = isIOS()
-    ? 'Su iPhone: tocca <b>Condividi</b> in Safari e poi <b>Aggiungi alla schermata Home</b>.'
-    : apk
-      ? 'Su Android: scarica l’<b>app GameNight Show</b> qui sotto, oppure tocca <b>Installa</b> per aggiungere il sito alla schermata Home.'
-      : 'Su Android: tocca <b>Installa</b> qui sotto, oppure il menu ⋮ di Chrome e poi <b>Installa app</b>.';
+  const how = isIOS() ? t('ph.inst.ios') : apk ? t('ph.inst.androidApk') : t('ph.inst.android');
   return `
     <section class="card install-card">
-      <h2>Installa l'app</h2>
-      <p>${how} Si apre a schermo intero e trova da sola la serata in corso.</p>
-      ${code ? `<p class="muted small">L'app installata ha una memoria separata dal browser: al primo avvio inserisci il tuo codice personale <b>${esc(code)}</b>.</p>` : ''}
-      ${apk ? `<a class="btn" href="${esc(apk)}" rel="noopener">📲 Scarica l’app Android</a>` : ''}
-      ${!isIOS() ? '<button type="button" class="btn-sec" id="installBtn">Installa</button>' : ''}
+      <h2>${esc(t('ph.inst.title'))}</h2>
+      <p>${how} ${esc(t('ph.inst.fullscreen'))}</p>
+      ${code ? `<p class="muted small">${t('ph.inst.code', { code: `<b>${esc(code)}</b>` })}</p>` : ''}
+      ${apk ? `<a class="btn" href="${esc(apk)}" rel="noopener">📲 ${esc(t('ph.inst.apk'))}</a>` : ''}
+      ${!isIOS() ? `<button type="button" class="btn-sec" id="installBtn">${esc(t('ph.inst.install'))}</button>` : ''}
     </section>`;
 }
 function bindInstall(root) {
   $('#installBtn', root)?.addEventListener('click', async () => {
-    if (!installPrompt) { toast('Usa il menu ⋮ di Chrome e scegli "Installa app".'); return; }
+    if (!installPrompt) { toast(t('ph.inst.menu')); return; }
     installPrompt.prompt();
     await installPrompt.userChoice.catch(() => {});
     installPrompt = null;
@@ -196,11 +193,11 @@ async function boot() {
   if (!isConfigured) { showNotConfigured(app); return; }
   const code = normalizeCode(param('room'));
 
-  app.innerHTML = loadingHTML('Collegamento in corso…');
+  app.innerHTML = loadingHTML(t('ph.connecting'));
   try {
     P.uid = await connect();
   } catch (err) {
-    showFatal(app, 'Impossibile collegarsi', explainError(err));
+    showFatal(app, t('ph.cantConnect'), explainError(err));
     return;
   }
   // Senza stanza: la pagina iniziale è la home personale (index.html), con profilo, armadi e gruppi.
@@ -212,8 +209,8 @@ async function boot() {
   if (prof.length === 6) {
     try {
       const m = await loadMember(prof);
-      if (m) { saveProfile(m.groupId, m.id); Person.linkGroup(m.groupId, m.id).catch(() => {}); toast(`Profilo di ${m.name} collegato a questo telefono`); }
-      else toast('Nessun profilo con questo codice.', 'warn');
+      if (m) { saveProfile(m.groupId, m.id); Person.linkGroup(m.groupId, m.id).catch(() => {}); toast(t('ph.profileLinked', { name: m.name })); }
+      else toast(t('home.code6.none'), 'warn');
     } catch (err) { toast(explainError(err), 'error'); }
     const url = new URL(location.href);
     url.searchParams.delete('profilo');
@@ -225,9 +222,9 @@ async function boot() {
 
   try {
     const meta = (await get(roomRef(code, 'meta'))).val();
-    if (!meta) { renderCodeEntry(`La stanza ${code} non esiste (o è stata chiusa): controlla il codice sulla TV.`, ''); return; }
+    if (!meta) { renderCodeEntry(t('ph.noRoom', { code }), ''); return; }
   } catch (err) {
-    showFatal(app, 'Impossibile leggere la stanza', explainError(err));
+    showFatal(app, t('ph.cantRead'), explainError(err));
     return;
   }
   openRoom(code);
@@ -257,10 +254,10 @@ function paintPhoneIdentity() {
 function phoneTop(code = P.code, back = '') {
   return `
     <header class="ph-top">
-      ${back ? `<button type="button" class="btn-sec btn-sec--sm ph-back" data-phback="${esc(back)}" aria-label="Indietro">←</button>`
-        : code ? '<button type="button" class="btn-sec btn-sec--sm ph-back" data-phhome aria-label="Indietro: torna alla home (resti nella serata)" title="Torna alla home: resti nella serata e rientri quando vuoi">←</button>' : ''}
+      ${back ? `<button type="button" class="btn-sec btn-sec--sm ph-back" data-phback="${esc(back)}" aria-label="${esc(t('ph.back'))}">←</button>`
+        : code ? `<button type="button" class="btn-sec btn-sec--sm ph-back" data-phhome aria-label="${esc(t('ph.backHomeAria'))}" title="${esc(t('ph.backHomeTitle'))}">←</button>` : ''}
       <span class="brand-row"><span class="ph-emblem" data-emblem>${phoneEmblemHTML()}</span><span class="brand brand--sm">GameNight <span class="logo-tag logo-tag--xs">Show</span></span></span>
-      <span class="ph-right">${code ? `<span class="ph-room">Stanza ${esc(code)}</span>` : ''}${code ? '<button type="button" class="net-pill" data-netpill aria-live="polite"></button>' : ''}${back && !['index', 'home'].includes(back) ? '<button type="button" class="ph-home" data-phhome aria-label="Home: profilo, armadi e altre serate" title="Home">🏠</button>' : ''}</span>
+      <span class="ph-right">${code ? `<span class="ph-room">${esc(t('ph.room', { code }))}</span>` : ''}${code ? '<button type="button" class="net-pill" data-netpill aria-live="polite"></button>' : ''}${back && !['index', 'home'].includes(back) ? `<button type="button" class="ph-home" data-phhome aria-label="${esc(t('ph.homeAria'))}" title="${esc(t('home.nav.home'))}">🏠</button>` : ''}</span>
     </header>`;
 }
 
@@ -275,7 +272,7 @@ window.addEventListener('gnr:back', (e) => {
 /** Home: si esce dalla schermata, non dalla serata (si rientra con un tocco dalla home). */
 function goHome() {
   const voting = P.state?.phase === 'voting' && P.players?.[P.uid] && !P.votes?.[P.state?.gameId]?.[P.uid] && document.querySelector('#sendVote');
-  if (voting && !confirm('Non hai ancora inviato il voto. Tornare alla home? Puoi rientrare e votare finché la votazione è aperta.')) return;
+  if (voting && !confirm(t('ph.leaveVoteConfirm'))) return;
   location.href = 'index.html';
 }
 document.addEventListener('click', (e) => {
@@ -326,28 +323,28 @@ const Net = {
   count() {
     const items = [...this.pending.values()];
     let n = items.filter((x) => x.queued).length;
-    if (outboxPending() && !items.some((x) => x.label === 'Voto')) n++;
+    if (outboxPending() && !items.some((x) => x.label === 'vote')) n++;
     return n;
   },
   syncedToast() {
     const l = this.synced;
     this.synced = [];
     if (!l.length) return;
-    toast(l.length === 1 ? `✓ ${l[0]} sincronizzato` : `✓ ${l.length} azioni sincronizzate`);
+    toast(l.length === 1 ? `✓ ${t('ph.net.synced1', { what: netLabel(l[0]) })}` : `✓ ${t('ph.net.syncedN', { n: l.length })}`);
   },
   paint() {
     const n = this.count();
     const st = n ? 'queue' : this.online ? 'ok' : 'off';
-    const html = st === 'ok' ? '<i class="net-dot"></i><span class="sr-only">Connesso</span>' : st === 'off' ? '<i class="net-dot"></i><span>Offline</span>' : `<i class="net-dot"></i><span>In coda · ${n}</span>`;
-    const title = st === 'ok' ? 'Connesso: tutto sincronizzato' : st === 'off' ? 'Connessione persa: i tuoi dati sono salvati sul telefono' : `${n} ${n === 1 ? 'azione in attesa' : 'azioni in attesa'} di invio: partono da sole appena torna la rete`;
+    const html = st === 'ok' ? `<i class="net-dot"></i><span class="sr-only">${esc(t('ph.net.ok'))}</span>` : st === 'off' ? `<i class="net-dot"></i><span>${esc(t('ph.net.off'))}</span>` : `<i class="net-dot"></i><span>${esc(t('ph.net.queue', { n }))}</span>`;
+    const title = st === 'ok' ? t('ph.net.okTitle') : st === 'off' ? t('ph.net.offTitle') : t('ph.net.queueTitle', { n });
     // Voto ancora in coda: la schermata "Voto inviato" lo dice chiaramente.
     const vt = document.getElementById('votedTitle');
     if (vt) {
-      const queued = [...this.pending.values()].some((x) => x.label === 'Voto' && x.queued) || (outboxPending() && !this.online);
-      const t = queued ? 'Voto in coda' : 'Voto inviato!';
-      if (vt.textContent !== t) {
-        vt.textContent = t;
-        document.getElementById('votedLead').textContent = queued ? 'Niente rete in questo momento: il voto è salvato sul telefono e parte da solo appena torna la connessione.' : 'Aspetta gli altri: il reveal è sulla TV.';
+      const queued = [...this.pending.values()].some((x) => x.label === 'vote' && x.queued) || (outboxPending() && !this.online);
+      const txt = queued ? t('ph.vote.queued') : t('ph.vote.sent');
+      if (vt.textContent !== txt) {
+        vt.textContent = txt;
+        document.getElementById('votedLead').textContent = queued ? t('ph.vote.queuedLead') : t('ph.vote.sentLead');
       }
     }
     document.querySelectorAll('[data-netpill]').forEach((el) => {
@@ -387,14 +384,14 @@ function renderCodeEntry(error = '', value = '') {
   app.innerHTML = `
     <main class="phone phone--center">
       ${phoneTop('', 'home')}
-      <h1 class="ph-title">Entra nella serata</h1>
-      <p class="ph-lead">Inquadra il QR sulla TV, oppure scrivi il codice di 4 caratteri.</p>
+      <h1 class="ph-title">${esc(t('ph.code.title'))}</h1>
+      <p class="ph-lead">${esc(t('ph.code.lead'))}</p>
       <p class="form-error" role="alert">${esc(error)}</p>
       ${qrScanButtonHTML()}
       <form class="code-form" id="codeForm" novalidate>
-        <label class="hub-or" for="codeInput">Codice della stanza</label>
+        <label class="hub-or" for="codeInput">${esc(t('ph.code.label'))}</label>
         <input class="input code-input" id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" value="${esc(last)}">
-        <button class="btn-sec btn-block" type="submit">Entra con il codice</button>
+        <button class="btn-sec btn-block" type="submit">${esc(t('ph.code.go'))}</button>
       </form>
     </main>`;
   const input = $('#codeInput');
@@ -403,7 +400,7 @@ function renderCodeEntry(error = '', value = '') {
     e.preventDefault();
     const code = normalizeCode(input.value);
     if (code.length !== 4) {
-      app.querySelector('.form-error').textContent = 'Il codice ha 4 caratteri: lo trovi sulla TV.';
+      app.querySelector('.form-error').textContent = t('home.join.errLen');
       return;
     }
     location.search = `?room=${code}`;
@@ -415,9 +412,9 @@ function renderPhotoMode(code) {
     <main class="phone phone--center">
       ${phoneTop(code, `room:${code}`)}
       <div class="photo-ico">${ICONS.camera}</div>
-      <h1 class="ph-title">Foto del gioco</h1>
-      <p class="ph-lead">Scatta una foto alla scatola: comparirà subito sulla TV.</p>
-      <label class="btn btn-block" for="camInput">${ICONS.camera}<span>Scatta o scegli una foto</span></label>
+      <h1 class="ph-title">${esc(t('ph.photo.title'))}</h1>
+      <p class="ph-lead">${esc(t('ph.photo.lead'))}</p>
+      <label class="btn btn-block" for="camInput">${ICONS.camera}<span>${esc(t('ph.photo.take'))}</span></label>
       <input type="file" id="camInput" accept="image/*" class="sr-only">
       <div id="photoPrev" class="photo-prev"></div>
       <p id="photoStatus" class="ph-lead" role="status"></p>
@@ -428,12 +425,12 @@ function renderPhotoMode(code) {
     const file = input.files[0];
     input.value = '';
     if (!file) return;
-    status.textContent = 'Invio in corso…';
+    status.textContent = t('ph.photo.sending');
     try {
       const data = await gameImage(file);
       await set(roomRef(code, 'pendingImage'), { data, at: serverTimestamp() });
-      $('#photoPrev').innerHTML = `<img src="${data}" alt="Foto inviata">`;
-      status.textContent = 'Foto inviata! Controlla la TV. Puoi scattarne un’altra se serve.';
+      $('#photoPrev').innerHTML = `<img src="${data}" alt="${esc(t('ph.photo.sentAlt'))}">`;
+      status.textContent = t('ph.photo.sent');
     } catch (err) {
       status.textContent = err?.code ? explainError(err) : err.message;
     }
@@ -447,20 +444,28 @@ function renderPhotoMode(code) {
 function openRoom(code) {
   P.code = code;
   localStorage.setItem('gnr_room', code);
-  app.innerHTML = loadingHTML('Entro nella stanza…');
+  app.innerHTML = loadingHTML(t('ph.entering'));
   for (const key of WATCHED) {
     onValue(roomRef(code, key), (snap) => {
       const val = snap.val();
       P[key] = (key === 'meta' || key === 'state' || key === 'poll') ? val : (val || {});
       P.loaded.add(key);
       render();
-    }, (err) => showFatal(app, 'Connessione persa', explainError(err)));
+    }, (err) => showFatal(app, t('ph.connLost'), explainError(err)));
   }
   // Presenza: la TV vede se questo telefono è collegato e non lo aspetta se cade la linea.
   trackConnection((on) => { connectionStatus(on); Net.setOnline(on); }, code, P.uid);
 }
 
 const SCREENS = {};
+
+// Motivi del time-out: si salvano come codici, la TV li mostra nella sua lingua.
+const TIMEOUT_REASONS = ['rules', 'bathroom', 'smoke', 'pizza', 'other'];
+/** Nome di un invio in coda ("vote", "photo"…) nella lingua scelta. */
+const netLabel = (l) => (has(`ph.net.label.${l}`) ? t(`ph.net.label.${l}`) : l);
+/** Evento casuale della Modalità Chaos: testo nella lingua del telefono (le serate vecchie hanno il testo salvato). */
+const eventTitle = (ev) => (ev?.id && has(`chaos.${ev.id}.t`) ? t(`chaos.${ev.id}.t`) : ev?.title || '');
+const eventText = (ev) => (ev?.id && has(`chaos.${ev.id}.d`) ? t(`chaos.${ev.id}.d`) : ev?.text || '');
 
 function watchGroup() {
   const gid = P.meta?.groupId;
@@ -492,7 +497,7 @@ function watchArmadio() {
 
 function photoButtonHTML() {
   if (!P.meta?.groupId) return '';
-  return `<label class="btn-sec photo-btn" for="memPhoto">📸 <span>Foto ricordo</span></label>
+  return `<label class="btn-sec photo-btn" for="memPhoto">📸 <span>${esc(t('ph.mem.btn'))}</span></label>
     <input type="file" id="memPhoto" accept="image/*" class="sr-only">`;
 }
 
@@ -516,11 +521,11 @@ document.addEventListener('change', async (e) => {
   sheet.className = 'overlay overlay--sheet';
   sheet.innerHTML = `
     <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="phTitle">
-      <div class="panel-head"><h2 id="phTitle">Foto ricordo</h2><button type="button" class="icon-btn" data-phclose aria-label="Chiudi">${ICONS.x}</button></div>
+      <div class="panel-head"><h2 id="phTitle">${esc(t('ph.mem.btn'))}</h2><button type="button" class="icon-btn" data-phclose data-close aria-label="${esc(t('common.close'))}">${ICONS.x}</button></div>
       <img class="photo-prev-big" src="${data}" alt="">
-      <label class="field-label" for="phCaption">Momento memorabile <span class="muted">(facoltativo)</span></label>
-      <input class="input" id="phCaption" maxlength="80" placeholder="Es. Il tradimento di Marco${game ? ` a ${esc(game)}` : ''}">
-      <button type="button" class="btn btn-block" id="phSave">Aggiungi all’album</button>
+      <label class="field-label" for="phCaption">${esc(t('ph.mem.caption'))} <span class="muted">${esc(t('common.optional'))}</span></label>
+      <input class="input" id="phCaption" maxlength="80" placeholder="${esc(game ? t('ph.mem.phGame', { game }) : t('ph.mem.ph'))}">
+      <button type="button" class="btn btn-block" id="phSave">${esc(t('ph.mem.add'))}</button>
     </div>`;
   document.body.appendChild(sheet);
   sheet.addEventListener('click', async (ev) => {
@@ -529,12 +534,12 @@ document.addEventListener('change', async (e) => {
     ev.target.closest('#phSave').disabled = true;
     try {
       const gid = P.meta.groupId;
-      await Net.track('Foto', rated((x) => groupRef(gid, x), `photos/${P.code}`, 'photo', {
+      await Net.track('photo', rated((x) => groupRef(gid, x), `photos/${P.code}`, 'photo', {
         data, uid: P.uid, by: P.players[P.uid]?.name || '', at: serverTimestamp(),
         caption: cleanName($('#phCaption', sheet).value, 80) || null, game: game || null
       }));
       sheet.remove();
-      toast('Foto aggiunta all’album della serata');
+      toast(t('ph.mem.added'));
     } catch (err) { toast(spamError(err), 'error'); ev.target.closest('#phSave').disabled = false; }
   });
 });
@@ -549,28 +554,28 @@ function rated(refOf, path, kind, data) {
 }
 const roomOf = (p) => roomRef(P.code, p);
 function spamError(err) {
-  return String(err?.code || err?.message || '').toLowerCase().includes('permission') ? 'Troppo veloce: riprova tra qualche secondo.' : explainError(err);
+  return String(err?.code || err?.message || '').toLowerCase().includes('permission') ? t('ph.tooFast') : explainError(err);
 }
 
-const RSVP_LABEL = { si: 'Ci sono', forse: 'Forse', no: 'Non ci sono' };
+const rsvpLabel = (a) => t(`ph.rsvp.${a}`);
 
 /** Prossima serata con le presenze. gid/key/name: gruppo e persona che risponde. */
 function nextNightHTML(next, key) {
   const at = Number(next?.at) || 0;
-  if (!at) return `<p class="muted">Nessuna data fissata.</p>`;
+  if (!at) return `<p class="muted">${esc(t('ph.next.none'))}</p>`;
   const rs = Object.values(next.rsvp || {});
   const mine = next.rsvp?.[key]?.answer;
   const count = (a) => rs.filter((r) => r.answer === a).length;
   const yes = rs.filter((r) => r.answer === 'si').map((r) => r.name);
   return `
-    <p class="next-when">${esc(new Date(at).toLocaleString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}${next.place ? ` · ${esc(next.place)}` : ''}</p>
-    <div class="rsvp-btns" role="group" aria-label="Ci sei?">${['si', 'forse', 'no'].map((a) => `<button type="button" class="lib-chip" data-rsvp="${a}" aria-pressed="${mine === a}">${RSVP_LABEL[a]} (${count(a)})</button>`).join('')}</div>
-    ${yes.length ? `<p class="muted small">Ci sono: ${esc(yes.join(', '))}</p>` : ''}`;
+    <p class="next-when">${esc(fmtDate(at, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}${next.place ? ` · ${esc(next.place)}` : ''}</p>
+    <div class="rsvp-btns" role="group" aria-label="${esc(t('ph.rsvp.aria'))}">${['si', 'forse', 'no'].map((a) => `<button type="button" class="lib-chip" data-rsvp="${a}" aria-pressed="${mine === a}">${esc(rsvpLabel(a))} (${count(a)})</button>`).join('')}</div>
+    ${yes.length ? `<p class="muted small">${esc(t('ph.rsvp.yesList', { names: yes.join(', ') }))}</p>` : ''}`;
 }
 
 async function answerRsvp(gid, key, name, answer) {
-  await Net.track('Presenza', set(groupRef(gid, `next/rsvp/${key}`), { name, answer }));
-  toast(answer === 'si' ? 'Ci vediamo alla serata!' : answer === 'forse' ? 'Segnato: forse' : 'Peccato, alla prossima!');
+  await Net.track('rsvp', set(groupRef(gid, `next/rsvp/${key}`), { name, answer }));
+  toast(t(`ph.rsvp.toast.${answer}`));
 }
 
 /** Dettaglio di una serata passata (con l'album), in un foglio sopra la pagina. */
@@ -581,20 +586,20 @@ async function openNightSheet(n, gid) {
   const quotes = Array.isArray(n.quotes) ? n.quotes : Object.values(n.quotes || {});
   sheet.innerHTML = `
     <div class="card sheet sheet--tall" role="dialog" aria-modal="true" aria-labelledby="nsTitle">
-      <div class="panel-head"><h2 id="nsTitle">Game Night #${n.number}</h2><button type="button" class="icon-btn" data-nsclose aria-label="Chiudi">${ICONS.x}</button></div>
-      <p class="muted">${esc(new Date(Number(n.at)).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${nightFacts(n)}</p>
+      <div class="panel-head"><h2 id="nsTitle">Game Night #${n.number}</h2><button type="button" class="icon-btn" data-nsclose data-close aria-label="${esc(t('common.close'))}">${ICONS.x}</button></div>
+      <p class="muted">${esc(fmtDate(Number(n.at), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${nightFacts(n)}</p>
       <div class="p-board"><ol>${[...n.gamesSorted].sort((a, b) => (b.n ? b.sum / b.n : 0) - (a.n ? a.sum / a.n : 0)).map((g, i) => `<li class="p-row"><span class="p-rank">${i + 1}</span><span class="p-name">${esc(g.name)}${(g.w || []).length ? ` <small>🏆 ${esc((Array.isArray(g.w) ? g.w : Object.values(g.w)).map((k) => names[k] || k).join(', '))}</small>` : ''}</span><span class="p-avg">${g.n ? fmt(g.sum / g.n) : '—'}</span></li>`).join('')}</ol></div>
-      ${n.mvpNames.length ? `<p class="stats-line">👑<span>MVP: <b>${esc(n.mvpNames.join(', '))}</b></span></p>` : ''}
-      ${n.winners.length ? `<p class="stats-line">🏆<span>Vincitore della serata: <b>${esc(n.winners.join(', '))}</b></span></p>` : ''}
-      ${quotes.length ? `<h3>💬 Commenti</h3><ul class="quote-list">${quotes.slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
-      <h3>📸 Album</h3><div class="album-mini" id="nsAlbum"><p class="muted">Carico le foto…</p></div>
+      ${n.mvpNames.length ? `<p class="stats-line">👑<span>${esc(t('ph.ns.mvp'))} <b>${esc(n.mvpNames.join(', '))}</b></span></p>` : ''}
+      ${n.winners.length ? `<p class="stats-line">🏆<span>${esc(t('ph.ns.winner'))} <b>${esc(n.winners.join(', '))}</b></span></p>` : ''}
+      ${quotes.length ? `<h3>💬 ${esc(t('ph.ns.comments'))}</h3><ul class="quote-list">${quotes.slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
+      <h3>📸 ${esc(t('ph.ns.album'))}</h3><div class="album-mini" id="nsAlbum"><p class="muted">${esc(t('ph.ns.loadingPhotos'))}</p></div>
     </div>`;
   document.body.appendChild(sheet);
   sheet.addEventListener('click', (ev) => { if (ev.target === sheet || ev.target.closest('[data-nsclose]')) sheet.remove(); });
   const snap = await get(groupRef(gid, `photos/${n.room}`)).catch(() => null);
   const photos = Object.values(snap?.val() || {}).filter((p) => p?.data).sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
   const box = $('#nsAlbum', sheet);
-  if (box) box.innerHTML = photos.length ? photos.map((p) => `<figure><img src="${esc(p.data)}" alt="${esc(p.caption || 'Foto ricordo')}"><figcaption>${esc(p.caption || '')}</figcaption></figure>`).join('') : '<p class="muted">Nessuna foto per questa serata.</p>';
+  if (box) box.innerHTML = photos.length ? photos.map((p) => `<figure><img src="${esc(p.data)}" alt="${esc(p.caption || t('ph.mem.btn'))}"><figcaption>${esc(p.caption || '')}</figcaption></figure>`).join('') : `<p class="muted">${esc(t('ph.ns.noPhotos'))}</p>`;
 }
 
 function render() {
@@ -605,7 +610,7 @@ function render() {
   flushOutbox();
   watchHeartbeat();
   if (!P.meta) {
-    showFatal(app, 'Stanza chiusa', 'Questa stanza non esiste più. Chiedi all’host il nuovo codice.');
+    showFatal(app, t('ph.closed.title'), t('ph.closed.text'));
     return;
   }
 
@@ -616,7 +621,7 @@ function render() {
   // "Bentornato Andrea 👋 Sei nella Game Night #48" quando si riapre la pagina già in partita.
   if (P.welcomed === undefined) {
     P.welcomed = true;
-    if (me && !me.away) setTimeout(() => { const n = nightNo(); toast(`Bentornato ${me.name} 👋 ${n ? `Sei nella Game Night #${n}` : `Sei nella stanza ${P.code}`}`); }, 1400);
+    if (me && !me.away) setTimeout(() => { const n = nightNo(); toast(`${t('ph.welcomeBack', { name: me.name })} 👋 ${n ? t('ph.inNight', { n: String(n) }) : t('ph.inRoom', { code: P.code })}`); }, 1400);
   }
   checkProfileGrant();
   if (P.claimSent && !P.claims?.[P.uid] && !P.claimCheck) {
@@ -625,8 +630,8 @@ function render() {
       P.claimCheck = null;
       P.claimSent = false;
       const back = P.players[P.uid];
-      if (back) toast(`Di nuovo in partita, ${back.name}!`);
-      else toast('La TV non ha confermato: chiedi all’host e riprova.', 'warn');
+      if (back) toast(t('ph.claim.back', { name: back.name }));
+      else toast(t('ph.claim.noConfirm'), 'warn');
       render();
     }, 800);
   }
@@ -635,7 +640,7 @@ function render() {
   } else if (P.wasIn) {
     P.wasIn = false;
     P.profileEdit = false;
-    toast(banned ? 'L’host ha rimosso questo telefono dalla stanza.' : 'Non sei più nella stanza: rientra quando vuoi.', 'warn');
+    toast(banned ? t('ph.removed') : t('ph.notInRoom'), 'warn');
   }
 
   const phase = P.state?.phase || 'lobby';
@@ -689,14 +694,14 @@ function firstTimeHelp(me) {
     sheet.className = 'overlay overlay--sheet';
     sheet.innerHTML = `
       <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="ftTitle">
-        <h2 id="ftTitle">Ciao ${esc(me.name)}! Come funziona</h2>
+        <h2 id="ftTitle">${esc(t('ph.ft.title', { name: me.name }))}</h2>
         <ol class="ft-list">
-          <li><b>Dopo ogni partita voti dal telefono:</b> un voto da 1 a 10, qualche domanda veloce e l’MVP. I voti restano segreti finché la TV non li svela.</li>
-          <li><b>In basso a sinistra</b> c’è il pulsante per il <b>time-out</b> (contestazioni, pausa bagno…) e, se l’host li attiva, effetti e pettegolezzi per la TV.</li>
-          <li><b>"Il mio profilo"</b> ha livello, traguardi, statistiche e il tuo codice personale: con quello ritrovi tutto su un altro telefono.</li>
-          <li>Il pallino in alto dice com’è la rete: se cade, i voti restano sul telefono e partono da soli.</li>
+          <li>${t('ph.ft.1')}</li>
+          <li>${t('ph.ft.2')}</li>
+          <li>${t('ph.ft.3')}</li>
+          <li>${esc(t('ph.ft.4'))}</li>
         </ol>
-        <button type="button" class="btn btn-block" data-ftok>Ho capito</button>
+        <button type="button" class="btn btn-block" data-ftok data-close>${esc(t('ph.ft.ok'))}</button>
       </div>`;
     document.body.appendChild(sheet);
     sheet.addEventListener('click', (e) => { if (e.target === sheet || e.target.closest('[data-ftok]')) sheet.remove(); });
@@ -715,7 +720,7 @@ async function checkProfileGrant() {
     P.member = m;
     P.skipProfile = false;
     P.sameSkip = null;
-    toast(`Bentornato ${m.name}! Profilo e statistiche ritrovati su questo telefono.`);
+    toast(t('ph.grant', { name: m.name }));
     if (!P.players[P.uid]) await joinAsMember(m);
     render();
   } catch (err) { toast(explainError(err), 'error'); }
@@ -732,12 +737,11 @@ function nightNo() {
 function others() {
   return activePlayers(P.players)
     .filter((p) => p.uid !== P.uid)
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'it'));
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), lang()));
 }
 
 function namesList(names) {
-  if (names.length <= 1) return names[0] || '';
-  return names.slice(0, -1).join(', ') + ' e ' + names[names.length - 1];
+  return fmtList(names);
 }
 
 function miniBoardHTML(withTitle = true) {
@@ -745,7 +749,7 @@ function miniBoardHTML(withTitle = true) {
   if (!board.length) return '';
   return `
     <div class="p-board">
-      ${withTitle ? '<h2>Classifica</h2>' : ''}
+      ${withTitle ? `<h2>${esc(t('ph.board'))}</h2>` : ''}
       <ol>${board.map((r) => `
         <li class="p-row">
           <span class="p-rank">${r.rank}</span>
@@ -760,7 +764,7 @@ function miniBoardHTML(withTitle = true) {
 // ---------------------------------------------------------------------------
 
 function leaveNight() {
-  if (!confirm('Uscire dalla serata? I voti che hai dato restano in classifica e puoi rientrare quando vuoi.')) return;
+  if (!confirm(t('ph.leaveConfirm'))) return;
   update(roomRef(P.code, `players/${P.uid}`), { away: true })
     .catch((err) => toast(explainError(err), 'error'));
 }
@@ -770,7 +774,7 @@ async function rejoinNight() {
   if (!me) return;
   const active = activePlayers(P.players);
   if (active.length >= (P.meta.maxPlayers || 8)) {
-    toast('Tutti i posti sono occupati: chiedi all’host di aggiungerne uno.', 'warn');
+    toast(t('ph.full'), 'warn');
     return;
   }
   const patch = { away: null };
@@ -781,7 +785,7 @@ async function rejoinNight() {
   }
   try {
     await update(roomRef(P.code, `players/${P.uid}`), patch);
-    if (patch.color) toast('Il tuo colore era stato preso: te ne ho dato un altro.');
+    if (patch.color) toast(t('ph.colorTaken'));
   } catch (err) {
     toast(explainError(err), 'error');
   }
@@ -794,9 +798,9 @@ SCREENS.away = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="wait-hero wait-hero--away" id="awayMe"></div>
-        <h1 class="ph-title">Sei fuori dalla serata</h1>
-        <p class="ph-lead">I tuoi voti restano in classifica. Quando torni, rientra da qui.</p>
-        <button type="button" class="btn btn-block" id="rejoinBtn">Rientra nella serata</button>
+        <h1 class="ph-title">${esc(t('ph.away.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.away.lead'))}</p>
+        <button type="button" class="btn btn-block" id="rejoinBtn">${esc(t('ph.away.rejoin'))}</button>
         <p class="muted center" id="awaySeats" aria-live="polite"></p>
       </main>`;
     $('#rejoinBtn', el).addEventListener('click', rejoinNight);
@@ -808,9 +812,7 @@ SCREENS.away = {
     const full = n >= max;
     $('#awayMe').innerHTML = avatarHTML(me, '7rem', 'avatar--shadow');
     $('#rejoinBtn').disabled = full;
-    $('#awaySeats').textContent = full
-      ? 'Tutti i posti sono occupati: chiedi all’host di aggiungerne uno dalla TV.'
-      : `Posti occupati: ${n} su ${max}.`;
+    $('#awaySeats').textContent = full ? t('ph.away.full') : t('ph.away.seats', { n, max });
   }
 };
 
@@ -830,7 +832,7 @@ function watchHeartbeat() {
       el.id = 'tvBanner';
       el.className = 'net-banner tv-banner';
       el.setAttribute('role', 'alert');
-      el.innerHTML = `${ICONS.tv}<span>La TV non dà segni di vita da più di un minuto. ${P.cohost ? `<a href="host.html?room=${esc(P.code)}">Riprendi la serata da questo dispositivo</a>` : 'Avvisa chi guida la serata.'}</span>`;
+      el.innerHTML = `${ICONS.tv}<span>${esc(t('ph.tvSilent'))} ${P.cohost ? `<a href="host.html?room=${esc(P.code)}">${esc(t('ph.tvResume'))}</a>` : esc(t('ph.tvTell'))}</span>`;
       document.body.appendChild(el);
     }
     if (!silent && el) el.remove();
@@ -858,8 +860,8 @@ function flushOutbox() {
   if (P.votes?.[ob.gid]?.[P.uid] || (!stillVoting && P.state?.phase !== 'voting')) { outboxClear(); return; }
   if (!stillVoting || !P.players[P.uid]) return;
   P.flushing = true;
-  Net.track('Voto', set(roomRef(P.code, `votes/${ob.gid}/${P.uid}`), { ...ob.data, at: serverTimestamp() }))
-    .then(() => { outboxClear(); toast('Il voto rimasto in sospeso è stato inviato'); })
+  Net.track('vote', set(roomRef(P.code, `votes/${ob.gid}/${P.uid}`), { ...ob.data, at: serverTimestamp() }))
+    .then(() => { outboxClear(); toast(t('ph.outboxSent')); })
     .catch(() => {})
     .finally(() => { P.flushing = false; });
 }
@@ -887,7 +889,7 @@ const Buzz = {
     const phase = P.state?.phase;
     const show = Boolean(me && !me.away && phase && !['lobby', 'awards'].includes(phase) && !P.state?.paused && !P.showProfile && !Dock.visible);
     const x = this.extras();
-    const label = x.board || x.ticker ? '<span aria-hidden="true">📣</span><span>Tavolo</span>' : '<span aria-hidden="true">✋</span><span>Time-out</span>';
+    const label = x.board || x.ticker ? `<span aria-hidden="true">📣</span><span>${esc(t('ph.buzz.table'))}</span>` : `<span aria-hidden="true">✋</span><span>${esc(t('ph.buzz.timeout'))}</span>`;
     if (show && !this.el) {
       this.el = document.createElement('button');
       this.el.type = 'button';
@@ -901,9 +903,9 @@ const Buzz = {
   },
   /** Fa partire un effetto sulla TV (pulsante con data-sfx). */
   async sendSfx(fx) {
-    if (!this.cool('gnr_sfx_at', 4000, 'Un effetto alla volta: aspetta qualche secondo.')) return;
+    if (!this.cool('gnr_sfx_at', 4000, t('ph.buzz.sfxCool'))) return;
     try {
-      await Net.track('Effetto', rated(roomOf, 'sfx', 'sfx', { k: fx.dataset.sfx, by: P.uid, at: serverTimestamp(), regia: P.cohost || null }));
+      await Net.track('sfx', rated(roomOf, 'sfx', 'sfx', { k: fx.dataset.sfx, by: P.uid, at: serverTimestamp(), regia: P.cohost || null }));
       localStorage.setItem('gnr_sfx_at', String(Date.now()));
       if (navigator.vibrate) navigator.vibrate(15);
       fx.classList.add('is-sent');
@@ -921,14 +923,14 @@ const Buzz = {
     sheet.className = 'overlay overlay--sheet';
     sheet.innerHTML = `
       <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="bzTitle">
-        <div class="panel-head"><h2 id="bzTitle">${x.board || x.ticker ? 'Tavolo' : 'Time-out!'}</h2><button type="button" class="icon-btn" data-bzclose aria-label="Chiudi">${ICONS.x}</button></div>
-        ${x.ticker ? `<section class="tb-sec"><h3>📰 Pettegolezzo per la TV</h3>
-          <label class="sr-only" for="gsText">Pettegolezzo</label>
-          <textarea class="input" id="gsText" maxlength="90" rows="2" placeholder="Es. Marco giura di non aver mai barato"></textarea>
-          <div class="tb-row"><span class="muted small">Scorre nel ticker in basso sulla TV, senza il tuo nome.</span><button type="button" class="btn-sec btn-sec--sm" id="gsSend">Invia</button></div></section>` : ''}
-        ${x.board ? `<section class="tb-sec"><h3>🔊 Effetti sulla TV</h3><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></section>` : ''}
-        <section class="tb-sec"><h3>✋ Time-out</h3><p class="muted small">La TV fischia e mette in pausa la serata.</p>
-          <div class="tb-reasons">${['Contestazione sulle regole', 'Pausa bagno', 'Pausa sigaretta', 'Arriva la pizza', 'Altro'].map((r) => `<button type="button" class="btn-sec" data-bz="${esc(r)}">${esc(r)}</button>`).join('')}</div></section>
+        <div class="panel-head"><h2 id="bzTitle">${esc(x.board || x.ticker ? t('ph.buzz.table') : t('ph.buzz.timeoutTitle'))}</h2><button type="button" class="icon-btn" data-bzclose data-close aria-label="${esc(t('common.close'))}">${ICONS.x}</button></div>
+        ${x.ticker ? `<section class="tb-sec"><h3>📰 ${esc(t('ph.gossip.title'))}</h3>
+          <label class="sr-only" for="gsText">${esc(t('ph.gossip.aria'))}</label>
+          <textarea class="input" id="gsText" maxlength="90" rows="2" placeholder="${esc(t('ph.gossip.ph'))}"></textarea>
+          <div class="tb-row"><span class="muted small">${esc(t('ph.gossip.hint'))}</span><button type="button" class="btn-sec btn-sec--sm" id="gsSend">${esc(t('ph.send'))}</button></div></section>` : ''}
+        ${x.board ? `<section class="tb-sec"><h3>🔊 ${esc(t('ph.sfx.title'))}</h3><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></section>` : ''}
+        <section class="tb-sec"><h3>✋ ${esc(t('ph.buzz.timeout'))}</h3><p class="muted small">${esc(t('ph.buzz.lead'))}</p>
+          <div class="tb-reasons">${TIMEOUT_REASONS.map((r) => `<button type="button" class="btn-sec" data-bz="${r}">${esc(t(`timeout.${r}`))}</button>`).join('')}</div></section>
       </div>`;
     document.body.appendChild(sheet);
     sheet.addEventListener('click', async (e) => {
@@ -937,22 +939,23 @@ const Buzz = {
       if (fx) { this.sendSfx(fx); return; }
       if (e.target.closest('#gsSend')) {
         const text = cleanName($('#gsText', sheet).value, 90);
-        if (!text) { toast('Scrivi qualcosa prima di inviare.', 'warn'); return; }
-        if (!this.cool('gnr_gossip_at', 20000, 'Un pettegolezzo ogni 20 secondi: non esagerare!')) return;
+        if (!text) { toast(t('ph.gossip.empty'), 'warn'); return; }
+        if (!this.cool('gnr_gossip_at', 20000, t('ph.gossip.cool'))) return;
         try {
-          await Net.track('Pettegolezzo', rated(roomOf, 'gossip', 'gossip', { text, by: P.uid, at: serverTimestamp() }));
+          await Net.track('gossip', rated(roomOf, 'gossip', 'gossip', { text, by: P.uid, at: serverTimestamp() }));
           localStorage.setItem('gnr_gossip_at', String(Date.now()));
           $('#gsText', sheet).value = '';
-          toast('Inviato: guarda il ticker sulla TV!');
+          toast(t('ph.gossip.sent'));
         } catch (err) { toast(spamError(err), 'error'); }
         return;
       }
       const b = e.target.closest('[data-bz]');
       if (!b) return;
-      if (!this.cool('gnr_buzz_at', 30000, 'Hai appena chiamato un time-out: aspetta qualche secondo.')) return;
+      if (!this.cool('gnr_buzz_at', 30000, t('ph.buzz.cool'))) return;
       sheet.remove();
       try {
-        await Net.track('Time-out', rated(roomOf, 'buzz', 'buzz', { by: P.uid, reason: b.dataset.bz === 'Altro' ? null : b.dataset.bz, at: serverTimestamp() }));
+        // Il motivo si salva come codice (rules, bathroom…): la TV lo mostra nella sua lingua.
+        await Net.track('timeout', rated(roomOf, 'buzz', 'buzz', { by: P.uid, reason: b.dataset.bz === 'other' ? null : b.dataset.bz, at: serverTimestamp() }));
         localStorage.setItem('gnr_buzz_at', String(Date.now()));
         if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
       } catch (err) { toast(spamError(err), 'error'); }
@@ -983,29 +986,29 @@ const mmss = (ms) => { const t = Math.ceil(ms / 1000); return `${Math.floor(t / 
 
 function betHTML() {
   const b = betState();
-  if (!b) return '<p class="muted">Il pronostico si apre quando inizia una partita.</p>';
+  if (!b) return `<p class="muted">${esc(t('ph.bet.notYet'))}</p>`;
   const st = P.state;
   const cand = betCandidates();
   return `
-    <h2>🔮 Chi vincerà${st.playName ? ` a ${esc(st.playName)}` : ''}?</h2>
-    <p class="bet-clock ${b.open ? '' : 'is-closed'}" data-betclock>${b.open ? `⏳ Pronostici aperti ancora <b>${mmss(b.left)}</b>` : '🔒 Pronostici chiusi: si punta solo nei primi 5 minuti della partita.'}</p>
-    <div class="bet-grid">${cand.map((p) => `<button type="button" class="bet-opt" data-bet="${esc(p.uid)}" aria-pressed="${b.mine === p.uid}" ${b.open ? '' : 'disabled'}>${avatarHTML(p, '2.6rem')}<span>${esc(p.uid === P.uid ? `${p.name} (tu)` : p.name)}</span></button>`).join('')}</div>
-    <p class="muted small">${b.mine ? `Hai puntato su <b>${esc(P.players[b.mine]?.name || '')}</b>${b.open ? ': puoi cambiare idea finché sono aperti' : ''}.` : b.open ? 'Se indovini: +15 XP e il premio “Il veggente”.' : 'Questa volta niente pronostico: alla prossima partita!'}${b.count ? ` · ${b.count} ${b.count === 1 ? 'pronostico' : 'pronostici'}` : ''}</p>`;
+    <h2>🔮 ${esc(st.playName ? t('ph.bet.titleGame', { game: st.playName }) : t('ph.bet.title'))}</h2>
+    <p class="bet-clock ${b.open ? '' : 'is-closed'}" data-betclock>${b.open ? `⏳ ${t('ph.bet.open', { left: `<b>${mmss(b.left)}</b>` })}` : `🔒 ${esc(t('ph.bet.closed'))}`}</p>
+    <div class="bet-grid">${cand.map((p) => `<button type="button" class="bet-opt" data-bet="${esc(p.uid)}" aria-pressed="${b.mine === p.uid}" ${b.open ? '' : 'disabled'}>${avatarHTML(p, '2.6rem')}<span>${esc(p.uid === P.uid ? t('ph.you', { name: p.name }) : p.name)}</span></button>`).join('')}</div>
+    <p class="muted small">${b.mine ? t(b.open ? 'ph.bet.mineOpen' : 'ph.bet.mine', { name: `<b>${esc(P.players[b.mine]?.name || '')}</b>` }) : esc(b.open ? t('ph.bet.reward') : t('ph.bet.missed'))}${b.count ? ` · ${esc(t('ph.bet.count', { n: b.count }))}` : ''}</p>`;
 }
 
 /** Riquadro sulla schermata: invita a pronosticare finché si può. */
 function betBannerHTML() {
   const b = betState();
   if (!b || !b.open) return '';
-  return `<button type="button" class="bet-banner ${b.mine ? 'is-done' : ''}" data-dock="bet">🔮 <span>${b.mine ? `Pronostico: <b>${esc(P.players[b.mine]?.name || '')}</b>` : '<b>Chi vincerà?</b> Fai il pronostico'}</span><small data-betclock-mini>${mmss(b.left)}</small></button>`;
+  return `<button type="button" class="bet-banner ${b.mine ? 'is-done' : ''}" data-dock="bet">🔮 <span>${b.mine ? t('ph.bet.bannerMine', { name: `<b>${esc(P.players[b.mine]?.name || '')}</b>` }) : t('ph.bet.banner')}</span><small data-betclock-mini>${mmss(b.left)}</small></button>`;
 }
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-bet]');
   if (!b || !P.state?.playId) return;
-  if (!betState()?.open) { toast('Pronostici chiusi: si punta solo nei primi 5 minuti della partita.', 'warn'); return; }
+  if (!betState()?.open) { toast(t('ph.bet.closed'), 'warn'); return; }
   try {
-    await Net.track('Pronostico', set(roomRef(P.code, `bets/${P.state.playId}/${P.uid}`), b.dataset.bet));
+    await Net.track('bet', set(roomRef(P.code, `bets/${P.state.playId}/${P.uid}`), b.dataset.bet));
     if (navigator.vibrate) navigator.vibrate(15);
   } catch (err) { toast(explainError(err), 'error'); }
 });
@@ -1031,12 +1034,12 @@ const Dock = {
     const b = betState();
     const board = Boolean(P.meta?.soundboard || P.cohost);
     const out = [];
-    if (b) out.push({ k: 'bet', icon: '🔮', label: 'Pronostico', badge: b.open && !b.mine ? '!' : (b.open ? '' : '🔒') });
-    if (imPlayer) out.push({ k: 'score', icon: '🧮', label: 'Punti' });
-    if (board && phase !== 'lobby') out.push({ k: 'sfx', icon: '🔊', label: 'Suoni' });
-    if (P.meta?.groupId || P.meta?.armadioId) out.push({ k: 'games', icon: '📦', label: 'Giochi' });
-    if (phase !== 'lobby') out.push({ k: 'timeout', icon: '✋', label: 'Time-out' });
-    out.push({ k: 'me', icon: '👤', label: 'Profilo' });
+    if (b) out.push({ k: 'bet', icon: '🔮', label: t('ph.dock.bet'), badge: b.open && !b.mine ? '!' : (b.open ? '' : '🔒') });
+    if (imPlayer) out.push({ k: 'score', icon: '🧮', label: t('ph.dock.score') });
+    if (board && phase !== 'lobby') out.push({ k: 'sfx', icon: '🔊', label: t('ph.dock.sfx') });
+    if (P.meta?.groupId || P.meta?.armadioId) out.push({ k: 'games', icon: '📦', label: t('ph.dock.games') });
+    if (phase !== 'lobby') out.push({ k: 'timeout', icon: '✋', label: t('ph.buzz.timeout') });
+    out.push({ k: 'me', icon: '👤', label: t('ph.dock.me') });
     return out;
   },
   sync() {
@@ -1048,12 +1051,12 @@ const Dock = {
     if (!this.el) {
       this.el = document.createElement('nav');
       this.el.className = 'ph-dock';
-      this.el.setAttribute('aria-label', 'Strumenti della serata');
+      this.el.setAttribute('aria-label', t('ph.dock.aria'));
       document.body.appendChild(this.el);
     }
     if (sig !== this.sig) {
       this.sig = sig;
-      this.el.innerHTML = items.map((it) => `<button type="button" class="dock-btn" data-dock="${it.k}" aria-pressed="${this.sheet?.kind === it.k}"><span class="dock-ico" aria-hidden="true">${it.icon}</span><small>${it.label}</small>${it.badge ? `<i class="dock-badge">${it.badge}</i>` : ''}</button>`).join('');
+      this.el.innerHTML = items.map((it) => `<button type="button" class="dock-btn" data-dock="${it.k}" aria-pressed="${this.sheet?.kind === it.k}"><span class="dock-ico" aria-hidden="true">${it.icon}</span><small>${esc(it.label)}</small>${it.badge ? `<i class="dock-badge">${it.badge}</i>` : ''}</button>`).join('');
     }
     if (this.sheet && !items.some((it) => it.k === this.sheet.kind)) this.closeSheet();
     this.refresh();
@@ -1066,7 +1069,7 @@ const Dock = {
     this.closeSheet();
     const el = document.createElement('div');
     el.className = 'overlay overlay--sheet dock-sheet';
-    el.innerHTML = `<div class="card sheet" role="dialog" aria-modal="true" aria-label="${esc(kind)}"><button type="button" class="icon-btn sheet-x" data-dockclose aria-label="Chiudi">${ICONS.x}</button><div class="dock-body"></div></div>`;
+    el.innerHTML = `<div class="card sheet" role="dialog" aria-modal="true" aria-label="${esc(t(`ph.dock.${kind}`))}"><button type="button" class="icon-btn sheet-x" data-dockclose data-close aria-label="${esc(t('common.close'))}">${ICONS.x}</button><div class="dock-body"></div></div>`;
     document.body.appendChild(el);
     this.sheet = { kind, el, sig: '' };
     el.addEventListener('click', (e) => {
@@ -1092,8 +1095,8 @@ const Dock = {
     if (!sh) return;
     let html = '';
     if (sh.kind === 'bet') html = betHTML();
-    else if (sh.kind === 'score') html = scoreHTML() || '<p class="muted">Il segnapunti si apre quando inizia una partita.</p>';
-    else if (sh.kind === 'sfx') html = `<h2>🔊 Suoni sulla TV</h2><p class="muted small">Tocca un effetto: parte sulla TV (uno ogni pochi secondi).</p><div class="sfx-grid sfx-grid--big">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div>`;
+    else if (sh.kind === 'score') html = scoreHTML() || `<p class="muted">${esc(t('ph.score.notYet'))}</p>`;
+    else if (sh.kind === 'sfx') html = `<h2>🔊 ${esc(t('ph.sfx.title'))}</h2><p class="muted small">${esc(t('ph.sfx.lead'))}</p><div class="sfx-grid sfx-grid--big">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div>`;
     const sig = sh.kind === 'bet' ? html.replace(/<b>\d+:\d\d<\/b>/, '') : html;
     if (sh.kind === 'bet') { const c = sh.el.querySelector('[data-betclock] b'); const b = betState(); if (c && b?.open) c.textContent = mmss(b.left); }
     if (!force && sig === sh.sig) return;
@@ -1112,15 +1115,15 @@ function myUnlockedHTML() {
   if (!me || !P.meta?.groupId || !P.nights?.[P.code]) return '';
   const got = newAchievements(P.nights, personKey(me), P.code, P.library);
   const pr = progressFor(P.nights, personKey(me), P.library);
-  return `<div class="p-awards"><h2>La tua serata</h2>
-    <p class="stats-line">⭐<span>Livello ${pr.level} · ${esc(pr.levelName)} (${pr.xp} XP)</span></p>
-    ${got.map((a) => `<p class="stats-line ach-new">${a.icon}<span>Traguardo sbloccato: <b>${esc(a.name)}</b> — ${esc(a.desc)}</span></p>`).join('')}</div>`;
+  return `<div class="p-awards"><h2>${esc(t('ph.myNight'))}</h2>
+    <p class="stats-line">⭐<span>${esc(t('ph.levelLine', { n: pr.level, name: pr.levelName, xp: pr.xp }))}</span></p>
+    ${got.map((a) => `<p class="stats-line ach-new">${a.icon}<span>${esc(t('ph.achNew'))} <b>${esc(a.name)}</b> — ${esc(a.desc)}</span></p>`).join('')}</div>`;
 }
 
 function eventHTML() {
   const ev = P.state?.phase === 'idle' ? P.state.event : null;
   if (!ev) return '';
-  return `<section class="card event-mini"><p class="event-kicker">🎲 Evento casuale!</p><h2>${esc(ev.title)}</h2><p>${esc(ev.text)}</p></section>`;
+  return `<section class="card event-mini"><p class="event-kicker">🎲 ${esc(t('ph.event'))}</p><h2>${esc(eventTitle(ev))}</h2><p>${esc(eventText(ev))}</p></section>`;
 }
 
 // Bozza del voto: se la pagina si chiude a metà, riaprendola si ritrovano le scelte.
@@ -1149,7 +1152,7 @@ function clearDrafts() {
 
 /** Foto profilo: ritaglio quadrato al centro, 256 px, compressa (selfie o galleria). */
 function numOptions(max, emptyLabel) {
-  return `<option value="">${emptyLabel}</option>` + Array.from({ length: max }, (_, i) => `<option value="${i + 1}">${i + 1} giocatori</option>`).join('');
+  return `<option value="">${esc(emptyLabel)}</option>` + Array.from({ length: max }, (_, i) => `<option value="${i + 1}">${esc(t('lib.players', { n: i + 1 }))}</option>`).join('');
 }
 
 SCREENS.addgame = {
@@ -1159,34 +1162,34 @@ SCREENS.addgame = {
     el.innerHTML = `
       <main class="phone">
         ${phoneTop(undefined, 'addgame')}
-        <h1 class="ph-title">I giochi di stasera</h1>
-        <p class="ph-lead">Tocca 🎲 sui giochi che hai portato: la TV sceglie tra quelli. Con ☆ dici a cosa vuoi giocare (massimo 3).</p>
+        <h1 class="ph-title">${esc(t('ph.ag.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.ag.lead'))}</p>
         <div class="tn-box" id="tnSum"></div>
-        <button type="button" class="btn btn-block" id="scanBtn">📷 <span>Inquadra il codice a barre della scatola</span></button>
-        <details class="card ph-card ag-new" id="agNew"><summary>➕ Un gioco che non è nell’armadio</summary>
+        <button type="button" class="btn btn-block" id="scanBtn">📷 <span>${esc(t('ph.ag.barcode'))}</span></button>
+        <details class="card ph-card ag-new" id="agNew"><summary>➕ ${esc(t('ph.ag.new'))}</summary>
         <div class="field field--stack">
-          <label for="agName">Nome del gioco</label>
-          <input class="input" id="agName" maxlength="40" autocomplete="off" enterkeyhint="done" placeholder="Es. Dixit">
+          <label for="agName">${esc(t('ph.ag.name'))}</label>
+          <input class="input" id="agName" maxlength="40" autocomplete="off" enterkeyhint="done" placeholder="${esc(t('ph.ag.namePh'))}">
         </div>
         <div class="ag-info" role="group" aria-labelledby="agInfoLabel">
-          <span class="field-label" id="agInfoLabel">Giocatori e durata <span class="muted">(facoltativi)</span></span>
+          <span class="field-label" id="agInfoLabel">${esc(t('ph.ag.info'))} <span class="muted">${esc(t('common.optionalPl'))}</span></span>
           <div class="ag-row">
-            <label class="sr-only" for="agMin">Minimo giocatori</label>
-            <select class="input select" id="agMin">${numOptions(20, 'da —')}</select>
-            <label class="sr-only" for="agMax">Massimo giocatori</label>
-            <select class="input select" id="agMax">${numOptions(20, 'a —')}</select>
+            <label class="sr-only" for="agMin">${esc(t('ph.ag.min'))}</label>
+            <select class="input select" id="agMin">${numOptions(20, t('ph.ag.from'))}</select>
+            <label class="sr-only" for="agMax">${esc(t('ph.ag.max'))}</label>
+            <select class="input select" id="agMax">${numOptions(20, t('ph.ag.to'))}</select>
           </div>
-          <label class="sr-only" for="agDur">Durata</label>
-          <select class="input select" id="agDur"><option value="">Durata: —</option>${[10, 15, 20, 30, 45, 60, 90, 120, 180].map((d) => `<option value="${d}">${d} min${d === 180 ? ' o più' : ''}</option>`).join('')}</select>
+          <label class="sr-only" for="agDur">${esc(t('ph.ag.dur'))}</label>
+          <select class="input select" id="agDur"><option value="">${esc(t('ph.ag.durNone'))}</option>${[10, 15, 20, 30, 45, 60, 90, 120, 180].map((d) => `<option value="${d}">${esc(d === 180 ? t('ph.ag.minPlus', { n: d }) : t('lib.minutes', { n: d }))}</option>`).join('')}</select>
         </div>
-        <label class="btn-sec photo-btn" for="agFile">${ICONS.camera}<span>Scatta o scegli una foto</span></label>
+        <label class="btn-sec photo-btn" for="agFile">${ICONS.camera}<span>${esc(t('ph.photo.take'))}</span></label>
         <input type="file" id="agFile" accept="image/*" class="sr-only">
         <div class="photo-prev" id="agPrev"></div>
-        <label class="quick-toggle"><input type="checkbox" id="agBrought" checked><span>L’ho portato stasera</span></label>
+        <label class="quick-toggle"><input type="checkbox" id="agBrought" checked><span>${esc(t('ph.ag.brought'))}</span></label>
         <p class="form-error" id="agErr" role="alert"></p>
-        <button type="button" class="btn btn-block" id="agSave">Aggiungi all’armadio</button>
+        <button type="button" class="btn btn-block" id="agSave">${esc(t('ph.ag.save'))}</button>
         </details>
-        <button type="button" class="link-btn" id="agDone">Fatto</button>
+        <button type="button" class="link-btn" id="agDone">${esc(t('common.done'))}</button>
         <div class="p-board" id="agList">
         </div>
       </main>`;
@@ -1197,7 +1200,7 @@ SCREENS.addgame = {
       if (!f) return;
       try {
         this.image = await gameImage(f);
-        $('#agPrev').innerHTML = `<img src="${this.image}" alt="Foto del gioco">`;
+        $('#agPrev').innerHTML = `<img src="${this.image}" alt="${esc(t('img.gameAlt'))}">`;
         $('#agErr').textContent = '';
       } catch (err) {
         $('#agErr').textContent = err.message;
@@ -1214,11 +1217,11 @@ SCREENS.addgame = {
     const input = $('#agName');
     const err = $('#agErr');
     const name = cleanName(input.value);
-    if (!name) { err.textContent = 'Scrivi il nome del gioco.'; input.focus(); return; }
+    if (!name) { err.textContent = t('ph.ag.errName'); input.focus(); return; }
     const num = (id) => Number($(id).value) || null;
     const info = Object.fromEntries(Object.entries({ minPlayers: num('#agMin'), maxPlayers: num('#agMax'), duration: num('#agDur') }).filter(([, v]) => v));
     if (info.minPlayers && info.maxPlayers && info.minPlayers > info.maxPlayers) {
-      err.textContent = 'Il minimo di giocatori è più alto del massimo.';
+      err.textContent = t('ph.ag.errMinMax');
       return;
     }
     const k = nameKey(name);
@@ -1231,7 +1234,7 @@ SCREENS.addgame = {
         const hasImg = existing[1].image || existing[1].thumb;
         if (P.meta?.armadioId && (Object.keys(patch).length || (this.image && !hasImg))) await saveGame(P.meta.armadioId, existing[0], patch, this.image && !hasImg ? { full: this.image } : {});
         else if (!P.meta?.armadioId) { if (this.image && !existing[1].image) patch.image = this.image; if (Object.keys(patch).length) await update(libraryRef(P.meta, existing[0]), patch); }
-        if (!Object.keys(patch).length && !(this.image && !hasImg) && !$('#agBrought').checked) { err.textContent = 'Questo gioco è già nell’armadio.'; btn.disabled = false; return; }
+        if (!Object.keys(patch).length && !(this.image && !hasImg) && !$('#agBrought').checked) { err.textContent = t('ph.ag.errExists'); btn.disabled = false; return; }
         if ($('#agBrought').checked) await markTonight(existing[0], true);
       } else {
         const me = P.players[P.uid];
@@ -1239,7 +1242,7 @@ SCREENS.addgame = {
         if (P.meta?.armadioId) {
           key = newGameId(P.meta.armadioId);
           await saveGame(P.meta.armadioId, key, { name, addedBy: (me?.name || '').slice(0, 24), ...info }, { create: true, ...(this.image ? { full: this.image } : {}) });
-          armLog(P.meta.armadioId, { op: 'add', item: key, name, by: me?.name || 'Telefono' });
+          armLog(P.meta.armadioId, { op: 'add', item: key, name, by: me?.name || t('ph.phone') });
         } else {
           const r = push(libraryRef(P.meta));
           key = r.key;
@@ -1247,7 +1250,7 @@ SCREENS.addgame = {
         }
         if ($('#agBrought').checked) await markTonight(key, true);
       }
-      toast(`${name} aggiunto all’armadio`);
+      toast(t('ph.ag.added', { name }));
       input.value = '';
       this.image = null;
       $('#agPrev').innerHTML = '';
@@ -1273,15 +1276,15 @@ SCREENS.addgame = {
     this.sig = sig;
     $('#tnSum').innerHTML = tonightSummaryHTML();
     if (!$('#agSearch')) {
-      $('#agList').innerHTML = `<h2>Già nell’armadio</h2><input class="input" type="search" id="agSearch" placeholder="Cerca: es. per 5 persone, massimo 30 minuti"><ul class="lib-mini" id="agItems"></ul>`;
+      $('#agList').innerHTML = `<h2>${esc(t('ph.ag.already'))}</h2><input class="input" type="search" id="agSearch" placeholder="${esc(t('ph.ag.searchPh'))}" aria-label="${esc(t('ph.ag.searchAria'))}"><ul class="lib-mini" id="agItems"></ul>`;
       $('#agSearch').addEventListener('input', (e) => { this.query = e.target.value; this.update(); });
     }
     $('#agList').hidden = !all.length;
     $('#agItems').innerHTML = items.length ? items.map((it) => {
-      const st = !isAvailable(it) ? (it.status === 'prestato' && it.loanTo ? `prestato a ${it.loanTo}` : (GAME_STATUS[it.status] || it.status).toLowerCase()) : '';
-      const extra = [libInfo(it), it.mode ? GAME_MODES[it.mode] : '', tagsOf(it).slice(0, 2).map((t) => `#${t}`).join(' '), st].filter(Boolean).join(' · ');
+      const st = !isAvailable(it) ? (it.status === 'prestato' && it.loanTo ? t('ph.ag.lentTo', { name: it.loanTo }) : (GAME_STATUS[it.status] || it.status).toLowerCase()) : '';
+      const extra = [libInfo(it), it.mode ? GAME_MODES[it.mode] : '', tagsOf(it).slice(0, 2).map((tg) => `#${tg}`).join(' '), st].filter(Boolean).join(' · ');
       return gameRowHTML(it, extra);
-    }).join('') : '<li class="muted">Nessun gioco corrisponde.</li>';
+    }).join('') : `<li class="muted">${esc(t('ph.ag.noMatch'))}</li>`;
   }
 };
 
@@ -1290,23 +1293,23 @@ SCREENS.poll = {
     this.sig = '';
     const poll = P.poll;
     if (!poll.open) {
-      const it = P.library?.[poll.winner] || { name: 'il gioco scelto' };
+      const it = P.library?.[poll.winner] || { name: t('ph.poll.chosenGame') };
       el.innerHTML = `
         <main class="phone phone--center">
           ${phoneTop()}
-          <span class="chip chip--tomato">${poll.tie ? 'Pareggio: ha deciso la sorte' : 'Avete scelto'}</span>
-          <h1 class="ph-title">Si gioca a ${esc(it.name)}!</h1>
+          <span class="chip chip--tomato">${esc(poll.tie ? t('ph.poll.tie') : t('ph.poll.chosen'))}</span>
+          <h1 class="ph-title">${esc(t('ph.poll.play', { game: it.name }))}</h1>
           <div class="card p-win">${gameImageHTML(it, 'game-img--vote')}</div>
-          <p class="ph-lead">Buona partita! A fine partita si apre la votazione.</p>
+          <p class="ph-lead">${esc(t('ph.poll.enjoy'))}</p>
         </main>`;
       return;
     }
     el.innerHTML = `
       <main class="phone">
         ${phoneTop()}
-        <h1 class="ph-title">Cosa giochiamo adesso?</h1>
-        <p class="ph-lead" id="pollLead">Tocca il gioco che vuoi fare. Puoi cambiare idea finché la TV non chiude la scelta.</p>
-        <div class="poll-pick" id="pollPick" role="group" aria-label="Giochi proposti"></div>
+        <h1 class="ph-title">${esc(t('ph.poll.title'))}</h1>
+        <p class="ph-lead" id="pollLead">${esc(t('ph.poll.lead1'))}</p>
+        <div class="poll-pick" id="pollPick" role="group" aria-label="${esc(t('ph.poll.aria'))}"></div>
         <p class="muted center" id="pollMine" aria-live="polite"></p>
       </main>`;
     $('#pollPick', el).addEventListener('click', async (e) => {
@@ -1317,10 +1320,10 @@ SCREENS.poll = {
       let mine = pollChoices(P.poll?.votes?.[P.uid], max);
       if (max === 1) mine = [id];
       else if (mine.includes(id)) mine = mine.filter((x) => x !== id);
-      else if (mine.length >= max) { toast(`Puoi scegliere al massimo ${max} giochi: togline uno prima di aggiungerne un altro.`, 'warn'); return; }
+      else if (mine.length >= max) { toast(t('ph.poll.max', { n: max }), 'warn'); return; }
       else mine = [...mine, id];
       try {
-        await Net.track('Scelta del gioco', set(roomRef(P.code, `poll/votes/${P.uid}`), pollValue(mine)));
+        await Net.track('poll', set(roomRef(P.code, `poll/votes/${P.uid}`), pollValue(mine)));
         if (navigator.vibrate) navigator.vibrate(20);
       } catch (err) {
         toast(explainError(err), 'error');
@@ -1336,9 +1339,7 @@ SCREENS.poll = {
     const sig = JSON.stringify([opts, mine, max, opts.map((id) => (P.library[id].image || '').length)]);
     if (sig === this.sig) return;
     this.sig = sig;
-    $('#pollLead').textContent = max > 1
-      ? `Puoi scegliere fino a ${max} giochi: tocca per aggiungere o togliere. Si cambia idea finché la TV non chiude la scelta.`
-      : 'Tocca il gioco che vuoi fare. Puoi cambiare idea finché la TV non chiude la scelta.';
+    $('#pollLead').textContent = max > 1 ? t('ph.poll.leadN', { n: max }) : t('ph.poll.lead1');
     $('#pollPick').innerHTML = opts.map((id) => {
       const it = P.library[id];
       const on = mine.includes(id);
@@ -1352,14 +1353,14 @@ SCREENS.poll = {
     }).join('');
     const names = mine.map((id) => P.library[id].name);
     $('#pollMine').textContent = names.length
-      ? `Hai scelto ${names.join(', ')}${max > 1 ? ` (${names.length} su ${max})` : ''}.`
-      : (max > 1 ? `Non hai ancora scelto: hai ${max} voti.` : 'Non hai ancora scelto.');
+      ? (max > 1 ? t('ph.poll.mineN', { games: names.join(', '), n: names.length, max }) : t('ph.poll.mine1', { games: names.join(', ') }))
+      : (max > 1 ? t('ph.poll.noneN', { n: max }) : t('ph.poll.none1'));
   }
 };
 
 function allTimeHTML(limit = 10) {
   const at = buildAllTime(P.nights, P.library);
-  if (!at.games.length) return '<p class="muted">Ancora nessuna serata salvata.</p>';
+  if (!at.games.length) return `<p class="muted">${esc(t('ph.at.none'))}</p>`;
   return `
     <div class="p-board">
       <ol>${at.games.slice(0, limit).map((r) => `
@@ -1369,8 +1370,8 @@ function allTimeHTML(limit = 10) {
           <span class="p-avg">${fmt(r.avg)}</span>
         </li>`).join('')}</ol>
     </div>
-    ${at.mvp.length ? `<p class="p-at-mvp">${ICONS.crown}<span>MVP di sempre: <b>${esc(at.mvp[0].name)}</b> (${at.mvp[0].votes} voti)</span></p>` : ''}
-    ${at.wins.length ? `<p class="p-at-mvp">${ICONS.trophy}<span>Vince di più: <b>${esc(at.wins[0].name)}</b> (${at.wins[0].wins} ${at.wins[0].wins === 1 ? 'vittoria' : 'vittorie'})</span></p>` : ''}`;
+    ${at.mvp.length ? `<p class="p-at-mvp">${ICONS.crown}<span>${t('ph.at.mvp', { name: `<b>${esc(at.mvp[0].name)}</b>`, n: at.mvp[0].votes })}</span></p>` : ''}
+    ${at.wins.length ? `<p class="p-at-mvp">${ICONS.trophy}<span>${t('ph.at.wins', { name: `<b>${esc(at.wins[0].name)}</b>`, n: at.wins[0].wins })}</span></p>` : ''}`;
 }
 
 SCREENS.alltime = {
@@ -1380,11 +1381,11 @@ SCREENS.alltime = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="photo-ico photo-ico--sun">${ICONS.star}</div>
-        <h1 class="ph-title">Classifica di sempre</h1>
+        <h1 class="ph-title">${esc(t('ph.at.title'))}</h1>
         <p class="ph-lead" id="atLead"></p>
         <div class="full-width" id="atBox"></div>
         ${addGameButton()}
-        <div class="ph-links"><button type="button" class="link-btn" data-myprofile>Il mio profilo</button></div>
+        <div class="ph-links"><button type="button" class="link-btn" data-myprofile>${esc(t('ph.myProfile'))}</button></div>
       </main>`;
     bindAddGame(el);
   },
@@ -1393,7 +1394,7 @@ SCREENS.alltime = {
     if (sig === this.sig) return;
     this.sig = sig;
     const n = Object.keys(P.nights || {}).length;
-    $('#atLead').textContent = `${P.meta.groupName || 'Il vostro gruppo'}: ${n} ${n === 1 ? 'serata' : 'serate'}`;
+    $('#atLead').textContent = `${P.meta.groupName || t('ph.at.group')}: ${t('home.tr.nights', { n })}`;
     $('#atBox').innerHTML = allTimeHTML();
   }
 };
@@ -1413,27 +1414,27 @@ function profileJoinHTML() {
     const back = P.member && Object.values(P.players).some((p) => p.memberId === P.member.id);
     return `
       <section class="card profile-join">
-        <div class="home-me">${avatarHTML(look, '3.6rem', 'avatar--shadow')}<div><b class="home-name">Ciao, ${esc(look.name)}!</b><span class="muted">Il tuo profilo è pronto: un tocco ed entri.</span></div></div>
-        <button type="button" class="btn btn-block" id="joinPerson">${back ? 'Rientra' : 'Entra'} come ${esc(look.name)}</button>
-        <button type="button" class="link-btn" id="notMe">Entra con un altro nome</button>
+        <div class="home-me">${avatarHTML(look, '3.6rem', 'avatar--shadow')}<div><b class="home-name">${esc(t('ph.pj.hello', { name: look.name }))}</b><span class="muted">${esc(t('ph.pj.ready'))}</span></div></div>
+        <button type="button" class="btn btn-block" id="joinPerson">${esc(t(back ? 'ph.pj.rejoinAs' : 'ph.pj.joinAs', { name: look.name }))}</button>
+        <button type="button" class="link-btn" id="notMe">${esc(t('ph.pj.other'))}</button>
       </section>`;
   }
   if (!P.meta?.groupId) return '';
   if (P.member && !P.skipProfile) {
     return `
       <section class="card profile-join">
-        <div class="home-me">${avatarHTML(P.member, '3.6rem', 'avatar--shadow')}<div><b class="home-name">Ciao, ${esc(P.member.name)}!</b><span class="muted">Nome, personaggio e statistiche sono già pronti.</span></div></div>
-        <button type="button" class="btn btn-block" id="joinMember">${Object.values(P.players).some((p) => p.memberId === P.member.id) ? 'Rientra' : 'Entra'} come ${esc(P.member.name)}</button>
-        <button type="button" class="link-btn" id="notMe">Non sono ${esc(P.member.name)}</button>
+        <div class="home-me">${avatarHTML(P.member, '3.6rem', 'avatar--shadow')}<div><b class="home-name">${esc(t('ph.pj.hello', { name: P.member.name }))}</b><span class="muted">${esc(t('ph.pj.readyMember'))}</span></div></div>
+        <button type="button" class="btn btn-block" id="joinMember">${esc(t(Object.values(P.players).some((p) => p.memberId === P.member.id) ? 'ph.pj.rejoinAs' : 'ph.pj.joinAs', { name: P.member.name }))}</button>
+        <button type="button" class="link-btn" id="notMe">${esc(t('ph.pj.notMe', { name: P.member.name }))}</button>
       </section>`;
   }
   return `
     <details class="profile-code">
-      <summary>Hai già un profilo? Usa il codice personale</summary>
+      <summary>${esc(t('ph.pj.haveCode'))}</summary>
       <div class="profile-code-row">
-        <label class="sr-only" for="pcInput">Codice personale</label>
+        <label class="sr-only" for="pcInput">${esc(t('ph.pj.codeAria'))}</label>
         <input class="input code-input code-input--6" id="pcInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123">
-        <button type="button" class="btn-sec" id="pcGo">Ritrova</button>
+        <button type="button" class="btn-sec" id="pcGo">${esc(t('home.link.oldGo'))}</button>
       </div>
       <p class="form-error" id="pcErr" role="alert"></p>
     </details>`;
@@ -1457,8 +1458,8 @@ function bindProfileJoin(root) {
       const id = normalizeCode($('#pcInput').value, 6);
       try {
         const m = await loadMember(id);
-        if (!m) { $('#pcErr').textContent = 'Nessun profilo con questo codice.'; return; }
-        if (m.groupId !== P.meta.groupId) { $('#pcErr').textContent = 'Questo profilo è di un altro gruppo.'; return; }
+        if (!m) { $('#pcErr').textContent = t('home.code6.none'); return; }
+        if (m.groupId !== P.meta.groupId) { $('#pcErr').textContent = t('ph.pj.otherGroup'); return; }
         saveProfile(m.groupId, m.id);
         Person.linkGroup(m.groupId, m.id).catch(() => {});
         P.member = m;
@@ -1480,9 +1481,9 @@ async function joinAsPerson() {
   const look = lookOf(Person.data.info);
   const gid = P.meta?.groupId;
   if (!gid) {
-    if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(look.name))) throw userError(`C’è già un ${look.name} nella stanza: entra con un altro nome.`);
+    if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(look.name))) throw userError(t('ph.pj.sameName', { name: look.name }));
     const active = activePlayers(P.players);
-    if (!P.players[P.uid] && active.length >= (P.meta.maxPlayers || 8)) throw userError('La stanza è piena.');
+    if (!P.players[P.uid] && active.length >= (P.meta.maxPlayers || 8)) throw userError(t('ph.roomFull'));
     const taken = new Set(active.filter((p) => p.uid !== P.uid).map((p) => p.color));
     const color = taken.has(look.color) ? (PLAYER_COLORS.find((c) => !taken.has(c)) || look.color) : look.color;
     await set(roomRef(P.code, `players/${P.uid}`), { name: look.name, style: look.style, seed: look.seed, color, opts: look.opts || null, photo: look.photo || null, motto: look.motto || null, memberId: null, joinedAt: P.players[P.uid]?.joinedAt || serverTimestamp() });
@@ -1515,10 +1516,10 @@ async function joinAsMember(m) {
     return;
   }
   if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(m.name))) {
-    throw userError(`C’è già un ${m.name} nella stanza: usa "Non sono ${m.name}" per entrare con un altro nome.`);
+    throw userError(t('ph.pj.sameNameMember', { name: m.name }));
   }
   const active = activePlayers(P.players);
-  if (active.length >= (P.meta.maxPlayers || 8)) throw userError('La stanza è piena.');
+  if (active.length >= (P.meta.maxPlayers || 8)) throw userError(t('ph.roomFull'));
   const taken = new Set(active.map((p) => p.color));
   const color = taken.has(m.color) ? (PLAYER_COLORS.find((c) => !taken.has(c)) || m.color) : m.color;
   await set(roomRef(P.code, `players/${P.uid}`), {
@@ -1533,11 +1534,11 @@ function reclaimHTML() {
   if (!list.length) return '';
   return `
     <section class="card reclaim">
-      <h2>Eri già in partita?</h2>
-      <p class="muted">Se il telefono si è spento o hai cambiato telefono, scegli il tuo nome: la TV chiederà conferma e ritroverai voti e vittorie.</p>
+      <h2>${esc(t('ph.rc.title'))}</h2>
+      <p class="muted">${esc(t('ph.rc.lead'))}</p>
       <div class="reclaim-list">${list.map((p) => `
         <button type="button" class="reclaim-btn" data-claim="${esc(p.uid)}">
-          ${avatarHTML(p, '2.6rem')}<span>${esc(p.name)}</span><b>Sono io</b>
+          ${avatarHTML(p, '2.6rem')}<span>${esc(p.name)}</span><b>${esc(t('ph.rc.me'))}</b>
         </button>`).join('')}</div>
     </section>`;
 }
@@ -1548,7 +1549,7 @@ function bindReclaim(el) {
     if (!b) return;
     const p = P.players[b.dataset.claim];
     const mine = P.member && p?.memberId === P.member.id;
-    if (!p || (!mine && !confirm(`Rientrare come ${p.name}? La TV dovrà confermare.`))) return;
+    if (!p || (!mine && !confirm(t('ph.rc.confirm', { name: p.name })))) return;
     try {
       P.claimSent = true;
       await set(roomRef(P.code, `claims/${P.uid}`), mine
@@ -1568,9 +1569,9 @@ SCREENS.claim = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="wait-hero">${avatarHTML(target, '7rem', 'avatar--shadow')}</div>
-        <h1 class="ph-title">Quasi fatto!</h1>
-        <p class="ph-lead">Sulla TV deve comparire la richiesta di rientro come <b>${esc(target?.name || 'giocatore')}</b>: chiedi all’host di confermarla.</p>
-        <button type="button" class="link-btn" id="claimCancel">Annulla</button>
+        <h1 class="ph-title">${esc(t('ph.claim.title'))}</h1>
+        <p class="ph-lead">${t('ph.claim.lead', { name: `<b>${esc(target?.name || t('person.defaultName'))}</b>` })}</p>
+        <button type="button" class="link-btn" id="claimCancel">${esc(t('common.cancel'))}</button>
       </main>`;
     P.claimSent = true;
     $('#claimCancel', el).addEventListener('click', () => {
@@ -1586,9 +1587,9 @@ SCREENS.pause = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="photo-ico photo-ico--sun">${ICONS.clock}</div>
-        <h1 class="ph-title">Pausa!</h1>
-        <p class="ph-lead">La serata è in pausa: puoi mettere giù il telefono o ricaricarlo. Quando la TV riprende, questa pagina torna da sola al punto giusto.</p>
-        <p class="muted">Il voto che stavi compilando resta salvato.</p>
+        <h1 class="ph-title">${esc(t('ph.pause.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.pause.lead'))}</p>
+        <p class="muted">${esc(t('ph.pause.draft'))}</p>
       </main>`;
   }
 };
@@ -1599,8 +1600,8 @@ SCREENS.full = {
     el.innerHTML = `
       <main class="phone phone--center">
         ${phoneTop()}
-        <h1 class="ph-title">Stanza piena</h1>
-        <p class="ph-lead">Tutti i posti sono occupati. Chiedi all’host di aggiungerne uno dalla TV: questa pagina si aggiorna da sola.</p>
+        <h1 class="ph-title">${esc(t('ph.full.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.full.lead'))}</p>
         <div class="full-width" id="profileBox"></div>
         <div class="full-width" id="reclaimBox"></div>
       </main>`;
@@ -1626,8 +1627,8 @@ SCREENS.locked = {
       <main class="phone phone--center">
         ${phoneTop()}
         <p class="lock-big" aria-hidden="true">🔒</p>
-        <h1 class="ph-title">Stanza chiusa</h1>
-        <p class="ph-lead">L’host ha chiuso la stanza: chi non era già dentro non può più entrare. Se è un errore, chiedigli di riaprirla dalla TV: questa pagina si aggiorna da sola.</p>
+        <h1 class="ph-title">${esc(t('ph.closed.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.locked.lead'))}</p>
         <div class="full-width" id="profileBox"></div>
         <div class="full-width" id="reclaimBox"></div>
       </main>`;
@@ -1644,8 +1645,8 @@ SCREENS.banned = {
       <main class="phone phone--center">
         ${phoneTop()}
         <p class="lock-big" aria-hidden="true">⛔</p>
-        <h1 class="ph-title">Sei fuori dalla serata</h1>
-        <p class="ph-lead">L’host ha rimosso questo telefono dalla stanza. Se è un errore, chiedigli di riammetterti dal pannello Giocatori sulla TV: questa pagina si aggiorna da sola.</p>
+        <h1 class="ph-title">${esc(t('ph.away.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.banned.lead'))}</p>
       </main>`;
     knock('banned');
   }
@@ -1673,38 +1674,38 @@ SCREENS.join = {
       <main class="phone">
         ${phoneTop(undefined, me ? 'profileEdit' : 'home')}
         ${me ? '' : `<div id="profileBox">${profileJoinHTML()}</div><div id="reclaimBox"></div>`}
-        <h1 class="ph-title">${me ? 'Il tuo profilo' : 'Chi sei?'}</h1>
+        <h1 class="ph-title">${esc(me ? t('home.me.title') : t('ph.join.who'))}</h1>
         <div class="me-row">
           <span id="mePreview"></span>
           <div class="field">
-            <label for="nameInput">Il tuo nome</label>
-            <input class="input" id="nameInput" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="Es. Giulia" value="${esc(P.form.name)}">
+            <label for="nameInput">${esc(t('home.ed.name'))}</label>
+            <input class="input" id="nameInput" maxlength="16" autocomplete="nickname" enterkeyhint="done" placeholder="${esc(t('home.ed.namePh'))}" value="${esc(P.form.name)}">
           </div>
         </div>
         <div id="sameName"></div>
         <div class="ph-row">
-          <h2 id="avLabel">Scegli il personaggio</h2>
-          <button type="button" class="btn-sec btn-sec--sm" id="reroll">${ICONS.refresh}<span>Altri</span></button>
+          <h2 id="avLabel">${esc(t('ph.join.pick'))}</h2>
+          <button type="button" class="btn-sec btn-sec--sm" id="reroll">${ICONS.refresh}<span>${esc(t('home.ed.more'))}</span></button>
         </div>
         <div class="av-grid" id="avGrid" role="radiogroup" aria-labelledby="avLabel"></div>
         <div class="av-tools">
-          <button type="button" class="btn-sec btn-sec--sm" id="editAv" aria-expanded="false" aria-controls="avEditor">${ICONS.edit}<span>Personalizza</span></button>
-          <label class="btn-sec btn-sec--sm" for="selfieIn">${ICONS.camera}<span>Selfie</span></label>
+          <button type="button" class="btn-sec btn-sec--sm" id="editAv" aria-expanded="false" aria-controls="avEditor">${ICONS.edit}<span>${esc(t('ph.join.custom'))}</span></button>
+          <label class="btn-sec btn-sec--sm" for="selfieIn">${ICONS.camera}<span>${esc(t('home.ed.selfie'))}</span></label>
           <input type="file" id="selfieIn" accept="image/*" capture="user" class="sr-only">
-          <label class="btn-sec btn-sec--sm" for="galleryIn">${ICONS.image}<span>Dalla galleria</span></label>
+          <label class="btn-sec btn-sec--sm" for="galleryIn">${ICONS.image}<span>${esc(t('home.ed.gallery'))}</span></label>
           <input type="file" id="galleryIn" accept="image/*" class="sr-only">
-          <button type="button" class="link-btn" id="noPhoto" hidden>Togli la foto</button>
+          <button type="button" class="link-btn" id="noPhoto" hidden>${esc(t('home.ed.noPhoto'))}</button>
         </div>
         <div class="av-editor" id="avEditor" hidden></div>
         <div class="field field--stack">
-          <label for="mottoInput">Il tuo motto <span class="muted">(facoltativo, compare sulla TV)</span></label>
-          <input class="input" id="mottoInput" maxlength="40" autocomplete="off" placeholder="Es. Stavolta vinco io" value="${esc(P.form.motto)}">
+          <label for="mottoInput">${esc(t('ph.join.motto'))} <span class="muted">${esc(t('home.ed.mottoHint'))}</span></label>
+          <input class="input" id="mottoInput" maxlength="40" autocomplete="off" placeholder="${esc(t('home.ed.mottoPh'))}" value="${esc(P.form.motto)}">
         </div>
-        <h2 id="colorLabel">Il tuo colore</h2>
+        <h2 id="colorLabel">${esc(t('home.ed.color'))}</h2>
         <div class="swatches" id="swatches" role="radiogroup" aria-labelledby="colorLabel"></div>
         <p class="form-error" id="joinErr" role="alert"></p>
-        <button type="button" class="btn btn-block" id="joinBtn">${me ? 'Salva profilo' : 'Entra in partita'}</button>
-        ${me ? '<button type="button" class="link-btn" id="cancelEdit">Annulla</button>' : ''}
+        <button type="button" class="btn btn-block" id="joinBtn">${esc(me ? t('ph.join.save') : t('ph.join.go'))}</button>
+        ${me ? `<button type="button" class="link-btn" id="cancelEdit">${esc(t('common.cancel'))}</button>` : ''}
       </main>`;
 
     const nameInput = $('#nameInput', el);
@@ -1723,7 +1724,7 @@ SCREENS.join = {
       const id = normalizeCode($('#snCode').value, 6);
       try {
         const m = await loadMember(id);
-        if (!m || m.groupId !== P.meta.groupId) { $('#snErr').textContent = 'Codice non valido per questo gruppo.'; return; }
+        if (!m || m.groupId !== P.meta.groupId) { $('#snErr').textContent = t('ph.sn.badCode'); return; }
         saveProfile(m.groupId, m.id);
         Person.linkGroup(m.groupId, m.id).catch(() => {});
         P.member = m;
@@ -1732,7 +1733,7 @@ SCREENS.join = {
         if (box) box.innerHTML = profileJoinHTML();
         this.paintSameName();
         box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        toast(`Ritrovato il profilo di ${m.name}: tocca "Entra come ${m.name}"`);
+        toast(t('ph.sn.found', { name: m.name }));
       } catch (err) { $('#snErr').textContent = explainError(err); }
     });
     $('#sameName', el).addEventListener('input', (e) => { if (e.target.id === 'snCode') e.target.value = normalizeCode(e.target.value, 6); });
@@ -1785,7 +1786,7 @@ SCREENS.join = {
       try {
         P.form.photo = await squarePhoto(f);
         this.paintPreview();
-      } catch (err) { if (!err.cancelled) toast(err.message || 'Foto non leggibile', 'error'); }
+      } catch (err) { if (!err.cancelled) toast(err.message || t('common.photoUnreadable'), 'error'); }
     };
     $('#selfieIn', el).addEventListener('change', (e) => takePhoto(e.target));
     $('#galleryIn', el).addEventListener('change', (e) => takePhoto(e.target));
@@ -1849,14 +1850,14 @@ SCREENS.join = {
     $('#swatches').innerHTML = PLAYER_COLORS.map((c, i) => {
       const disabled = !allTaken && taken.has(c);
       const checked = c === P.form.color;
-      return `<button type="button" class="swatch" role="radio" aria-checked="${checked}" aria-label="Colore ${i + 1}${disabled ? ' (già preso)' : ''}" data-color="${c}" style="--sc:${c}" ${disabled ? 'disabled' : ''}></button>`;
+      return `<button type="button" class="swatch" role="radio" aria-checked="${checked}" aria-label="${esc(t(disabled ? 'ph.join.colorTaken' : 'ph.join.colorN', { n: i + 1 }))}" data-color="${c}" style="--sc:${c}" ${disabled ? 'disabled' : ''}></button>`;
     }).join('');
   },
 
   paintGrid() {
     const color = safeColor(P.form.color);
     $('#avGrid').innerHTML = P.form.options.map((o, i) => `
-      <button type="button" class="av-opt" role="radio" aria-checked="${i === P.form.pick}" aria-label="Personaggio ${i + 1}" data-pick="${i}" style="--pc:${color}">
+      <button type="button" class="av-opt" role="radio" aria-checked="${i === P.form.pick}" aria-label="${esc(t('home.ed.characterN', { n: i + 1 }))}" data-pick="${i}" style="--pc:${color}">
         <img src="${avatarUri(o.style, o.seed)}" alt="" draggable="false">
       </button>`).join('');
   },
@@ -1876,16 +1877,16 @@ SCREENS.join = {
     box.innerHTML = avatarParts(o.style).map((p) => {
       const cur = P.form.opts[p.key];
       if (p.color) {
-        return `<div class="ed-row"><span class="ed-label">${p.label}</span><div class="ed-swatches">${p.values.map((v) => `
-          <button type="button" class="ed-sw" data-edc="${p.key}" data-v="${esc(v)}" style="--c:#${esc(v)}" aria-pressed="${cur === v}" aria-label="${p.label} ${esc(v)}"></button>`).join('')}</div></div>`;
+        return `<div class="ed-row"><span class="ed-label">${esc(p.label)}</span><div class="ed-swatches">${p.values.map((v) => `
+          <button type="button" class="ed-sw" data-edc="${p.key}" data-v="${esc(v)}" style="--c:#${esc(v)}" aria-pressed="${cur === v}" aria-label="${esc(p.label)} ${esc(v)}"></button>`).join('')}</div></div>`;
       }
       const list = p.optional ? ['none', ...p.values] : p.values;
       const i = cur === undefined ? null : list.indexOf(cur);
-      const shown = i === null ? 'automatico' : cur === 'none' ? 'nessuno' : `${p.values.indexOf(cur) + 1} di ${p.values.length}`;
-      return `<div class="ed-row"><span class="ed-label">${p.label}</span><div class="ed-ctrl">
-        <button type="button" class="ed-btn" data-ed="${p.key}" data-dir="-1" aria-label="${p.label}: precedente">‹</button>
-        <span class="ed-val">${shown}</span>
-        <button type="button" class="ed-btn" data-ed="${p.key}" data-dir="1" aria-label="${p.label}: successivo">›</button></div></div>`;
+      const shown = i === null ? t('ph.ed.auto') : cur === 'none' ? t('ph.ed.none') : t('ph.ed.nOf', { n: p.values.indexOf(cur) + 1, total: p.values.length });
+      return `<div class="ed-row"><span class="ed-label">${esc(p.label)}</span><div class="ed-ctrl">
+        <button type="button" class="ed-btn" data-ed="${p.key}" data-dir="-1" aria-label="${esc(t('ph.ed.prev', { part: p.label }))}">‹</button>
+        <span class="ed-val">${esc(shown)}</span>
+        <button type="button" class="ed-btn" data-ed="${p.key}" data-dir="1" aria-label="${esc(t('ph.ed.next', { part: p.label }))}">›</button></div></div>`;
     }).join('');
   },
 
@@ -1900,33 +1901,33 @@ SCREENS.join = {
     box.dataset.sig = sig;
     box.innerHTML = hit ? `
       <section class="card same-name" role="status">
-        <b>Sei tu, ${esc(hit.name)}?</b>
-        <p>In questo gruppo c’è già un profilo <b>${esc(hit.name)}</b> con ${hit.nights} ${hit.nights === 1 ? 'serata' : 'serate'} di statistiche. Ritrovalo con il tuo codice personale (lo trovi in "Il mio profilo" sul vecchio telefono), così non ne nasce un doppione.</p>
-        <div class="profile-code-row"><label class="sr-only" for="snCode">Codice personale</label><input class="input code-input code-input--6" id="snCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123"><button type="button" class="btn-sec" id="snGo">Ritrova</button></div>
+        <b>${esc(t('ph.sn.isYou', { name: hit.name }))}</b>
+        <p>${t('ph.sn.lead', { name: `<b>${esc(hit.name)}</b>`, n: hit.nights })}</p>
+        <div class="profile-code-row"><label class="sr-only" for="snCode">${esc(t('ph.pj.codeAria'))}</label><input class="input code-input code-input--6" id="snCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123"><button type="button" class="btn-sec" id="snGo">${esc(t('home.link.oldGo'))}</button></div>
         <p class="form-error" id="snErr" role="alert"></p>
         ${P.profileClaims?.[P.uid]?.mid === hit.mid
-          ? `<p class="same-wait">⏳ Richiesta inviata: sulla TV deve comparire "${esc(hit.name)} vuole ritrovare il suo profilo". Chiedi all’host di confermarla.</p>`
-          : `<button type="button" class="btn-sec" id="snAsk" data-mid="${esc(hit.mid)}">📺 Non ho il codice: chiedi alla TV</button>`}
-        <button type="button" class="link-btn" id="snOther">No, sono un altro ${esc(hit.name)}</button>
+          ? `<p class="same-wait">⏳ ${esc(t('ph.sn.wait', { name: hit.name }))}</p>`
+          : `<button type="button" class="btn-sec" id="snAsk" data-mid="${esc(hit.mid)}">📺 ${esc(t('ph.sn.ask'))}</button>`}
+        <button type="button" class="link-btn" id="snOther">${esc(t('ph.sn.other', { name: hit.name }))}</button>
       </section>` : '';
   },
 
   async submit() {
     const err = $('#joinErr');
     const name = $('#nameInput').value.trim().replace(/\s+/g, ' ');
-    if (!name) { err.textContent = 'Scrivi il tuo nome.'; $('#nameInput').focus(); return; }
+    if (!name) { err.textContent = t('home.ed.errName'); $('#nameInput').focus(); return; }
     const me = P.players[P.uid];
     if (!me && P.sameSkip !== nameKey(name) && sameNameProfile(name)) {
       const hn = sameNameProfile(name).name;
-      err.textContent = `C’è già un profilo ${hn}: ritrovalo con il codice qui sopra (o chiedi alla TV), oppure tocca "No, sono un altro ${hn}".`;
+      err.textContent = t('ph.sn.err', { name: hn });
       this.paintSameName();
       $('#sameName')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     const count = activePlayers(P.players).length;
-    if (!me && count >= (P.meta.maxPlayers || 8)) { err.textContent = 'La stanza è piena.'; return; }
+    if (!me && count >= (P.meta.maxPlayers || 8)) { err.textContent = t('ph.roomFull'); return; }
     const clash = Object.entries(P.players).some(([uid, p]) => uid !== P.uid && String(p.name).toLowerCase() === name.toLowerCase());
-    if (clash) { err.textContent = 'Questo nome è già preso: aggiungi un’iniziale.'; return; }
+    if (clash) { err.textContent = t('ph.join.nameTaken'); return; }
 
     const o = P.form.options[P.form.pick];
     const btn = $('#joinBtn');
@@ -1986,7 +1987,7 @@ function avatarExtras() {
 
 function newCodeHTML() {
   if (!P.newCode) return '';
-  return `<div class="new-code">Il tuo codice personale è <b>${esc(P.newCode)}</b>: segnalo, ti serve per ritrovare profilo e statistiche su un altro telefono o nell'app installata. Lo trovi sempre in "Il mio profilo".</div>`;
+  return `<div class="new-code">${t('ph.newCode', { code: `<b>${esc(P.newCode)}</b>` })}</div>`;
 }
 
 // Pulsanti presenti in più schermate: un solo ascoltatore per tutta la pagina.
@@ -2003,40 +2004,40 @@ SCREENS.profile = {
     const key = personKey(me);
     const nextBox = $('#myNext');
     if (!gid) { ['#myNext', '#myInsights', '#myMemories', '#myWrapped'].forEach((s) => { $(s).hidden = true; }); return; }
-    nextBox.innerHTML = `<h2>📅 Prossima serata</h2>${nextNightHTML(P.next, key)}${icsButtonHTML(P.next)}${bringHTML(P.next, key)}
-      <details class="next-set"><summary>${P.next?.at ? 'Cambia data' : 'Proponi una data'}</summary>
-        <div class="next-set-body"><label class="sr-only" for="pnAt">Data e ora</label><input class="input" type="datetime-local" id="pnAt">
-        <label class="sr-only" for="pnPlace">Luogo</label><input class="input" id="pnPlace" maxlength="60" placeholder="Dove? (es. da Giulia)">
-        <button type="button" class="btn-sec" id="pnSave">Salva</button></div></details>`;
+    nextBox.innerHTML = `<h2>📅 ${esc(t('ph.next.title'))}</h2>${nextNightHTML(P.next, key)}${icsButtonHTML(P.next)}${bringHTML(P.next, key)}
+      <details class="next-set"><summary>${esc(P.next?.at ? t('ph.next.change') : t('ph.next.propose'))}</summary>
+        <div class="next-set-body"><label class="sr-only" for="pnAt">${esc(t('ph.next.when'))}</label><input class="input" type="datetime-local" id="pnAt">
+        <label class="sr-only" for="pnPlace">${esc(t('ph.next.place'))}</label><input class="input" id="pnPlace" maxlength="60" placeholder="${esc(t('ph.next.placePh'))}">
+        <button type="button" class="btn-sec" id="pnSave">${esc(t('common.save'))}</button></div></details>`;
     nextBox.onclick = async (e) => {
       const r = e.target.closest('[data-rsvp]');
       if (r) { try { await answerRsvp(gid, key, me.name, r.dataset.rsvp); } catch (err) { toast(explainError(err), 'error'); } return; }
       if (e.target.closest('#pnSave')) {
         const at = $('#pnAt').value ? new Date($('#pnAt').value).getTime() : 0;
-        if (!at) { toast('Scegli data e ora.', 'warn'); return; }
-        try { await set(groupRef(gid, 'next'), { at, place: cleanName($('#pnPlace').value, 60) || null, rsvp: { [key]: { name: me.name, answer: 'si' } } }); toast('Data proposta: la vedono tutti'); } catch (err) { toast(explainError(err), 'error'); }
+        if (!at) { toast(t('ph.next.pick'), 'warn'); return; }
+        try { await set(groupRef(gid, 'next'), { at, place: cleanName($('#pnPlace').value, 60) || null, rsvp: { [key]: { name: me.name, answer: 'si' } } }); toast(t('ph.next.saved')); } catch (err) { toast(explainError(err), 'error'); }
       }
     };
     const ins = personInsights(P.nights, key, P.library);
     const line = (icon, html) => `<p class="stats-line">${icon}<span>${html}</span></p>`;
     const lines = [
-      ins.winRate !== null && line('🏆', `Vinci il <b>${ins.winRate}%</b> delle partite (${ins.won} su ${ins.played})`),
-      ins.severity !== null && line('⚖️', ins.severity <= -0.5 ? `Sei <b>più severo</b> degli altri di ${fmt(Math.abs(ins.severity))} punti` : ins.severity >= 0.5 ? `Sei <b>più generoso</b> degli altri di ${fmt(ins.severity)} punti` : 'Voti <b>in linea</b> con il gruppo'),
-      ins.agreement !== null && line('🤝', `D’accordo con la maggioranza nel <b>${ins.agreement}%</b> dei voti`),
-      ins.bestGame && line('💪', `Rendi meglio a <b>${esc(ins.bestGame.name)}</b> (${ins.bestGame.won} vittorie su ${ins.bestGame.played})`),
-      ins.worstGame && line('😵', `Perdi di più a <b>${esc(ins.worstGame.name)}</b> (${ins.worstGame.won} su ${ins.worstGame.played})`),
-      ins.mate && line('❤️', `Miglior compagno di gioco: <b>${esc(ins.mate.name)}</b>`),
-      ins.nemesis && line('⚔️', `Peggior avversario: <b>${esc(ins.nemesis.name)}</b> (ti ha battuto ${ins.nemesis.wins} volte)`),
-      ins.idealMinutes && line('⏱️', `Durata ideale: circa <b>${ins.idealMinutes} minuti</b>`),
-      ins.idealPlayers && line('👥', `Numero di giocatori preferito: <b>${String(ins.idealPlayers).replace('.', ',')}</b>`),
-      ins.favTag && line('🏷️', `Categoria preferita: <b>${esc(ins.favTag)}</b>`)
+      ins.winRate !== null && line('🏆', t('ph.ins.winRate', { pct: `<b>${ins.winRate}%</b>`, won: ins.won, played: ins.played })),
+      ins.severity !== null && line('⚖️', ins.severity <= -0.5 ? t('ph.ins.harsh', { n: fmt(Math.abs(ins.severity)) }) : ins.severity >= 0.5 ? t('ph.ins.generous', { n: fmt(ins.severity) }) : t('ph.ins.inLine')),
+      ins.agreement !== null && line('🤝', t('ph.ins.agree', { pct: `<b>${ins.agreement}%</b>` })),
+      ins.bestGame && line('💪', t('ph.ins.best', { game: `<b>${esc(ins.bestGame.name)}</b>`, won: ins.bestGame.won, played: ins.bestGame.played, n: ins.bestGame.won })),
+      ins.worstGame && line('😵', t('ph.ins.worst', { game: `<b>${esc(ins.worstGame.name)}</b>`, won: ins.worstGame.won, played: ins.worstGame.played })),
+      ins.mate && line('❤️', t('ph.ins.mate', { name: `<b>${esc(ins.mate.name)}</b>` })),
+      ins.nemesis && line('⚔️', t('ph.ins.nemesis', { name: `<b>${esc(ins.nemesis.name)}</b>`, n: ins.nemesis.wins })),
+      ins.idealMinutes && line('⏱️', t('ph.ins.minutes', { n: `<b>${ins.idealMinutes}</b>` })),
+      ins.idealPlayers && line('👥', t('ph.ins.players', { n: `<b>${fmtNum(ins.idealPlayers)}</b>` })),
+      ins.favTag && line('🏷️', t('ph.ins.tag', { tag: `<b>${esc(ins.favTag)}</b>` }))
     ].filter(Boolean);
     const now = new Date();
     const monthNights = nightsList(P.nights).filter((n) => { const d = new Date(Number(n.at)); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && n.people?.[key]; }).length;
-    $('#myInsights').innerHTML = `<h2>Le tue statistiche avanzate</h2>${monthNights ? line('📆', `Questo mese hai giocato <b>${monthNights}</b> ${monthNights === 1 ? 'volta' : 'volte'}`) : ''}${lines.join('') || '<p class="muted">Compaiono dopo qualche partita (vittorie, voti, compagni e avversari).</p>'}`;
+    $('#myInsights').innerHTML = `<h2>${esc(t('ph.ins.title'))}</h2>${monthNights ? line('📆', t('ph.ins.month', { n: monthNights })) : ''}${lines.join('') || `<p class="muted">${esc(t('ph.ins.empty'))}</p>`}`;
     const list = nightsList(P.nights).reverse();
-    $('#myMemories').innerHTML = `<h2>📸 Ricordi del gruppo</h2>${list.length ? `<ul class="mem-list">${list.slice(0, 10).map((n) => `
-      <li><button type="button" class="mem-row" data-mem="${esc(n.room)}"><b>#${n.number} · ${esc(new Date(Number(n.at)).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' }))}</b><span>${n.gamesCount} ${n.gamesCount === 1 ? 'gioco' : 'giochi'}${n.topGame ? ` · ⭐ ${esc(n.topGame.name)}` : ''}${n.people?.[key] ? '' : ' · non c’eri'}</span></button></li>`).join('')}</ul>` : '<p class="muted">Le serate salvate compaiono qui.</p>'}`;
+    $('#myMemories').innerHTML = `<h2>📸 ${esc(t('ph.mem.title'))}</h2>${list.length ? `<ul class="mem-list">${list.slice(0, 10).map((n) => `
+      <li><button type="button" class="mem-row" data-mem="${esc(n.room)}"><b>#${n.number} · ${esc(fmtDate(Number(n.at), { day: 'numeric', month: 'short', year: 'numeric' }))}</b><span>${esc(t('ph.mem.games', { n: n.gamesCount }))}${n.topGame ? ` · ⭐ ${esc(n.topGame.name)}` : ''}${n.people?.[key] ? '' : ` · ${esc(t('ph.mem.absent'))}`}</span></button></li>`).join('')}</ul>` : `<p class="muted">${esc(t('ph.mem.empty'))}</p>`}`;
     $('#myMemories').onclick = (e) => {
       const b = e.target.closest('[data-mem]');
       if (b) openNightSheet(list.find((n) => n.room === b.dataset.mem), gid);
@@ -2044,13 +2045,13 @@ SCREENS.profile = {
     const years = yearsOf(P.nights);
     const w = years.length ? wrapped(P.nights, years[0]) : null;
     $('#myWrapped').innerHTML = w ? `<h2>🎁 Wrapped ${w.year}</h2><ul class="wr-mini">
-      <li><b>${w.nights}</b> serate · <b>${w.matches}</b> partite${w.hours ? ` · <b>${String(w.hours).replace('.', ',')}</b> ore` : ''}</li>
-      ${w.mostPlayed ? `<li>Il più intavolato: <b>${esc(w.mostPlayed.name)}</b> (${w.mostPlayed.matches})</li>` : ''}
-      ${w.loved ? `<li>Il più amato: <b>${esc(w.loved.name)}</b> (${fmt(w.loved.avg)})</li>` : ''}
-      ${w.deadliest ? `<li>Il più letale: <b>${esc(w.deadliest.name)}</b> (${w.deadliest.wins} vittorie)</li>` : ''}
-      ${w.mvp ? `<li>MVP dell’anno: <b>${esc(w.mvp.name)}</b></li>` : ''}
-      ${w.longestMatch ? `<li>Partita più lunga: <b>${esc(w.longestMatch.name)}</b> (${w.longestMatch.minutes} min)</li>` : ''}
-      ${w.bestMonth ? `<li>Mese più giocato: <b>${esc(w.bestMonth.name)}</b></li>` : ''}</ul>` : '';
+      <li>${t('ph.wr.counts', { nights: `<b>${w.nights}</b>`, matches: `<b>${w.matches}</b>` })}${w.hours ? ` · ${t('ph.wr.hours', { n: `<b>${fmtNum(w.hours)}</b>` })}` : ''}</li>
+      ${w.mostPlayed ? `<li>${t('ph.wr.mostPlayed', { game: `<b>${esc(w.mostPlayed.name)}</b>`, n: w.mostPlayed.matches })}</li>` : ''}
+      ${w.loved ? `<li>${t('ph.wr.loved', { game: `<b>${esc(w.loved.name)}</b>`, avg: fmt(w.loved.avg) })}</li>` : ''}
+      ${w.deadliest ? `<li>${t('ph.wr.deadliest', { game: `<b>${esc(w.deadliest.name)}</b>`, n: w.deadliest.wins })}</li>` : ''}
+      ${w.mvp ? `<li>${t('ph.wr.mvp', { name: `<b>${esc(w.mvp.name)}</b>` })}</li>` : ''}
+      ${w.longestMatch ? `<li>${t('ph.wr.longest', { game: `<b>${esc(w.longestMatch.name)}</b>`, n: w.longestMatch.minutes })}</li>` : ''}
+      ${w.bestMonth ? `<li>${t('ph.wr.month', { month: `<b>${esc(w.bestMonth.name)}</b>` })}</li>` : ''}</ul>` : '';
     $('#myWrapped').hidden = !w;
   },
 
@@ -2058,36 +2059,36 @@ SCREENS.profile = {
   paintProgress(me) {
     const pr = progressFor(P.nights, personKey(me), P.library);
     $('#myLevel').innerHTML = `
-      <div class="lv-head"><span class="lv-num">${pr.level}</span><div><h2>Livello ${pr.level} · ${esc(pr.levelName)}</h2><p class="muted">${pr.xp} XP · prossimo livello a ${pr.nextXp} XP</p></div></div>
-      <span class="xp-bar" aria-label="Avanzamento verso il prossimo livello"><i style="width:${Math.round(pr.levelProgress * 100)}%"></i></span>
+      <div class="lv-head"><span class="lv-num">${pr.level}</span><div><h2>${esc(t('ph.lv.title', { n: pr.level, name: pr.levelName }))}</h2><p class="muted">${esc(t('ph.lv.xp', { xp: pr.xp, next: pr.nextXp }))}</p></div></div>
+      <span class="xp-bar" aria-label="${esc(t('ph.lv.bar'))}"><i style="width:${Math.round(pr.levelProgress * 100)}%"></i></span>
       ${seasonLineHTML(me)}
-      <p class="muted small">XP: 50 a serata, 20 a partita, 30 a vittoria, 10 a voto MVP ricevuto, 15 a media indovinata, 15 a vincitore pronosticato, 100 a traguardo.</p>`;
+      <p class="muted small">${esc(t('ph.lv.rules'))}</p>`;
     const got = pr.achievements.filter((a) => a.got).length;
     $('#myAch').innerHTML = `
-      <h2>Traguardi <span class="muted">${got}/${pr.achievements.length}</span></h2>
+      <h2>${esc(t('home.me.trophies'))} <span class="muted">${got}/${pr.achievements.length}</span></h2>
       <ul class="ach-grid">${pr.achievements.map((a) => {
         const hidden = a.secret && !a.got;
         const prog = !a.got && a.progress && a.progress[1] ? `<span class="ach-prog"><i style="width:${Math.min(100, Math.round((a.progress[0] / a.progress[1]) * 100))}%"></i></span><small>${Math.min(a.progress[0], a.progress[1])}/${a.progress[1]}</small>` : '';
-        return `<li class="ach ${a.got ? 'is-got' : ''}"><span class="ach-ico" aria-hidden="true">${hidden ? '❓' : a.icon}</span><span class="ach-text"><b>${hidden ? 'Traguardo segreto' : esc(a.name)}</b><small>${hidden ? 'Si svela quando lo sblocchi.' : esc(a.desc)}</small>${prog}</span></li>`;
+        return `<li class="ach ${a.got ? 'is-got' : ''}"><span class="ach-ico" aria-hidden="true">${hidden ? '❓' : a.icon}</span><span class="ach-text"><b>${esc(hidden ? t('ph.ach.secret') : a.name)}</b><small>${esc(hidden ? t('ph.ach.secretHint') : a.desc)}</small>${prog}</span></li>`;
       }).join('')}</ul>`;
     const notes = Object.values(privateNotes()).sort((a, b) => b.at - a.at).slice(0, 8);
-    $('#myNotes').innerHTML = `<h2>Le tue note private</h2>${notes.length
-      ? `<ul class="notes-list">${notes.map((n) => `<li><b>${esc(n.game)}</b> <span class="muted small">${new Date(n.at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}</span><p>${esc(n.text)}</p></li>`).join('')}</ul>`
-      : '<p class="muted">Durante il voto puoi scrivere una nota che vedi solo tu: strategie, regole da ricordare, rivincite da chiedere.</p>'}`;
+    $('#myNotes').innerHTML = `<h2>${esc(t('ph.notes.title'))}</h2>${notes.length
+      ? `<ul class="notes-list">${notes.map((n) => `<li><b>${esc(n.game)}</b> <span class="muted small">${esc(fmtDate(n.at, { day: 'numeric', month: 'short' }))}</span><p>${esc(n.text)}</p></li>`).join('')}</ul>`
+      : `<p class="muted">${esc(t('ph.notes.empty'))}</p>`}`;
   },
 
   /** Trofei dalla serata precedente e amici più (e meno) affini. */
   extrasHTML(me) {
     const key = personKey(me);
-    const t = trophies(P.nights, P.code)[key];
+    const tr = trophies(P.nights, P.code)[key];
     const pairs = affinities(P.nights).filter((p) => p.a.key === key || p.b.key === key);
     const other = (p) => (p.a.key === key ? p.b.name : p.a.name);
     const lines = [];
-    if (t?.crown) lines.push(`${ICONS.crown}<span>MVP della serata precedente</span>`);
-    if (t?.star) lines.push(`${ICONS.star}<span>MVP di sempre del gruppo</span>`);
-    if (t?.title) lines.push(`${ICONS.trophy}<span>Titolo in carica: <b>${esc(t.title)}</b></span>`);
-    if (pairs.length) lines.push(`${ICONS.users}<span>Anima affine: <b>${esc(other(pairs[0]))}</b> (${fmt(pairs[0].diff)} punti di distanza)</span>`);
-    if (pairs.length > 1) lines.push(`${ICONS.x}<span>Gusti opposti: <b>${esc(other(pairs[pairs.length - 1]))}</b></span>`);
+    if (tr?.crown) lines.push(`${ICONS.crown}<span>${esc(t('ph.tr.crown'))}</span>`);
+    if (tr?.star) lines.push(`${ICONS.star}<span>${esc(t('ph.tr.star'))}</span>`);
+    if (tr?.title) lines.push(`${ICONS.trophy}<span>${t('ph.tr.title', { title: `<b>${esc(awardTitle(tr.title))}</b>` })}</span>`);
+    if (pairs.length) lines.push(`${ICONS.users}<span>${t('ph.tr.soul', { name: `<b>${esc(other(pairs[0]))}</b>`, n: fmt(pairs[0].diff) })}</span>`);
+    if (pairs.length > 1) lines.push(`${ICONS.x}<span>${t('ph.tr.opposite', { name: `<b>${esc(other(pairs[pairs.length - 1]))}</b>` })}</span>`);
     return lines.map((l) => `<p class="stats-line">${l}</p>`).join('');
   },
 
@@ -2102,11 +2103,11 @@ SCREENS.profile = {
           ${avatarHTML(me, '5rem', 'avatar--shadow')}
           <div>
             <h1 class="ph-title">${esc(me.name)}</h1>
-            ${mid ? `<p class="profile-code-line">Codice personale <span class="code-chip code-chip--sm">${esc(mid)}</span></p>` : ''}
+            ${mid ? `<p class="profile-code-line">${esc(t('ph.pj.codeAria'))} <span class="code-chip code-chip--sm">${esc(mid)}</span></p>` : ''}
           </div>
         </div>
-        ${mid ? `<p class="muted small">Con questo codice ritrovi profilo e statistiche su un altro telefono o nell’app installata.</p>
-        <details class="card ph-card prof-qr"><summary>📱 Il tuo QR personale</summary><div class="qr qr--prof" id="profQr"></div><p class="muted small">Inquadralo con un altro telefono (o con l’app installata) per collegare lì il tuo profilo. Non mostrarlo a chi non conosci: è come la tua password.</p></details>` : ''}
+        ${mid ? `<p class="muted small">${esc(t('ph.prof.codeHint'))}</p>
+        <details class="card ph-card prof-qr"><summary>📱 ${esc(t('ph.prof.qr'))}</summary><div class="qr qr--prof" id="profQr"></div><p class="muted small">${esc(t('ph.prof.qrHint'))}</p></details>` : ''}
         <section class="card ph-card" id="myNext"></section>
         <section class="card ph-card" id="myLevel"></section>
         <section class="card ph-card" id="myCard"></section>
@@ -2117,26 +2118,27 @@ SCREENS.profile = {
         <section class="card ph-card" id="myInsights"></section>
         <section class="card ph-card" id="myMemories"></section>
         <section class="card ph-card" id="myWrapped"></section>
-        <section class="card ph-card"><h2>Tema</h2>${themeSwitchHTML('phTheme')}</section>
-        <section class="card ph-card"><h2>Accessibilità</h2>${a11yHTML('phA11y')}</section>
-        <section class="card ph-card"><h2>Registro errori</h2><p class="muted small">Se qualcosa non va, scaricalo e mandalo a chi gestisce l’app: dice cosa è successo su questo telefono.</p><button type="button" class="btn-sec btn-sec--sm" id="phErrDl">${ICONS.download}<span>Scarica il registro</span></button></section>
+        <section class="card ph-card"><h2>${esc(t('common.language'))}</h2>${langSwitchHTML('phLang')}</section>
+        <section class="card ph-card"><h2>${esc(t('home.set.theme'))}</h2>${themeSwitchHTML('phTheme')}</section>
+        <section class="card ph-card"><h2>${esc(t('home.set.a11y'))}</h2>${a11yHTML('phA11y')}</section>
+        <section class="card ph-card"><h2>${esc(t('ph.errlog.title'))}</h2><p class="muted small">${esc(t('ph.errlog.text'))}</p><button type="button" class="btn-sec btn-sec--sm" id="phErrDl">${ICONS.download}<span>${esc(t('ph.errlog.dl'))}</span></button></section>
         <section class="card ph-card">
-          <h2>Regia dal telefono</h2>
+          <h2>${esc(t('ph.regia.title'))}</h2>
           ${P.cohost
-            ? '<p>La regia è attiva: usa il pulsante <b>Regia</b> in basso a destra per guidare la serata.</p>'
-            : `<p class="muted">Sei tu a guidare la serata? Con il codice regia (sulla TV, pannello Giocatori) la comandi anche da qui.</p>
+            ? `<p>${t('ph.regia.on')}</p>`
+            : `<p class="muted">${esc(t('ph.regia.lead'))}</p>
                <div class="profile-code-row">
-                 <label class="sr-only" for="regiaInput">Codice regia</label>
+                 <label class="sr-only" for="regiaInput">${esc(t('ph.regia.code'))}</label>
                  <input class="input code-input code-input--8" id="regiaInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX">
-                 <button type="button" class="btn-sec" id="regiaGo">Attiva</button>
+                 <button type="button" class="btn-sec" id="regiaGo">${esc(t('ph.regia.go'))}</button>
                </div>
                <p class="form-error" id="regiaErr" role="alert"></p>`}
         </section>
         ${installHintHTML(mid)}
         <div class="ph-links">
-          <button type="button" class="link-btn" id="editProfile">Modifica profilo</button>
+          <button type="button" class="link-btn" id="editProfile">${esc(t('ph.prof.edit'))}</button>
         </div>
-        <button type="button" class="btn btn-block" data-profileback>Torna alla serata</button>
+        <button type="button" class="btn btn-block" data-profileback>${esc(t('ph.prof.back'))}</button>
       </main>`;
     bindEditProfile(el);
     bindInstall(el);
@@ -2154,7 +2156,7 @@ SCREENS.profile = {
     $('#regiaGo', el)?.addEventListener('click', async () => {
       try {
         await Regia.activate($('#regiaInput').value);
-        toast('Regia attiva: usa il pulsante Regia in basso a destra');
+        toast(t('ph.regia.active'));
         P.screenKey = null;
         render();
       } catch (err) {
@@ -2177,19 +2179,19 @@ SCREENS.profile = {
     } else { $('#myCard').hidden = true; $('#myRivals').hidden = true; }
     const row = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
     $('#myStats').innerHTML = `
-      <h2>Le tue statistiche</h2>
+      <h2>${esc(t('ph.st.title'))}</h2>
       ${st.nights ? `<dl class="stats-grid">
-        ${row('Serate', st.nights)}
-        ${row('Partite votate', st.votes)}
-        ${row('Media dei tuoi voti', fmt(st.avgGiven))}
-        ${row('Vittorie', st.wins)}
-        ${row('Voti MVP ricevuti', st.mvp)}
-        ${row('Giochi diversi', st.gamesVoted)}
+        ${row(esc(t('ph.st.nights')), st.nights)}
+        ${row(esc(t('ph.st.votes')), st.votes)}
+        ${row(esc(t('ph.st.avg')), fmt(st.avgGiven))}
+        ${row(esc(t('ph.st.wins')), st.wins)}
+        ${row(esc(t('ph.st.mvp')), st.mvp)}
+        ${row(esc(t('ph.st.games')), st.gamesVoted)}
       </dl>
-      ${st.favorite ? `<p class="stats-line">${ICONS.star}<span>Il tuo preferito: <b>${esc(st.favorite.name)}</b> (${fmt(st.favorite.avg)})</span></p>` : ''}
-      ${st.leastFavorite && st.leastFavorite.avg < st.favorite.avg ? `<p class="stats-line">${ICONS.x}<span>Ti piace meno: <b>${esc(st.leastFavorite.name)}</b> (${fmt(st.leastFavorite.avg)})</span></p>` : ''}
+      ${st.favorite ? `<p class="stats-line">${ICONS.star}<span>${t('ph.st.fav', { game: `<b>${esc(st.favorite.name)}</b>`, avg: fmt(st.favorite.avg) })}</span></p>` : ''}
+      ${st.leastFavorite && st.leastFavorite.avg < st.favorite.avg ? `<p class="stats-line">${ICONS.x}<span>${t('ph.st.least', { game: `<b>${esc(st.leastFavorite.name)}</b>`, avg: fmt(st.leastFavorite.avg) })}</span></p>` : ''}
       ${this.extrasHTML(me)}`
-      : '<p class="muted">Le statistiche compaiono dopo il primo gioco votato in una serata del gruppo.</p>'}`;
+      : `<p class="muted">${esc(t('ph.st.empty'))}</p>`}`;
   }
 };
 
@@ -2208,18 +2210,18 @@ const Regia = {
     if (!Object.keys(P.nights || {}).length) return '';
     const rec = recommend({ library: P.library, nights: P.nights, present: active.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...played].map((k) => k.replace(/[.#$\[\]\/]/g, '_'))) });
     const r = rec.all[0];
-    return r ? `<button type="button" class="best-pick" data-rglib="${esc(r.id)}"><span>💡 Consigliato: <b>${esc(r.item.name)}</b> ${r.score}%</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>` : '';
+    return r ? `<button type="button" class="best-pick" data-rglib="${esc(r.id)}"><span>💡 ${t('ph.rg.best', { game: `<b>${esc(r.item.name)}</b>`, pct: `${r.score}%` })}</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>` : '';
   },
 
   async activate(input) {
     const code = normalizeCode(input, 8);
-    if (code.length !== 8) throw userError('Il codice regia ha 8 caratteri.');
+    if (code.length !== 8) throw userError(t('ph.regia.len'));
     try {
       await set(roomRef(P.code, `takeover/${P.uid}`), code);
       await set(roomRef(P.code, `cohosts/${P.uid}`), true);
     } catch {
       knock('regia');
-      throw userError('Codice regia sbagliato.');
+      throw userError(t('ph.regia.wrong'));
     }
     localStorage.setItem(`gnr_cohost_${P.code}`, '1');
     localStorage.setItem(`gnr_regia_${P.code}`, code);
@@ -2233,7 +2235,7 @@ const Regia = {
       this.fab = document.createElement('button');
       this.fab.type = 'button';
       this.fab.className = 'regia-fab';
-      this.fab.innerHTML = `${ICONS.play}<span>Regia</span>`;
+      this.fab.innerHTML = `${ICONS.play}<span>${esc(t('ph.rg.title'))}</span>`;
       this.fab.addEventListener('click', () => this.open());
       document.body.appendChild(this.fab);
     }
@@ -2248,11 +2250,11 @@ const Regia = {
     this.sheet.className = 'overlay overlay--sheet';
     this.sheet.innerHTML = `
       <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="rgTitle">
-        <div class="panel-head"><h2 id="rgTitle">Regia</h2><button type="button" class="icon-btn" id="rgClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="rgTitle">${esc(t('ph.rg.title'))}</h2><button type="button" class="icon-btn" id="rgClose" data-close aria-label="${esc(t('common.close'))}">${ICONS.x}</button></div>
         <p class="rg-watch" id="rgWatch" role="status"></p>
         <div id="rgBody"></div>
-        <details class="rg-safety" id="rgSafety"><summary>🛡️ Sicurezza della stanza</summary><div id="rgSafeBody"></div></details>
-        <details class="rg-sfx"><summary>🔊 Soundboard sulla TV</summary><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-rgsfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></details>
+        <details class="rg-safety" id="rgSafety"><summary>🛡️ ${esc(t('ph.rg.safety'))}</summary><div id="rgSafeBody"></div></details>
+        <details class="rg-sfx"><summary>🔊 ${esc(t('ph.rg.sfx'))}</summary><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-rgsfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></details>
       </div>`;
     document.body.appendChild(this.sheet);
     this.sheet.addEventListener('click', (e) => this.onClick(e));
@@ -2277,8 +2279,8 @@ const Regia = {
     const regia = localStorage.getItem(`gnr_regia_${P.code}`) || '';
     const bad = age > 30;
     const html = bad
-      ? `⚠️ <b>La regia non risponde</b> da ${age} s. <a href="host.html?room=${esc(P.code)}${regia ? `#regia=${esc(regia)}` : ''}">Riprendi la regia su questo dispositivo</a>`
-      : `📡 Ultimo segnale dalla TV: ${age < 2 ? 'adesso' : `${age} s fa`}`;
+      ? `⚠️ ${t('ph.rg.silent', { n: age })} <a href="host.html?room=${esc(P.code)}${regia ? `#regia=${esc(regia)}` : ''}">${esc(t('ph.rg.takeover'))}</a>`
+      : `📡 ${esc(age < 2 ? t('ph.rg.signalNow') : t('ph.rg.signalAgo', { n: age }))}`;
     if (el.innerHTML !== html) el.innerHTML = html;
     el.classList.toggle('is-bad', bad);
   },
@@ -2292,10 +2294,10 @@ const Regia = {
     this.safeSig = sig;
     box.innerHTML = `
       <div class="rg-row">
-        <button type="button" class="btn-sec btn-sec--sm" data-rglock>${P.meta?.locked ? '🔓 Riapri la stanza' : '🔒 Chiudi la stanza'}</button>
-        <button type="button" class="btn-sec btn-sec--sm" data-rgsafe>${P.meta?.safeMode ? 'Spegni la Safe Mode' : '🚨 Safe Mode'}</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-rglock>${esc(P.meta?.locked ? `🔓 ${t('ph.rg.unlock')}` : `🔒 ${t('ph.rg.lock')}`)}</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-rgsafe>${esc(P.meta?.safeMode ? t('ph.rg.safeOff') : `🚨 ${t('ph.rg.safeOn')}`)}</button>
       </div>
-      ${others.length ? `<span class="field-label">Espelli un dispositivo</span><div class="rg-chips">${others.map((p) => `<button type="button" class="lib-chip" data-rgkick="${esc(p.uid)}">⛔ ${esc(p.name)}</button>`).join('')}</div>` : ''}`;
+      ${others.length ? `<span class="field-label">${esc(t('ph.rg.kick'))}</span><div class="rg-chips">${others.map((p) => `<button type="button" class="lib-chip" data-rgkick="${esc(p.uid)}">⛔ ${esc(p.name)}</button>`).join('')}</div>` : ''}`;
   },
 
   async send(type, args = null) {
@@ -2305,7 +2307,7 @@ const Regia = {
       if (navigator.vibrate) navigator.vibrate(20);
       setTimeout(async () => {
         const still = await get(r).catch(() => null);
-        if (still?.exists()) toast('La TV non risponde. Se il PC è spento, riprendi la serata da un altro computer con il codice regia.', 'warn');
+        if (still?.exists()) toast(t('ph.rg.noAnswer'), 'warn');
       }, 6000);
     } catch (err) {
       toast(explainError(err), 'error');
@@ -2319,7 +2321,7 @@ const Regia = {
     const kk = e.target.closest('[data-rgkick]');
     if (kk) {
       const p = P.players[kk.dataset.rgkick];
-      if (p && confirm(`Espellere ${p.name}? Il suo telefono esce dalla stanza e stasera non può rientrare (lo riammetti dalla TV). Il voto in corso, se c’è, viene tolto.`)) this.send('kick', { uid: kk.dataset.rgkick });
+      if (p && confirm(t('ph.rg.kickConfirm', { name: p.name }))) this.send('kick', { uid: kk.dataset.rgkick });
       return;
     }
     const fx = e.target.closest('[data-rgsfx]');
@@ -2353,20 +2355,20 @@ const Regia = {
     const type = b.dataset.cmd;
     if (type === 'openVote') {
       const name = cleanName(this.draft.name);
-      if (!name) { toast('Scegli un gioco o scrivi il nome.', 'warn'); return; }
+      if (!name) { toast(t('ph.rg.pickGame'), 'warn'); return; }
       this.send('openVote', { name, libraryId: this.draft.libraryId, winners: this.draft.winners, spectators: this.draft.spectators, quick: this.draft.quick });
       this.draft = { name: '', libraryId: null, winners: [], spectators: [], quick: false };
       return;
     }
     if (type === 'startPlay') {
       const name = cleanName(this.draft.name);
-      if (!name) { toast('Scegli un gioco o scrivi il nome.', 'warn'); return; }
+      if (!name) { toast(t('ph.rg.pickGame'), 'warn'); return; }
       this.send('startPlay', { name, spectators: this.draft.spectators });
       return;
     }
-    if (type === 'end' && !confirm('Terminare la serata e passare alla premiazione?')) return;
-    if (type === 'reveal' && b.dataset.missing && !confirm(`${b.dataset.missing}. Rivelare comunque?`)) return;
-    if (type === 'reopen' && !confirm('Riaprire la votazione? I voti già dati restano.')) return;
+    if (type === 'end' && !confirm(t('ph.rg.endConfirm'))) return;
+    if (type === 'reveal' && b.dataset.missing && !confirm(t('ph.rg.revealConfirm', { missing: b.dataset.missing }))) return;
+    if (type === 'reopen' && !confirm(t('ph.rg.reopenConfirm'))) return;
     const args = b.dataset.arg ? { [b.dataset.argk || 'uid']: b.dataset.arg } : null;
     this.send(type, args);
   },
@@ -2385,55 +2387,55 @@ const Regia = {
     const active = activePlayers(P.players);
     let html = '';
     if (phase === 'lobby') {
-      html = `<p>${active.length} su ${P.meta.maxPlayers || 8} giocatori dentro.</p>${btn('start', 'Inizia la serata')}`;
+      html = `<p>${esc(t('ph.rg.inside', { n: active.length, max: P.meta.maxPlayers || 8 }))}</p>${btn('start', esc(t('ph.rg.start')))}`;
     } else if (phase === 'idle') {
       const played = new Set(Object.values(P.games || {}).map((x) => nameKey(x?.name)));
       const items = Object.entries(P.library || {}).filter(([, it]) => it?.name && !played.has(nameKey(it.name)))
-        .sort(([, a], [, b]) => (libFits(b, active.length) - libFits(a, active.length)) || a.name.localeCompare(b.name, 'it'));
+        .sort(([, a], [, b]) => (libFits(b, active.length) - libFits(a, active.length)) || a.name.localeCompare(b.name, lang()));
       const d = this.draft;
       html = `
-        ${items.length >= 2 ? btn('pollStart', 'Cosa giochiamo? Votano i telefoni', 'btn-sec btn-block') : ''}
-        <p class="field-label">Prossimo gioco</p>
+        ${items.length >= 2 ? btn('pollStart', esc(t('ph.rg.poll')), 'btn-sec btn-block') : ''}
+        <p class="field-label">${esc(t('ph.rg.next'))}</p>
         ${items.length ? `<div class="rg-chips">${items.map(([id, it]) => `<button type="button" class="lib-chip ${libFits(it, active.length) ? '' : 'is-unfit'}" data-rglib="${esc(id)}" aria-pressed="${d.libraryId === id}">${esc(it.name)}</button>`).join('')}</div>` : ''}
-        <label class="sr-only" for="rgName">Nome del gioco</label>
-        <input class="input" id="rgName" maxlength="40" placeholder="oppure scrivi il nome" value="${esc(d.name)}">
+        <label class="sr-only" for="rgName">${esc(t('ph.ag.name'))}</label>
+        <input class="input" id="rgName" maxlength="40" placeholder="${esc(t('ph.rg.namePh'))}" value="${esc(d.name)}">
         ${this.bestHTML(active, played)}
-        <p class="field-label">Chi ha giocato e chi ha vinto? <span class="muted">(tocca: vincitore, poi spettatore)</span></p>
+        <p class="field-label">${esc(t('ph.rg.who'))} <span class="muted">${esc(t('ph.rg.whoHint'))}</span></p>
         <div class="rg-chips">${active.map((p) => {
           const st = d.winners.includes(p.uid) ? 'winner' : d.spectators.includes(p.uid) ? 'spectator' : 'player';
           return `<button type="button" class="lib-chip rg-state rg-state--${st}" data-rgwin="${esc(p.uid)}" aria-pressed="${st === 'winner'}">${st === 'winner' ? '👑 ' : st === 'spectator' ? '👀 ' : ''}${esc(p.name)}</button>`;
         }).join('')}</div>
-        <label class="quick-toggle"><input type="checkbox" id="rgQuick" ${d.quick ? 'checked' : ''}><span>Voto veloce (solo voto generale e MVP)</span></label>
-        <div class="rg-row">${btn('startPlay', P.state?.playStart ? 'Riavvia il timer' : 'Inizia la partita', 'btn-sec')}${btn('interval', '☕ Intervallo sulla TV', 'btn-sec')}</div>
-        ${btn('openVote', 'Apri la votazione')}
-        <div class="rg-row">${btn('board', 'Classifica', 'btn-sec')}${btn('alltime', 'Di sempre', 'btn-sec')}${btn('end', 'Termina la serata', 'btn-sec')}</div>`;
+        <label class="quick-toggle"><input type="checkbox" id="rgQuick" ${d.quick ? 'checked' : ''}><span>${esc(t('ph.rg.quick'))}</span></label>
+        <div class="rg-row">${btn('startPlay', esc(P.state?.playStart ? t('ph.rg.restartTimer') : t('ph.rg.startPlay')), 'btn-sec')}${btn('interval', `☕ ${esc(t('ph.rg.interval'))}`, 'btn-sec')}</div>
+        ${btn('openVote', esc(t('ph.rg.openVote')))}
+        <div class="rg-row">${btn('board', esc(t('ph.board')), 'btn-sec')}${btn('alltime', esc(t('ph.rg.alltime')), 'btn-sec')}${btn('end', esc(t('ph.rg.end')), 'btn-sec')}</div>`;
     } else if (phase === 'poll') {
       const poll = P.poll || {};
       const votes = Object.keys(poll.votes || {}).length;
       html = poll.open
-        ? `<p>Stanno scegliendo il gioco: ${votes} su ${active.length}.</p>${btn('pollClose', 'Chiudi la scelta')}${btn('pollCancel', 'Annulla', 'btn-sec btn-block')}`
-        : `<p>Si gioca a <b>${esc(P.library?.[poll.winner]?.name || 'il gioco scelto')}</b>.</p>${btn('pollGo', 'Pronti, si gioca')}`;
+        ? `<p>${esc(t('ph.rg.pollCount', { n: votes, total: active.length }))}</p>${btn('pollClose', esc(t('ph.rg.pollClose')))}${btn('pollCancel', esc(t('common.cancel')), 'btn-sec btn-block')}`
+        : `<p>${t('ph.rg.pollWinner', { game: `<b>${esc(P.library?.[poll.winner]?.name || t('ph.poll.chosenGame'))}</b>` })}</p>${btn('pollGo', esc(t('ph.rg.pollGo')))}`;
     } else if (phase === 'voting' && g) {
       const votes = P.votes?.[gid] || {};
       const missing = active.filter((p) => !votes[p.uid]);
       const pres = P.presence || {};
       const tracked = Object.keys(pres).length > 0;
       html = `
-        <p><b>${esc(g.name)}</b>: ${active.length - missing.length} su ${active.length} hanno votato.</p>
-        ${missing.length ? `<ul class="rg-missing">${missing.map((p) => `<li>${esc(p.name)}${tracked && !pres[p.uid] ? ` <span class="muted">(scollegato)</span> ${btn('skip', 'Non aspettare', 'btn-sec btn-sec--sm', `data-arg="${esc(p.uid)}"`)}` : ''}</li>`).join('')}</ul>` : ''}
-        ${btn('reveal', 'Rivela i voti', 'btn btn-block', missing.length ? `data-missing="${missing.length === 1 ? 'Manca un voto' : `Mancano ${missing.length} voti`}"` : '')}`;
+        <p><b>${esc(g.name)}</b>: ${esc(t('ph.rg.voted', { n: active.length - missing.length, total: active.length }))}</p>
+        ${missing.length ? `<ul class="rg-missing">${missing.map((p) => `<li>${esc(p.name)}${tracked && !pres[p.uid] ? ` <span class="muted">${esc(t('ph.rg.offline'))}</span> ${btn('skip', esc(t('ph.rg.skip')), 'btn-sec btn-sec--sm', `data-arg="${esc(p.uid)}"`)}` : ''}</li>`).join('')}</ul>` : ''}
+        ${btn('reveal', esc(t('ph.rg.reveal')), 'btn btn-block', missing.length ? `data-missing="${esc(t('ph.rg.missing', { n: missing.length }))}"` : '')}`;
     } else if (phase === 'reveal') {
-      html = `${btn('next', 'Prossimo gioco')}<div class="rg-row">${btn('rematch', 'Rivincita', 'btn-sec', `data-arg="${esc(gid || '')}" data-argk="gameId"`)}${btn('board', 'Classifica', 'btn-sec')}${btn('reopen', 'Riapri la votazione', 'btn-sec', `data-arg="${esc(gid || '')}" data-argk="gameId"`)}</div>`;
+      html = `${btn('next', esc(t('ph.rg.nextGame')))}<div class="rg-row">${btn('rematch', esc(t('ph.rg.rematch')), 'btn-sec', `data-arg="${esc(gid || '')}" data-argk="gameId"`)}${btn('board', esc(t('ph.board')), 'btn-sec')}${btn('reopen', esc(t('ph.rg.reopen')), 'btn-sec', `data-arg="${esc(gid || '')}" data-argk="gameId"`)}</div>`;
     } else if (phase === 'board') {
-      html = `${btn('next', 'Prossimo gioco')}<div class="rg-row">${btn('alltime', 'Di sempre', 'btn-sec')}${btn('end', 'Termina la serata', 'btn-sec')}</div>`;
+      html = `${btn('next', esc(t('ph.rg.nextGame')))}<div class="rg-row">${btn('alltime', esc(t('ph.rg.alltime')), 'btn-sec')}${btn('end', esc(t('ph.rg.end')), 'btn-sec')}</div>`;
     } else if (phase === 'alltime') {
-      html = btn('back', 'Torna alla serata');
+      html = btn('back', esc(t('ph.prof.back')));
     } else if (phase === 'awards') {
-      html = st.done ? '<p>Premiazione conclusa.</p>' : btn('step', 'Avanti con la premiazione');
+      html = st.done ? `<p>${esc(t('ph.rg.awardsDone'))}</p>` : btn('step', esc(t('ph.rg.awardsNext')));
     }
-    if (st.paused) html = `<p>La serata è in pausa.</p>${btn('resume', 'Riprendi la serata')}`;
-    else html += btn('pause', 'Metti in pausa', 'btn-sec btn-block');
-    $('#rgBody', this.sheet).innerHTML = html || '<p class="muted">Niente da fare in questo momento.</p>';
+    if (st.paused) html = `<p>${esc(t('ph.rg.paused'))}</p>${btn('resume', esc(t('ph.rg.resume')))}`;
+    else html += btn('pause', esc(t('ph.rg.pause')), 'btn-sec btn-block');
+    $('#rgBody', this.sheet).innerHTML = html || `<p class="muted">${esc(t('ph.rg.nothing'))}</p>`;
   }
 };
 
@@ -2441,8 +2443,8 @@ function addGameButton() {
   if (!P.meta?.groupId && !P.meta?.armadioId) return '';
   const n = Object.keys(P.library || {}).length;
   const mine = Object.keys(P.tonight || {}).filter((lid) => P.tonight[lid]?.[P.uid]).length;
-  return `<button type="button" class="btn-sec ph-addgame" id="addGameBtn">🎲 <span>I giochi di stasera</span></button>
-    <p class="muted small">${mine ? `Hai portato ${mine} ${mine === 1 ? 'gioco' : 'giochi'}. ` : 'Segna cosa hai portato e a cosa vuoi giocare. '}${n ? `Nell’armadio: ${n}.` : 'L’armadio è ancora vuoto.'}</p>`;
+  return `<button type="button" class="btn-sec ph-addgame" id="addGameBtn">🎲 <span>${esc(t('ph.ag.title'))}</span></button>
+    <p class="muted small">${esc(mine ? t('ph.ag.broughtN', { n: mine }) : t('ph.ag.hint'))} ${esc(n ? t('ph.ag.onShelf', { n }) : t('ph.ag.empty'))}</p>`;
 }
 
 function bindAddGame(el) {
@@ -2467,15 +2469,15 @@ SCREENS.wait = {
         ${phoneTop()}
         <div class="wait-hero" id="waitMe"></div>
         <h1 class="ph-title" id="waitTitle"></h1>
-        <p class="ph-lead">Guarda la TV: si parte quando l’host avvia la serata.</p>
+        <p class="ph-lead">${esc(t('ph.wait.lead'))}</p>
         <div class="wait-list" id="waitList"></div>
         <p class="muted" id="waitCount"></p>
         ${newCodeHTML()}
         ${photoButtonHTML()}
         ${addGameButton()}
         <div class="ph-links">
-          <button type="button" class="link-btn" data-myprofile>Il mio profilo</button>
-          <button type="button" class="link-btn" id="editProfile">Modifica profilo</button>
+          <button type="button" class="link-btn" data-myprofile>${esc(t('ph.myProfile'))}</button>
+          <button type="button" class="link-btn" id="editProfile">${esc(t('ph.prof.edit'))}</button>
         </div>
       </main>`;
     bindEditProfile(el);
@@ -2488,9 +2490,9 @@ SCREENS.wait = {
     if (sig === this.sig) return;
     this.sig = sig;
     $('#waitMe').innerHTML = avatarHTML(me, '8.5rem', 'avatar--shadow');
-    $('#waitTitle').textContent = `Ci sei, ${me.name}!`;
+    $('#waitTitle').textContent = t('ph.wait.title', { name: me.name });
     $('#waitList').innerHTML = ps.map((p) => avatarHTML(p, '2.6rem')).join('');
-    $('#waitCount').textContent = `${ps.length} su ${P.meta.maxPlayers || 8} giocatori`;
+    $('#waitCount').textContent = t('ph.wait.count', { n: ps.length, max: P.meta.maxPlayers || 8 });
   }
 };
 
@@ -2501,8 +2503,8 @@ SCREENS.idle = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="wait-hero" id="idleMe"></div>
-        <h1 class="ph-title">Prossimo gioco in arrivo</h1>
-        <p class="ph-lead">L’host sta preparando il gioco. Quando si apre la votazione, il telefono è pronto.</p>
+        <h1 class="ph-title">${esc(t('ph.idle.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.idle.lead'))}</p>
         <div id="idleEvent" class="full-width"></div>
         <div id="idleBet" class="full-width"></div>
         <div id="idleRules" class="full-width"></div>
@@ -2513,9 +2515,9 @@ SCREENS.idle = {
         ${photoButtonHTML()}
         ${addGameButton()}
         <div class="ph-links">
-          <button type="button" class="link-btn" data-myprofile>Il mio profilo</button>
-          <button type="button" class="link-btn" id="editProfile">Modifica profilo</button>
-          <button type="button" class="link-btn" id="leaveNight">Esco dalla serata</button>
+          <button type="button" class="link-btn" data-myprofile>${esc(t('ph.myProfile'))}</button>
+          <button type="button" class="link-btn" id="editProfile">${esc(t('ph.prof.edit'))}</button>
+          <button type="button" class="link-btn" id="leaveNight">${esc(t('ph.idle.leave'))}</button>
         </div>
       </main>`;
     bindEditProfile(el);
@@ -2543,8 +2545,8 @@ SCREENS.idle = {
     if (tsig !== this.tsig) {
       this.tsig = tsig;
       // Chi inizia, la propria squadra e la clessidra restano in vista; segnapunti e pronostico sono nella barra in basso.
-      const t = P.table || {};
-      $('#idleTable').innerHTML = t.starter || Array.isArray(t.teams) || t.sand ? tableHTML() : '';
+      const tb = P.table || {};
+      $('#idleTable').innerHTML = tb.starter || Array.isArray(tb.teams) || tb.sand ? tableHTML() : '';
       paintSand();
     }
     $('#idleBet').innerHTML = betBannerHTML();
@@ -2568,19 +2570,19 @@ SCREENS.reveal = {
     el.innerHTML = `
       <main class="phone phone--center">
         ${phoneTop()}
-        <h1 class="ph-title">Il verdetto è sulla TV!</h1>
+        <h1 class="ph-title">${esc(t('ph.rv.title'))}</h1>
         <div class="card p-reveal">
           ${gameImageHTML(g, 'game-img--vote')}
           <div class="p-reveal-body">
             <b class="vgame-name">${esc(g.name)}</b>
             <div class="p-reveal-nums">
-              <div><span class="muted">Il tuo voto</span><b class="p-num">${mine ? mine.overall : '–'}</b></div>
-              <div class="p-late" style="--after:${delay.toFixed(2)}s"><span class="muted">Media</span><b class="p-num p-num--avg">${fmt(st.avg)}</b></div>
+              <div><span class="muted">${esc(t('ph.rv.mine'))}</span><b class="p-num">${mine ? mine.overall : '–'}</b></div>
+              <div class="p-late" style="--after:${delay.toFixed(2)}s"><span class="muted">${esc(t('ph.rv.avg'))}</span><b class="p-num p-num--avg">${fmt(st.avg)}</b></div>
             </div>
             <p class="p-late p-verdict" style="--after:${(delay + 0.2).toFixed(2)}s">${esc(verdict(st))}</p>
-            ${typeof mine?.guess === 'number' ? `<p class="p-late p-guess" style="--after:${(delay + 0.3).toFixed(2)}s">Avevi previsto ${fmt(mine.guess, Number.isInteger(mine.guess) ? 0 : 1)}: ${st.oracle?.winners.some((w) => w.uid === P.uid) ? 'sei l’oracolo di questo gioco!' : `sbagliato di ${fmt(Math.abs(mine.guess - st.avg))}`}</p>` : ''}
-            ${g.winners ? `<p class="p-win-line">${ICONS.trophy}<span>Ha vinto ${esc(namesList(Object.keys(g.winners).map((uid) => P.players[uid]?.name || 'Ex giocatore')))}</span></p>` : ''}
-            ${g.winners && g.bets?.[P.uid] ? `<p class="p-late p-bet" style="--after:${(delay + 0.4).toFixed(2)}s">🔮 Avevi puntato su ${esc(P.players[g.bets[P.uid]]?.name || 'un ex giocatore')}: ${g.winners[g.bets[P.uid]] ? '<b>indovinato!</b> +15 XP' : 'non è andata, sarà per la prossima.'}</p>` : ''}
+            ${typeof mine?.guess === 'number' ? `<p class="p-late p-guess" style="--after:${(delay + 0.3).toFixed(2)}s">${esc(t('ph.rv.guess', { n: fmt(mine.guess, Number.isInteger(mine.guess) ? 0 : 1) }))} ${esc(st.oracle?.winners.some((w) => w.uid === P.uid) ? t('ph.rv.oracle') : t('ph.rv.off', { n: fmt(Math.abs(mine.guess - st.avg)) }))}</p>` : ''}
+            ${g.winners ? `<p class="p-win-line">${ICONS.trophy}<span>${esc(t('ph.rv.won', { names: namesList(Object.keys(g.winners).map((uid) => P.players[uid]?.name || t('ph.exPlayer'))) }))}</span></p>` : ''}
+            ${g.winners && g.bets?.[P.uid] ? `<p class="p-late p-bet" style="--after:${(delay + 0.4).toFixed(2)}s">🔮 ${esc(t('ph.rv.bet', { name: P.players[g.bets[P.uid]]?.name || t('ph.exPlayer') }))} ${g.winners[g.bets[P.uid]] ? t('ph.rv.betOk') : esc(t('ph.rv.betKo'))}</p>` : ''}
           </div>
         </div>
       </main>`;
@@ -2592,8 +2594,8 @@ SCREENS.board = {
     el.innerHTML = `
       <main class="phone phone--center">
         ${phoneTop()}
-        <h1 class="ph-title">Classifica</h1>
-        <p class="ph-lead">La vedete anche sulla TV.</p>
+        <h1 class="ph-title">${esc(t('ph.board'))}</h1>
+        <p class="ph-lead">${esc(t('ph.bd.lead'))}</p>
         <div class="full-width" id="pBoard"></div>
       </main>`;
     this.sig = '';
@@ -2602,7 +2604,7 @@ SCREENS.board = {
     const sig = JSON.stringify([Object.keys(P.games), Object.keys(P.votes)]);
     if (sig === this.sig) return;
     this.sig = sig;
-    $('#pBoard').innerHTML = miniBoardHTML(false) || '<p class="muted">Ancora nessun gioco votato.</p>';
+    $('#pBoard').innerHTML = miniBoardHTML(false) || `<p class="muted">${esc(t('ph.bd.none'))}</p>`;
   }
 };
 
@@ -2613,8 +2615,8 @@ SCREENS.awards = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="photo-ico photo-ico--sun">${ICONS.trophy}</div>
-        <h1 class="ph-title">Premiazione in corso</h1>
-        <p class="ph-lead">Occhi sulla TV: podio e premi speciali vengono svelati uno alla volta.</p>
+        <h1 class="ph-title">${esc(t('ph.aw.live'))}</h1>
+        <p class="ph-lead">${esc(t('ph.aw.liveLead'))}</p>
       </main>`;
   },
 
@@ -2636,9 +2638,9 @@ SCREENS.awards = {
     const champs = nightChampions(board).filter((c) => c.rank <= 3).slice(0, 3);
     const medal = ['🏆', '🥈', '🥉'];
     const champsHTML = champs.length ? `
-      <div class="p-champs full-width"><h2>Campioni della serata</h2>
+      <div class="p-champs full-width"><h2>${esc(t('ph.aw.champs'))}</h2>
         <ol class="p-champ-list">${champs.map((c) => {
-          const p = P.players[c.uid] || { name: 'Ex giocatore', uid: c.uid };
+          const p = P.players[c.uid] || { name: t('ph.exPlayer'), uid: c.uid };
           return `<li class="p-champ ${c.uid === P.uid ? 'is-me' : ''}"><span class="p-champ-medal" aria-hidden="true">${medal[c.rank - 1] || '🏅'}</span>${avatarHTML({ ...p, uid: c.uid }, '2.6rem')}<b>${esc(p.name)}</b><span class="p-champ-pts">${c.points} pt</span></li>`;
         }).join('')}</ol></div>` : '';
     if (champs.some((c) => c.uid === P.uid && c.rank === 1)) setTimeout(() => confettiBurst(120, 'rain'), 400);
@@ -2646,34 +2648,34 @@ SCREENS.awards = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="photo-ico photo-ico--sun">${ICONS.trophy}</div>
-        <h1 class="ph-title">Risultati della serata</h1>
-        <p class="ph-lead">Grazie per aver giocato!</p>
-        <div class="share-row"><button type="button" class="btn btn-block" id="shareBtn">${ICONS.share}<span>Condividi la classifica</span></button>
-        <button type="button" class="btn-sec btn-block" id="storyBtn">📱 <span>Condividi la storia</span></button></div>
+        <h1 class="ph-title">${esc(t('ph.aw.results'))}</h1>
+        <p class="ph-lead">${esc(t('ph.aw.thanks'))}</p>
+        <div class="share-row"><button type="button" class="btn btn-block" id="shareBtn">${ICONS.share}<span>${esc(t('ph.aw.share'))}</span></button>
+        <button type="button" class="btn-sec btn-block" id="storyBtn">📱 <span>${esc(t('ph.aw.story'))}</span></button></div>
         ${champsHTML}
-        <div class="full-width">${miniBoardHTML() || '<p class="muted">Nessun gioco votato.</p>'}</div>
-        ${items ? `<div class="p-awards"><h2>Premi speciali</h2><ol class="p-award-list">${items}</ol></div>` : ''}
+        <div class="full-width">${miniBoardHTML() || `<p class="muted">${esc(t('ph.aw.noGames'))}</p>`}</div>
+        ${items ? `<div class="p-awards"><h2>${esc(t('ph.aw.special'))}</h2><ol class="p-award-list">${items}</ol></div>` : ''}
         ${myUnlockedHTML()}
-        ${P.meta.groupId && Object.keys(P.nights || {}).length > 1 ? `<div class="p-awards"><h2>Classifica di sempre</h2>${allTimeHTML(5)}</div>` : ''}
-        <a class="btn-sec btn-block" href="resoconto.html?room=${esc(P.code)}${P.meta.groupId ? `&g=${esc(P.meta.groupId)}` : ''}">📋 <span>Resoconto completo della serata</span></a>
-        <a class="btn-sec btn-block end-home" href="index.html">🏠 <span>Torna alla home</span></a>
+        ${P.meta.groupId && Object.keys(P.nights || {}).length > 1 ? `<div class="p-awards"><h2>${esc(t('ph.at.title'))}</h2>${allTimeHTML(5)}</div>` : ''}
+        <a class="btn-sec btn-block" href="resoconto.html?room=${esc(P.code)}${P.meta.groupId ? `&g=${esc(P.meta.groupId)}` : ''}">📋 <span>${esc(t('ph.aw.report'))}</span></a>
+        <a class="btn-sec btn-block end-home" href="index.html">🏠 <span>${esc(t('ph.aw.home'))}</span></a>
       </main>`;
     $('#shareBtn', el).addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
       try {
         const blob = await renderShareImage({
-          title: P.meta.groupName || 'La nostra serata',
+          title: P.meta.groupName || t('ph.aw.ourNight'),
           subtitle: nightDate(P.meta.createdAt),
           board,
           awards
         });
         const date = new Date().toISOString().slice(0, 10);
-        const how = await shareOrDownload(blob, `GameNight_Show_${date}.png`, 'La classifica della nostra serata giochi');
-        if (how === 'downloaded') toast('Immagine salvata');
+        const how = await shareOrDownload(blob, `GameNight_Show_${date}.png`, t('ph.aw.shareText'));
+        if (how === 'downloaded') toast(t('ph.aw.imgSaved'));
       } catch (err) {
         console.error(err);
-        toast('Non sono riuscito a creare l’immagine.', 'error');
+        toast(t('ph.aw.imgFail'), 'error');
       }
       btn.disabled = false;
     });
@@ -2689,16 +2691,16 @@ SCREENS.awards = {
         const number = P.meta.groupId ? nightsList(P.nights).find((n) => n.room === P.code)?.number : null;
         const id = P.identity || {};
         const blob = await renderStoryImage({
-          title: P.meta.groupName || 'La nostra serata', emblem: id.logo ? '' : (id.emblem || ''), color: id.color,
+          title: P.meta.groupName || t('ph.aw.ourNight'), emblem: id.logo ? '' : (id.emblem || ''), color: id.color,
           subtitle: nightDate(P.meta.createdAt), number, board, mvp, winners,
           awards: awards.filter((a) => !['mvp', 'wins'].includes(a.key)).map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) })),
-          facts: `${board.length} ${board.length === 1 ? 'gioco' : 'giochi'} · ${activePlayers(P.players).length} giocatori`
+          facts: `${t('ph.mem.games', { n: board.length })} · ${t('lib.players', { n: activePlayers(P.players).length })}`
         });
-        const how = await shareOrDownload(blob, `GameNight_Show_storia_${new Date().toISOString().slice(0, 10)}.png`, 'La nostra serata giochi');
-        if (how === 'downloaded') toast('Storia salvata');
+        const how = await shareOrDownload(blob, `GameNight_Show_${t('ph.aw.storyFile')}_${new Date().toISOString().slice(0, 10)}.png`, t('ph.aw.ourNight'));
+        if (how === 'downloaded') toast(t('ph.aw.storySaved'));
       } catch (err) {
         console.error(err);
-        toast('Non sono riuscito a creare l’immagine.', 'error');
+        toast(t('ph.aw.imgFail'), 'error');
       }
       btn.disabled = false;
     });
@@ -2726,7 +2728,7 @@ SCREENS.vote = {
       } else {
         P.vote = draft || emptyVote();
       }
-      if (!mine && draft) toast('Ho ripreso il voto che stavi compilando');
+      if (!mine && draft) toast(t('ph.v.draft'));
     }
     // MVP: solo tra chi ha giocato davvero (se qualcuno guardava)
     const list = others().filter((p) => !g.players || g.players[p.uid]);
@@ -2744,74 +2746,74 @@ SCREENS.vote = {
           <span class="fuse-txt" id="fuseTxt"></span>
         </div>
         <div class="ph-row">
-          <span class="chip chip--tomato">Gioco ${g.order || ''}</span>
-          <span class="secret">${ICONS.lock}<span>Voto segreto</span></span>
+          <span class="chip chip--tomato">${esc(t('ph.v.game', { n: String(g.order || '') }))}</span>
+          <span class="secret">${ICONS.lock}<span>${esc(t('ph.v.secret'))}</span></span>
           <button type="button" class="net-pill" data-netpill aria-live="polite"></button>
         </div>
         <div class="card vgame">
           ${gameImageHTML(g, 'game-img--vote')}
           <h1 class="vgame-name">${esc(g.name)}</h1>
         </div>
-        ${spectator ? '<p class="spectator-note">👀 Hai guardato questa partita: voti come <b>pubblico</b>. Il tuo voto compare a parte e non entra nella media dei giocatori.</p>' : ''}
+        ${spectator ? `<p class="spectator-note">👀 ${t('ph.v.spectator')}</p>` : ''}
 
         <section class="vblock">
           <div class="ph-row">
-            <label for="overall" class="vlabel">Voto generale</label>
+            <label for="overall" class="vlabel">${esc(t('ph.v.overall'))}</label>
             <output id="overallOut" class="score-badge" for="overall">?</output>
           </div>
           <div class="giant-wrap">
             <input type="range" id="overall" class="range range--giant" min="1" max="10" step="1" value="${P.vote.overall ?? 5}" aria-describedby="overallHint">
             <div class="ticks ticks--giant" aria-hidden="true">${Array.from({ length: 10 }, (_, i) => `<span style="--i:${i}">${i + 1}</span>`).join('')}</div>
           </div>
-          <p class="vhint" id="overallHint">Trascina il pollice lungo la barra: il telefono vibra a ogni scatto.</p>
+          <p class="vhint" id="overallHint">${esc(t('ph.v.overallHint'))}</p>
         </section>
 
-        ${this.quick ? '<p class="quick-badge">Voto veloce: solo voto generale e MVP</p>' : ''}
+        ${this.quick ? `<p class="quick-badge">${esc(t('ph.v.quick'))}</p>` : ''}
         ${this.crits.map((c) => `
           <fieldset class="vblock">
             <legend class="vlabel">${esc(c.label)}</legend>
             <p class="vhint">${esc(c.hint)}</p>
             <div class="pips-row" data-crit="${c.key}" style="--cc:${c.color}">
-              ${[1, 2, 3, 4, 5].map((k) => `<button type="button" class="pip-btn" data-k="${k}" aria-pressed="false" aria-label="${esc(c.label)}: ${k} su 5">${k}</button>`).join('')}
+              ${[1, 2, 3, 4, 5].map((k) => `<button type="button" class="pip-btn" data-k="${k}" aria-pressed="false" aria-label="${esc(t('ph.v.pipAria', { crit: c.label, n: k }))}">${k}</button>`).join('')}
             </div>
-            <button type="button" class="na-btn" data-na="${c.key}" aria-pressed="false">Non giudico</button>
+            <button type="button" class="na-btn" data-na="${c.key}" aria-pressed="false">${esc(t('ph.v.na'))}</button>
           </fieldset>`).join('')}
 
         <fieldset class="vblock">
-          <legend class="vlabel">MVP della partita</legend>
+          <legend class="vlabel">${esc(t('ph.v.mvp'))}</legend>
           ${list.length
-            ? `<p class="vhint">Chi è stato il giocatore più memorabile? Trascina la sua carta sul tavolo (o toccala).</p>
+            ? `<p class="vhint">${esc(t('ph.v.mvpHint'))}</p>
                <div class="mvp-slot" id="mvpSlot" aria-live="polite"></div>
                <div class="mvp-grid mvp-hand" style="--n:${list.length}">${list.map((p, i) => `
                  <button type="button" class="mvp-btn mvp-card" data-mvp="${esc(p.uid)}" aria-pressed="false" style="--pc:${safeColor(p.color)}; --k:${i - (list.length - 1) / 2}">
                    <span class="mvp-av">${ICONS.crown}${avatarHTML(p, '3.9rem')}</span>
                    <span class="mvp-n">${esc(p.name)}</span>
                  </button>`).join('')}</div>`
-            : '<p class="vhint">Nessun altro giocatore da votare.</p>'}
+            : `<p class="vhint">${esc(t('ph.v.mvpNone'))}</p>`}
         </fieldset>
 
         <fieldset class="vblock guess-block">
-          <legend class="vlabel">Indovina la media <span class="muted">(facoltativo)</span></legend>
-          <p class="vhint">Che media prenderà questo gioco dal gruppo? Chi ci va più vicino diventa l’oracolo.</p>
+          <legend class="vlabel">${esc(t('ph.v.guess'))} <span class="muted">${esc(t('common.optional'))}</span></legend>
+          <p class="vhint">${esc(t('ph.v.guessHint'))}</p>
           <div class="guess-row">
-            <input type="range" id="guess" class="range range--guess" min="1" max="10" step="0.5" value="${P.vote.guess ?? 5.5}" aria-label="La tua previsione della media">
+            <input type="range" id="guess" class="range range--guess" min="1" max="10" step="0.5" value="${P.vote.guess ?? 5.5}" aria-label="${esc(t('ph.v.guessAria'))}">
             <output id="guessOut" class="score-badge score-badge--sm" for="guess">?</output>
           </div>
-          <button type="button" class="link-btn" id="guessClear">Non voglio indovinare</button>
+          <button type="button" class="link-btn" id="guessClear">${esc(t('ph.v.guessClear'))}</button>
         </fieldset>
 
         <section class="vblock">
-          <label class="vlabel" for="voteComment">Commento <span class="muted">(facoltativo, compare sulla TV al reveal)</span></label>
-          <input class="input" id="voteComment" maxlength="80" autocomplete="off" placeholder="Es. Mai più contro Marco" value="${esc(P.vote.comment || '')}">
+          <label class="vlabel" for="voteComment">${esc(t('ph.v.comment'))} <span class="muted">${esc(t('ph.v.commentHint'))}</span></label>
+          <input class="input" id="voteComment" maxlength="80" autocomplete="off" placeholder="${esc(t('ph.v.commentPh'))}" value="${esc(P.vote.comment || '')}">
         </section>
         <details class="vblock priv-note" ${note ? 'open' : ''}>
-          <summary class="vlabel">Nota privata <span class="muted">(la vedi solo tu)</span></summary>
-          <textarea class="input" id="privNote" maxlength="300" rows="2" placeholder="Strategie, regole da ricordare, rivincite da chiedere…">${esc(note)}</textarea>
+          <summary class="vlabel">${esc(t('ph.v.note'))} <span class="muted">${esc(t('ph.v.noteHint'))}</span></summary>
+          <textarea class="input" id="privNote" maxlength="300" rows="2" placeholder="${esc(t('ph.v.notePh'))}">${esc(note)}</textarea>
         </details>
 
         <p class="form-error" id="voteErr" role="alert"></p>
-        <button type="button" class="btn btn-block" id="sendVote">${mine ? 'Aggiorna voto' : 'Invia voto'}</button>
-        <p class="muted center small">I voti restano nascosti fino al reveal sulla TV.</p>
+        <button type="button" class="btn btn-block" id="sendVote">${esc(mine ? t('ph.v.update') : t('ph.v.send'))}</button>
+        <p class="muted center small">${esc(t('ph.v.hidden'))}</p>
       </main>`;
 
     const range = $('#overall', el);
@@ -2935,21 +2937,21 @@ SCREENS.vote = {
   paintFuse() {
     const box = $('#fuse');
     if (!box) return;
-    const t = voteTimer(P.state, serverNow());
-    box.hidden = !t;
-    if (!t) return;
-    box.style.setProperty('--tc', timerColor(t.frac));
-    $('#fuseRope').style.width = `${(t.frac * 100).toFixed(2)}%`;
-    box.style.setProperty('--fx', `${(t.frac * 100).toFixed(2)}%`);
-    box.classList.toggle('is-hot', !t.over && !t.paused && t.sec <= 10);
-    box.classList.toggle('is-over', t.over);
-    box.classList.toggle('is-paused', t.paused);
-    $('#fuseTxt').textContent = t.over ? 'Tempo scaduto: vota subito!' : t.paused ? 'Timer in pausa' : `${t.sec >= 60 ? `${Math.floor(t.sec / 60)}:${String(t.sec % 60).padStart(2, '0')}` : `${t.sec} s`}`;
-    if (!t.paused && t.sec !== this.fuseSec && this.fuseSec !== undefined) {
-      if (t.sec === 10) buzz([40, 60, 40]);
-      if (t.over) buzz([120, 80, 120, 80, 200]);
+    const tm = voteTimer(P.state, serverNow());
+    box.hidden = !tm;
+    if (!tm) return;
+    box.style.setProperty('--tc', timerColor(tm.frac));
+    $('#fuseRope').style.width = `${(tm.frac * 100).toFixed(2)}%`;
+    box.style.setProperty('--fx', `${(tm.frac * 100).toFixed(2)}%`);
+    box.classList.toggle('is-hot', !tm.over && !tm.paused && tm.sec <= 10);
+    box.classList.toggle('is-over', tm.over);
+    box.classList.toggle('is-paused', tm.paused);
+    $('#fuseTxt').textContent = tm.over ? t('ph.v.timeUp') : tm.paused ? t('ph.v.timerPaused') : `${tm.sec >= 60 ? `${Math.floor(tm.sec / 60)}:${String(tm.sec % 60).padStart(2, '0')}` : `${tm.sec} s`}`;
+    if (!tm.paused && tm.sec !== this.fuseSec && this.fuseSec !== undefined) {
+      if (tm.sec === 10) buzz([40, 60, 40]);
+      if (tm.over) buzz([120, 80, 120, 80, 200]);
     }
-    this.fuseSec = t.sec;
+    this.fuseSec = tm.sec;
   },
 
   unmount() {
@@ -2994,8 +2996,8 @@ SCREENS.vote = {
         slot.dataset.sig = sig;
         slot.classList.toggle('is-set', Boolean(p));
         slot.innerHTML = p
-          ? `<div class="mvp-played" style="--pc:${safeColor(p.color)}"><span class="mvp-av">${ICONS.crown}${avatarHTML(p, '3.4rem')}</span><span class="mvp-played-txt"><small>Il tuo MVP</small><b>${esc(p.name)}</b></span><button type="button" class="link-btn" data-mvpclear>Cambia</button></div>`
-          : '<span class="mvp-slot-empty"><b>Il tavolo</b><small>Trascina qui la carta del tuo MVP</small></span>';
+          ? `<div class="mvp-played" style="--pc:${safeColor(p.color)}"><span class="mvp-av">${ICONS.crown}${avatarHTML(p, '3.4rem')}</span><span class="mvp-played-txt"><small>${esc(t('ph.v.myMvp'))}</small><b>${esc(p.name)}</b></span><button type="button" class="link-btn" data-mvpclear>${esc(t('ph.v.change'))}</button></div>`
+          : `<span class="mvp-slot-empty"><b>${esc(t('ph.v.table'))}</b><small>${esc(t('ph.v.tableHint'))}</small></span>`;
       }
     }
     const gOut = $('#guessOut');
@@ -3017,11 +3019,11 @@ SCREENS.vote = {
   async send() {
     const v = P.vote;
     const missing = [];
-    if (!v.overall) missing.push('voto generale');
-    for (const c of this.crits) if (v[c.key] === null || v[c.key] === undefined) missing.push(`${c.label.toLowerCase()} (o "Non giudico")`);
+    if (!v.overall) missing.push(t('ph.v.missOverall'));
+    for (const c of this.crits) if (v[c.key] === null || v[c.key] === undefined) missing.push(t('ph.v.missCrit', { crit: c.label.toLowerCase() }));
     if (this.needMvp && !v.mvp) missing.push('MVP');
     if (missing.length) {
-      $('#voteErr').textContent = `Manca: ${missing.join(', ')}.`;
+      $('#voteErr').textContent = t('ph.v.missing', { list: missing.join(', ') });
       return;
     }
     const gid = P.state.gameId;
@@ -3035,7 +3037,7 @@ SCREENS.vote = {
     if (comment) data.comment = comment;
     try {
       outboxSave(gid, { ...data, at: null });
-      await Net.track('Voto', set(roomRef(P.code, `votes/${gid}/${P.uid}`), data));
+      await Net.track('vote', set(roomRef(P.code, `votes/${gid}/${P.uid}`), data));
       outboxClear();
       clearDrafts();
       P.editingVote = false;
@@ -3043,7 +3045,7 @@ SCREENS.vote = {
       render();
     } catch (e) {
       const msg = String(e?.code || e?.message || '').toLowerCase().includes('permission')
-        ? 'La votazione è già chiusa.'
+        ? t('ph.v.closed')
         : explainError(e);
       $('#voteErr').textContent = msg;
       btn.disabled = false;
@@ -3058,11 +3060,11 @@ SCREENS.voted = {
       <main class="phone phone--center">
         ${phoneTop()}
         <div class="sent-badge">${ICONS.check}</div>
-        <h1 class="ph-title" id="votedTitle">Voto inviato!</h1>
-        <p class="ph-lead" id="votedLead">Aspetta gli altri: il reveal è sulla TV.</p>
+        <h1 class="ph-title" id="votedTitle">${esc(t('ph.vote.sent'))}</h1>
+        <p class="ph-lead" id="votedLead">${esc(t('ph.vote.sentLead'))}</p>
         <div class="card my-vote" id="myVote"></div>
         <p class="vote-progress" id="voteProg" aria-live="polite"></p>
-        <button type="button" class="btn-sec" id="editVote">Modifica voto</button>
+        <button type="button" class="btn-sec" id="editVote">${esc(t('ph.v.edit'))}</button>
         ${photoButtonHTML()}
       </main>`;
     $('#editVote', el).addEventListener('click', () => {
@@ -3077,17 +3079,17 @@ SCREENS.voted = {
     if (!mine) return;
     const ps = activePlayers(P.players);
     const voted = ps.filter((p) => P.votes[gid]?.[p.uid]).length;
-    $('#voteProg').textContent = `${voted} su ${ps.length} hanno votato`;
+    $('#voteProg').textContent = t('ph.rg.voted', { n: voted, total: ps.length });
 
     const sig = JSON.stringify([mine, P.players[mine.mvp]?.name]);
     if (sig === this.sig) return;
     this.sig = sig;
-    const mvp = mine.mvp ? (P.players[mine.mvp] || { name: 'Ex giocatore' }) : null;
+    const mvp = mine.mvp ? (P.players[mine.mvp] || { name: t('ph.exPlayer') }) : null;
     $('#myVote').innerHTML = `
       <div class="my-vote-head"><b class="vgame-name">${esc(g.name)}</b><span class="score-badge is-set">${mine.overall}</span></div>
       ${activeCriteria(P.meta.voting).some((c) => typeof mine[c.key] === 'number') ? `<div class="my-vote-crit">${activeCriteria(P.meta.voting).map((c) => `<span class="bcrit-item" style="--cc:${c.color}">${esc(c.short || c.label)} ${typeof mine[c.key] === 'number' ? mine[c.key] : '—'}</span>`).join('')}</div>` : ''}
       ${mine.comment ? `<p class="my-vote-guess">«${esc(mine.comment)}»</p>` : ''}
-      ${typeof mine.guess === 'number' ? `<p class="my-vote-guess">La tua previsione della media: <b>${fmt(mine.guess, Number.isInteger(mine.guess) ? 0 : 1)}</b></p>` : ''}
+      ${typeof mine.guess === 'number' ? `<p class="my-vote-guess">${t('ph.v.myGuess', { n: `<b>${fmt(mine.guess, Number.isInteger(mine.guess) ? 0 : 1)}</b>` })}</p>` : ''}
       ${mvp ? `<div class="my-vote-mvp">${avatarHTML({ ...mvp, uid: mine.mvp }, '2.4rem')}<span>MVP: <b>${esc(mvp.name)}</b></span></div>` : ''}`;
   }
 };

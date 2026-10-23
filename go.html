@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E0A26">
+  <link rel="icon" href="assets/favicon-48.png" type="image/png" sizes="48x48">
+  <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/ui.css">
+  <meta name="gnr-title" content="go.title">
+  <title>GameNight Show</title>
+</head>
+<!--
+  Collegamenti stabili: go.html?to=discord porta sempre all'invito Discord attuale, go.html?to=github
+  al repository, e così via per ogni id di config/links.json. Da usare dove l'app non c'è
+  (README, profilo GitHub, QR stampati): cambiato il JSON, cambiano anche questi.
+  Non accetta indirizzi, solo id: niente "open redirect".
+-->
+<body class="ui-body go-body">
+  <main class="go" id="main">
+    <img src="assets/brand/logo-256.webp" width="96" height="96" alt="" class="go-logo">
+    <h1 id="goTitle" data-i18n="go.title">Ti porto a destinazione…</h1>
+    <p id="goMsg" aria-live="polite"></p>
+    <ul class="link-list" id="goList" hidden></ul>
+    <p><a class="ui-btn ui-btn--ghost" href="index.html" data-i18n="go.home">Apri GameNight Show</a></p>
+  </main>
+  <noscript>Per seguire questo collegamento serve JavaScript attivo. · This link needs JavaScript.</noscript>
+  <script type="module" src="js/go.js"></script>
+</body>
+</html>
