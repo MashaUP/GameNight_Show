@@ -36,6 +36,29 @@
           },
           "armadioReadOnly": {
             ".validate": "newData.isBoolean()"
+          },
+          "ambient": {
+            ".validate": "newData.isBoolean()"
+          },
+          "customSfx": {
+            "$id": {
+              ".validate": "$id.matches(/^c[a-z0-9]{1,8}$/) && newData.hasChildren(['l', 'i']) && newData.child('l').isString() && newData.child('l').val().length <= 24 && !newData.child('l').val().contains('<') && newData.child('i').isString() && newData.child('i').val().length <= 8 && !newData.child('i').val().contains('<')",
+              "l": {
+                ".validate": true
+              },
+              "i": {
+                ".validate": true
+              },
+              "$other": {
+                ".validate": "false"
+              }
+            }
+          },
+          "atmoLevel": {
+            ".validate": "newData.isString() && newData.val().matches(/^(soft|normal|strong)$/)"
+          },
+          "atmoSound": {
+            ".validate": "newData.isBoolean()"
           }
         },
         "state": {
@@ -204,6 +227,55 @@
         "table": {
           ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || root.child('rooms').child($code).child('cohosts').child(auth.uid).val() === true)"
         },
+        "timer": {
+          ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || root.child('rooms').child($code).child('cohosts').child(auth.uid).val() === true)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['id', 'kind', 'secs', 'left', 'status', 'rev']) && (!data.exists() || newData.child('rev').val() === data.child('rev').val() + 1))",
+          "v": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99"
+          },
+          "id": {
+            ".validate": "newData.isString() && newData.val().matches(/^t[a-z0-9]{1,23}$/)"
+          },
+          "kind": {
+            ".validate": "newData.isString() && newData.val().matches(/^(turn|round|break|custom)$/)"
+          },
+          "secs": {
+            ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 7200"
+          },
+          "left": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 7200000"
+          },
+          "status": {
+            ".validate": "newData.isString() && newData.val().matches(/^(running|paused|idle)$/)"
+          },
+          "startAt": {
+            ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+          },
+          "round": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 999"
+          },
+          "label": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "follow": {
+            ".validate": "newData.isBoolean()"
+          },
+          "sound": {
+            ".validate": "newData.isBoolean()"
+          },
+          "nightPaused": {
+            ".validate": "newData.isBoolean()"
+          },
+          "rev": {
+            ".validate": "newData.isNumber() && newData.val() >= 1"
+          },
+          "by": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "$other": {
+            ".validate": "false"
+          }
+        },
         "quiz": {
           ".write": "auth != null && root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid"
         },
@@ -368,6 +440,9 @@
             },
             "video": {
               ".validate": "newData.isString() && newData.val().length <= 200 && newData.val().beginsWith('https://') && !newData.val().contains('\"') && !newData.val().contains('<') && !newData.val().contains('>')"
+            },
+            "manual": {
+              ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().beginsWith('https://') && !newData.val().contains('\"') && !newData.val().contains('<') && !newData.val().contains('>') && !newData.val().contains(\"'\")"
             },
             "sel": {
               ".validate": "newData.isBoolean()"
@@ -586,6 +661,9 @@
             },
             "video": {
               ".validate": "newData.isString() && newData.val().length <= 200 && newData.val().beginsWith('https://') && !newData.val().contains('\"') && !newData.val().contains('<') && !newData.val().contains('>')"
+            },
+            "manual": {
+              ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().beginsWith('https://') && !newData.val().contains('\"') && !newData.val().contains('<') && !newData.val().contains('>') && !newData.val().contains(\"'\")"
             },
             "sel": {
               ".validate": "newData.isBoolean()"
@@ -848,6 +926,15 @@
             ".validate": "$aid.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length <= 40 && (!newData.child('key').exists() || (newData.child('key').isString() && newData.child('key').val().matches(/^[A-Z0-9]{8}$/))) && (!newData.child('at').exists() || newData.child('at').isNumber()) && (!newData.child('own').exists() || newData.child('own').isBoolean())"
           }
         },
+        "favs": {
+          "$aid": {
+            ".validate": "$aid.matches(/^[A-Z0-9]{6}$/)",
+            "$gid": {
+              ".write": "auth != null && root.child('people').child($pid).child('uids').child(auth.uid).exists()",
+              ".validate": "$gid.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.isNumber() && newData.val() > 0"
+            }
+          }
+        },
         "$other": {
           ".validate": "false"
         }
@@ -897,7 +984,7 @@
         },
         "fields": {
           "$f": {
-            ".validate": "$f.matches(/^(loc|status)$/) && newData.isBoolean()"
+            ".validate": "$f.matches(/^(loc|status|exp|rules|onlyAvail)$/) && newData.isBoolean()"
           }
         },
         "games": {

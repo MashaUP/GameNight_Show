@@ -1,6 +1,7 @@
 // Strumenti: squadre bilanciate, quiz del gruppo, invito da calendario (.ics),
 // importazione della collezione di BoardGameGeek (file CSV) e geometria della ruota.
 import { buildAllTime, nightsByDate, seasonTables } from './stats.js';
+import { t, fmtNum } from './i18n.js';
 
 const shuffle = (list) => {
   const a = [...list];
@@ -25,18 +26,20 @@ export function balancedTeams(uids, n = 2, skill = {}) {
   ranked.forEach((p, i) => {
     const round = Math.floor(i / k);
     const pos = i % k;
-    const t = round % 2 === 0 ? pos : k - 1 - pos;
-    teams[t].push(p.u);
-    sums[t] += p.s;
+    const ti = round % 2 === 0 ? pos : k - 1 - pos;
+    teams[ti].push(p.u);
+    sums[ti] += p.s;
   });
   return teams;
 }
 
+// Nel database le squadre sono solo elenchi di uid: il nome si legge qui, nella lingua del dispositivo.
+const team = (key, color, icon) => ({ key, color, icon, get name() { return t(`extras.team.${key}`); } });
 export const TEAM_STYLE = [
-  { name: 'Rossi', color: '#FF5A4E', icon: '🔥' },
-  { name: 'Blu', color: '#4D96FF', icon: '🌊' },
-  { name: 'Verdi', color: '#8AC926', icon: '🌿' },
-  { name: 'Gialli', color: '#FFC93C', icon: '⚡' }
+  team('red', '#FF5A4E', '🔥'),
+  team('blue', '#4D96FF', '🌊'),
+  team('green', '#8AC926', '🌿'),
+  team('yellow', '#FFC93C', '⚡')
 ];
 
 /** Forza di ogni giocatore presente: vittorie / partite nello storico (con un minimo di partite), più stasera. */
@@ -80,44 +83,51 @@ export function wheelGradient(colors) {
 // Quiz del gruppo (domande dallo storico) + domande ludiche fisse
 // ---------------------------------------------------------------------------
 
+// Domande fisse: k è la chiave del testo (extras.q.<k>), i parametri vanno nel testo; le risposte che
+// cambiano con la lingua si scrivono come "@nome" (extras.name.<nome>), le altre sono nomi propri o numeri.
 const BANK = [
-  { q: 'In che anno è uscito I Coloni di Catan?', a: '1995', o: ['1989', '2001', '2008'] },
-  { q: 'Chi ha inventato I Coloni di Catan?', a: 'Klaus Teuber', o: ['Reiner Knizia', 'Uwe Rosenberg', 'Alan R. Moon'] },
-  { q: 'Chi ha creato Codenames?', a: 'Vlaada Chvátil', o: ['Antoine Bauza', 'Matt Leacock', 'Bruno Cathala'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2010?', a: 'Dixit', o: ['Carcassonne', 'Azul', 'Hanabi'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2018?', a: 'Azul', o: ['Kingdomino', 'Codenames', 'Just One'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2019?', a: 'Just One', o: ['Azul', 'Cascadia', 'Dixit'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2022?', a: 'Cascadia', o: ['MicroMacro', 'Dorfromantik', 'Sky Team'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2004?', a: 'Ticket to Ride', o: ['Carcassonne', 'I Coloni di Catan', 'Dixit'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2001?', a: 'Carcassonne', o: ['Ticket to Ride', 'Bohnanza', 'Hanabi'] },
-  { q: 'Chi ha creato Pandemic?', a: 'Matt Leacock', o: ['Klaus Teuber', 'Jamey Stegmaier', 'Vlaada Chvátil'] },
-  { q: 'Chi ha creato Ticket to Ride?', a: 'Alan R. Moon', o: ['Bruno Faidutti', 'Klaus-Jürgen Wrede', 'Reiner Knizia'] },
-  { q: 'Chi ha creato Carcassonne?', a: 'Klaus-Jürgen Wrede', o: ['Michael Kiesling', 'Klaus Teuber', 'Antoine Bauza'] },
-  { q: 'Chi ha creato Azul?', a: 'Michael Kiesling', o: ['Uwe Rosenberg', 'Matt Leacock', 'Alan R. Moon'] },
-  { q: 'Da quale gioco nasce il Monopoly?', a: 'The Landlord’s Game', o: ['Il gioco dell’oca', 'Sorry!', 'Scarabeo'] },
-  { q: 'Quante facce ha il dado dei giochi di ruolo più famoso, il d20?', a: '20', o: ['12', '10', '24'] },
-  { q: 'Quante carte ha un mazzo francese senza jolly?', a: '52', o: ['40', '54', '48'] },
-  { q: 'Quante caselle ha una scacchiera?', a: '64', o: ['49', '81', '100'] },
-  { q: 'Quanti pezzi ha ogni giocatore a scacchi?', a: '16', o: ['12', '14', '18'] },
-  { q: 'Quante carte ci sono in un mazzo classico di UNO?', a: '108', o: ['100', '112', '96'] },
-  { q: 'Quante tessere ha un set di Mahjong?', a: '144', o: ['108', '136', '160'] },
-  { q: 'Quanti blocchi ha una torre di Jenga?', a: '54', o: ['48', '60', '42'] },
-  { q: 'Quante carte ha Dobble (Spot It!)?', a: '55', o: ['50', '57', '62'] },
-  { q: 'Quanti simboli ci sono su ogni carta di Dobble?', a: '8', o: ['6', '7', '10'] },
-  { q: 'Quante pedine ha ogni giocatore a backgammon?', a: '15', o: ['12', '16', '10'] },
-  { q: 'Su che griglia si gioca a Go (tavoliere classico)?', a: '19 × 19', o: ['15 × 15', '21 × 21', '13 × 13'] },
-  { q: 'Chi ha inventato Risiko (La Conquête du Monde)?', a: 'Albert Lamorisse', o: ['Anthony Pratt', 'Alfred Butts', 'Merle Robbins'] },
-  { q: 'Chi ha inventato Cluedo?', a: 'Anthony Pratt', o: ['Albert Lamorisse', 'Klaus Teuber', 'Elizabeth Magie'] },
-  { q: 'Quante stanze ci sono nella villa di Cluedo?', a: '9', o: ['6', '8', '12'] },
-  { q: 'Chi ha inventato lo Scarabeo/Scrabble?', a: 'Alfred Mosher Butts', o: ['Merle Robbins', 'Anthony Pratt', 'Albert Lamorisse'] },
-  { q: 'Chi ha creato Dixit?', a: 'Jean-Louis Roubira', o: ['Antoine Bauza', 'Bruno Cathala', 'Vlaada Chvátil'] },
-  { q: 'Quale gioco cooperativo ha vinto lo Spiel des Jahres nel 2013?', a: 'Hanabi', o: ['Pandemic', 'The Crew', 'Just One'] },
-  { q: 'Quale gioco ha vinto lo Spiel des Jahres nel 2024?', a: 'Sky Team', o: ['Dorfromantik', 'Cascadia', 'MicroMacro'] }
+  { k: 'year', p: { game: '@catan' }, a: '1995', o: ['1989', '2001', '2008'] },
+  { k: 'inventor', p: { game: '@catan' }, a: 'Klaus Teuber', o: ['Reiner Knizia', 'Uwe Rosenberg', 'Alan R. Moon'] },
+  { k: 'creator', p: { game: 'Codenames' }, a: 'Vlaada Chvátil', o: ['Antoine Bauza', 'Matt Leacock', 'Bruno Cathala'] },
+  { k: 'sdj', p: { year: '2010' }, a: 'Dixit', o: ['Carcassonne', 'Azul', 'Hanabi'] },
+  { k: 'sdj', p: { year: '2018' }, a: 'Azul', o: ['Kingdomino', 'Codenames', 'Just One'] },
+  { k: 'sdj', p: { year: '2019' }, a: 'Just One', o: ['Azul', 'Cascadia', 'Dixit'] },
+  { k: 'sdj', p: { year: '2022' }, a: 'Cascadia', o: ['MicroMacro', 'Dorfromantik', 'Sky Team'] },
+  { k: 'sdj', p: { year: '2004' }, a: 'Ticket to Ride', o: ['Carcassonne', '@catan', 'Dixit'] },
+  { k: 'sdj', p: { year: '2001' }, a: 'Carcassonne', o: ['Ticket to Ride', 'Bohnanza', 'Hanabi'] },
+  { k: 'creator', p: { game: 'Pandemic' }, a: 'Matt Leacock', o: ['Klaus Teuber', 'Jamey Stegmaier', 'Vlaada Chvátil'] },
+  { k: 'creator', p: { game: 'Ticket to Ride' }, a: 'Alan R. Moon', o: ['Bruno Faidutti', 'Klaus-Jürgen Wrede', 'Reiner Knizia'] },
+  { k: 'creator', p: { game: 'Carcassonne' }, a: 'Klaus-Jürgen Wrede', o: ['Michael Kiesling', 'Klaus Teuber', 'Antoine Bauza'] },
+  { k: 'creator', p: { game: 'Azul' }, a: 'Michael Kiesling', o: ['Uwe Rosenberg', 'Matt Leacock', 'Alan R. Moon'] },
+  { k: 'monopoly', a: 'The Landlord’s Game', o: ['@goose', 'Sorry!', '@scrabble'] },
+  { k: 'd20', a: '20', o: ['12', '10', '24'] },
+  { k: 'deck', a: '52', o: ['40', '54', '48'] },
+  { k: 'chessboard', a: '64', o: ['49', '81', '100'] },
+  { k: 'chessPieces', a: '16', o: ['12', '14', '18'] },
+  { k: 'uno', a: '108', o: ['100', '112', '96'] },
+  { k: 'mahjong', a: '144', o: ['108', '136', '160'] },
+  { k: 'jenga', a: '54', o: ['48', '60', '42'] },
+  { k: 'dobble', a: '55', o: ['50', '57', '62'] },
+  { k: 'dobbleSymbols', a: '8', o: ['6', '7', '10'] },
+  { k: 'backgammon', a: '15', o: ['12', '16', '10'] },
+  { k: 'go', a: '19 × 19', o: ['15 × 15', '21 × 21', '13 × 13'] },
+  { k: 'inventor', p: { game: '@risk' }, a: 'Albert Lamorisse', o: ['Anthony Pratt', 'Alfred Butts', 'Merle Robbins'] },
+  { k: 'inventor', p: { game: 'Cluedo' }, a: 'Anthony Pratt', o: ['Albert Lamorisse', 'Klaus Teuber', 'Elizabeth Magie'] },
+  { k: 'cluedoRooms', a: '9', o: ['6', '8', '12'] },
+  { k: 'inventor', p: { game: '@scrabbleFull' }, a: 'Alfred Mosher Butts', o: ['Merle Robbins', 'Anthony Pratt', 'Albert Lamorisse'] },
+  { k: 'creator', p: { game: 'Dixit' }, a: 'Jean-Louis Roubira', o: ['Antoine Bauza', 'Bruno Cathala', 'Vlaada Chvátil'] },
+  { k: 'sdjCoop', p: { year: '2013' }, a: 'Hanabi', o: ['Pandemic', 'The Crew', 'Just One'] },
+  { k: 'sdj', p: { year: '2024' }, a: 'Sky Team', o: ['Dorfromantik', 'Cascadia', 'MicroMacro'] }
 ];
 
+/** Nome nella lingua scelta per i valori "@nome", gli altri restano come sono. */
+const word = (v) => (typeof v === 'string' && v.startsWith('@') ? t(`extras.name.${v.slice(1)}`) : v);
+/** Testo di una domanda fissa nella lingua scelta. */
+const bankQ = (b) => t(`extras.q.${b.k}`, Object.fromEntries(Object.entries(b.p || {}).map(([k, v]) => [k, word(v)])));
+
 const pick = (list, n) => shuffle(list).slice(0, n);
-/** "a Dixit", ma "ad Azul" (davanti a una a). */
-const aDi = (name) => (/^[aàAÀ]/.test(String(name)) ? `ad ${name}` : `a ${name}`);
+/** "a Dixit", ma "ad Azul" (davanti a una a); in inglese "to Dixit". */
+const aDi = (name) => t(/^[aàAÀ]/.test(String(name)) ? 'extras.q.toVowel' : 'extras.q.to', { name: String(name) });
 
 /** Una domanda con la risposta giusta e fino a 3 sbagliate (testi diversi), rimescolate. */
 function make(kind, q, right, wrong) {
@@ -133,27 +143,27 @@ export function groupQuestions({ nights = {}, library = {}, board = [], names = 
   const at = buildAllTime(nights, library);
   const people = [...new Set([...at.wins.map((w) => w.name), ...at.mvp.map((m) => m.name)])];
   const games = at.games.map((g) => g.name);
-  if (at.games.length >= 2 && at.games[0].rank === 1 && at.games[1].rank !== 1) out.push(make('group', 'Quale gioco ha la media più alta di sempre nel gruppo?', at.games[0].name, games.slice(1)));
-  if (at.wins.length >= 2 && at.wins[0].wins > at.wins[1].wins) out.push(make('group', 'Chi ha vinto più partite di sempre?', at.wins[0].name, people.filter((p) => p !== at.wins[0].name)));
-  if (at.mvp.length >= 2 && at.mvp[0].votes > at.mvp[1].votes) out.push(make('group', 'Chi ha ricevuto più voti MVP di sempre?', at.mvp[0].name, people.filter((p) => p !== at.mvp[0].name)));
-  if (at.mostPlayed.length >= 2 && at.mostPlayed[0].nights > at.mostPlayed[1].nights) out.push(make('group', 'Qual è il gioco giocato in più serate?', at.mostPlayed[0].name, at.mostPlayed.slice(1).map((g) => g.name)));
+  if (at.games.length >= 2 && at.games[0].rank === 1 && at.games[1].rank !== 1) out.push(make('group', t('extras.q.bestAvg'), at.games[0].name, games.slice(1)));
+  if (at.wins.length >= 2 && at.wins[0].wins > at.wins[1].wins) out.push(make('group', t('extras.q.mostWins'), at.wins[0].name, people.filter((p) => p !== at.wins[0].name)));
+  if (at.mvp.length >= 2 && at.mvp[0].votes > at.mvp[1].votes) out.push(make('group', t('extras.q.mostMvp'), at.mvp[0].name, people.filter((p) => p !== at.mvp[0].name)));
+  if (at.mostPlayed.length >= 2 && at.mostPlayed[0].nights > at.mostPlayed[1].nights) out.push(make('group', t('extras.q.mostPlayed'), at.mostPlayed[0].name, at.mostPlayed.slice(1).map((g) => g.name)));
   const n = nightsByDate(nights).length;
-  if (n >= 3) out.push(make('group', 'Quante serate ha fatto il gruppo finora?', n, [n - 2, n + 1, n + 3, n - 1].filter((x) => x > 0)));
+  if (n >= 3) out.push(make('group', t('extras.q.nights'), n, [n - 2, n + 1, n + 3, n - 1].filter((x) => x > 0)));
   const season = seasonTables(nights)[0];
-  if (season && season.rows.length >= 2 && season.rows[0].rank === 1 && season.rows[1].rank !== 1) out.push(make('group', `Chi è in testa alla stagione ${season.name}?`, season.rows[0].name, season.rows.slice(1).map((r) => r.name)));
+  if (season && season.rows.length >= 2 && season.rows[0].rank === 1 && season.rows[1].rank !== 1) out.push(make('group', t('extras.q.seasonLead', { season: season.name }), season.rows[0].name, season.rows.slice(1).map((r) => r.name)));
   // Stasera
-  if (board.length >= 2 && board[0].rank === 1 && board[1].rank !== 1) out.push(make('tonight', 'Quale gioco è primo stasera?', board[0].name, board.slice(1).map((r) => r.name)));
+  if (board.length >= 2 && board[0].rank === 1 && board[1].rank !== 1) out.push(make('tonight', t('extras.q.topTonight'), board[0].name, board.slice(1).map((r) => r.name)));
   for (const r of board.slice(0, 4)) {
     const list = r.stats?.list || [];
     if (list.length < 3) continue;
     const max = Math.max(...list.map((v) => v.overall));
     const top = list.filter((v) => v.overall === max);
     if (top.length === 1 && names[top[0].uid]) {
-      out.push(make('tonight', `Chi ha dato il voto più alto ${aDi(r.name)}?`, names[top[0].uid], list.filter((v) => v !== top[0]).map((v) => names[v.uid]).filter(Boolean)));
+      out.push(make('tonight', t('extras.q.topVoter', { toGame: aDi(r.name) }), names[top[0].uid], list.filter((v) => v !== top[0]).map((v) => names[v.uid]).filter(Boolean)));
     }
     const avg = Math.round(r.stats.avg * 10) / 10;
-    const f = (x) => x.toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    out.push(make('tonight', `Che media ha preso ${r.name} stasera?`, f(avg), [avg - 1.2, avg + 0.8, avg - 0.5, avg + 1.5].filter((x) => x >= 1 && x <= 10).map(f)));
+    const f = (x) => fmtNum(x, 1);
+    out.push(make('tonight', t('extras.q.avgTonight', { game: r.name }), f(avg), [avg - 1.2, avg + 0.8, avg - 0.5, avg + 1.5].filter((x) => x >= 1 && x <= 10).map(f)));
   }
   return out.filter(Boolean);
 }
@@ -161,7 +171,7 @@ export function groupQuestions({ nights = {}, library = {}, board = [], names = 
 /** Round di quiz: fino a metà domande sul gruppo, il resto dalla banca delle curiosità ludiche. */
 export function buildQuizRound(ctx, count = 5) {
   const group = pick(groupQuestions(ctx), Math.ceil(count * 0.6));
-  const trivia = pick(BANK, count - group.length).map((b) => make('trivia', b.q, b.a, b.o));
+  const trivia = pick(BANK, count - group.length).map((b) => make('trivia', bankQ(b), word(b.a), b.o.map(word)));
   return shuffle([...group, ...trivia]).slice(0, count);
 }
 
@@ -184,8 +194,8 @@ export function nextNightICS({ at, place = '', note = '', group = 'Game Night', 
     `DTEND:${icsDate(start + hours * 3600000)}`,
     `SUMMARY:${icsText(`🎲 Game Night · ${group}`)}`,
     place ? `LOCATION:${icsText(place)}` : '',
-    `DESCRIPTION:${icsText([note, url ? `Classifiche e armadio dei giochi: ${url}` : ''].filter(Boolean).join('\n'))}`,
-    'BEGIN:VALARM', 'TRIGGER:-PT3H', 'ACTION:DISPLAY', `DESCRIPTION:${icsText('Stasera Game Night!')}`, 'END:VALARM',
+    `DESCRIPTION:${icsText([note, url ? t('extras.ics.link', { url }) : ''].filter(Boolean).join('\n'))}`,
+    'BEGIN:VALARM', 'TRIGGER:-PT3H', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(t('extras.ics.alarm'))}`, 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR'
   ].filter(Boolean);
   return `${lines.join('\r\n')}\r\n`;
@@ -235,15 +245,16 @@ export function gamesFromCSV(text) {
   if (rows.length < 2) return { items: [], source: null, skipped: 0 };
   const head = rows[0].map((h) => h.trim().toLowerCase());
   const col = (...names) => head.findIndex((h) => names.includes(h));
-  const iName = col('objectname', 'name', 'nome', 'gioco', 'titolo', 'game');
+  // Intestazioni delle colonne riconosciute (dati del file, in italiano e in inglese: non si traducono).
+  const iName = col('objectname', 'name', 'nome', 'gioco', 'titolo', 'game'); // i18n-ok
   if (iName < 0) return { items: [], source: null, skipped: rows.length - 1 };
   const bgg = head.includes('objectname');
-  const iMin = col('minplayers', 'min', 'giocatori min', 'min giocatori');
-  const iMax = col('maxplayers', 'max', 'giocatori max', 'max giocatori');
-  const iTime = col('playingtime', 'maxplaytime', 'durata', 'minuti', 'duration');
-  const iYear = col('yearpublished', 'anno', 'year');
+  const iMin = col('minplayers', 'min', 'giocatori min', 'min giocatori'); // i18n-ok
+  const iMax = col('maxplayers', 'max', 'giocatori max', 'max giocatori'); // i18n-ok
+  const iTime = col('playingtime', 'maxplaytime', 'durata', 'minuti', 'duration'); // i18n-ok
+  const iYear = col('yearpublished', 'anno', 'year'); // i18n-ok
   const iOwn = col('own');
-  const iWeight = col('avgweight', 'peso', 'weight');
+  const iWeight = col('avgweight', 'peso', 'weight'); // i18n-ok
   const items = [];
   let skipped = 0;
   const seen = new Set();

@@ -1,8 +1,8 @@
 // =====================================================================
 //  GameNight Show – configurazione Firebase
-//  Incolla qui i dati del tuo progetto Firebase (vedi README, passo 2).
+//  Incolla qui i dati del tuo progetto Firebase (vedi docs/INSTALLAZIONE.md, passo 2).
 //  Queste chiavi non sono segrete: la sicurezza è data dalle regole
-//  del database (database.rules.json).
+//  del database (firebase/database.rules.json).
 // =====================================================================
 
 export const firebaseConfig = {

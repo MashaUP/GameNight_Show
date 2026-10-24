@@ -1,11 +1,14 @@
-// Resoconto stampabile della serata: si salva in PDF dalla finestra di stampa del browser.
-import { esc, fmt, downloadFile } from './util.js';
-import { isApp } from './native.js';
+// Resoconto stampabile della serata: nel browser si salva in PDF dalla finestra di stampa;
+// nell'app Android (che non ha la finestra di stampa) il PDF vero si costruisce qui (pdfdoc.js).
+import { esc, fmt, downloadFile, saveInApp, toast } from './util.js';
+import { isApp, nativeOpen } from './native.js';
+import { reportPDF, labelsPDF } from './pdfdoc.js';
+import { t, lang, fmtList } from './i18n.js';
 
 function names(list) {
   const l = list.filter(Boolean);
   if (l.length <= 1) return l[0] || '';
-  return `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`;
+  return fmtList(l);
 }
 
 /**
@@ -16,7 +19,7 @@ export function reportHTML(d) {
   const font = (f) => new URL(`assets/fonts/${f}`, location.href).href;
   const color = /^#[0-9A-Fa-f]{6}$/.test(d.color || '') ? d.color : '#FFC93C';
   const critHeads = [...new Set(d.rows.flatMap((r) => Object.keys(r.crit || {})))];
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(`GameNight Show · ${d.group || 'Serata'} · ${d.date}`)}</title>
+  return `<!doctype html><html lang="${lang()}"><head><meta charset="utf-8"><title>${esc(`GameNight Show · ${d.group || t('report.pdf.night')} · ${d.date}`)}</title>
 <style>
 @font-face { font-family: 'Fredoka'; src: url('${font('fredoka-600.woff2')}') format('woff2'); }
 @font-face { font-family: 'Nunito'; src: url('${font('nunito.woff2')}') format('woff2'); font-weight: 200 1000; }
@@ -52,30 +55,73 @@ section { break-inside: avoid-page; }
 </style></head><body>
 <div class="head">
   <div><div class="brand">GameNight <span>Show</span></div>
-    <h1>${d.emblem ? `${esc(d.emblem)} ` : ''}${esc(d.group || 'La nostra serata')}</h1>
+    <h1>${d.emblem ? `${esc(d.emblem)} ` : ''}${esc(d.group || t('report.ourNight'))}</h1>
     <div class="sub">${esc(d.date)}${d.facts ? ` · ${esc(d.facts)}` : ''}</div></div>
   ${d.number ? `<div class="num">Game Night #${d.number}</div>` : ''}
 </div>
-<section><h2>Classifica della serata</h2>
-<table><thead><tr><th>#</th><th>Gioco</th><th class="r">Media</th>${critHeads.map((c) => `<th class="r">${esc(c)}</th>`).join('')}<th class="r">Voti</th><th>MVP</th><th>Vincitori</th><th class="r">Durata</th></tr></thead>
-<tbody>${d.rows.map((r, i) => `<tr class="${i === 0 ? 'first' : ''}"><td>${r.rank}</td><td><b>${esc(r.name)}</b>${r.audience !== null && r.audience !== undefined ? `<div class="small">Pubblico: ${fmt(r.audience)}</div>` : ''}${r.consensus !== null && r.consensus !== undefined ? `<div class="small">Consenso ${r.consensus}%</div>` : ''}</td>
-<td class="r avg">${fmt(r.avg)}</td>${critHeads.map((c) => `<td class="r">${r.crit?.[c] !== null && r.crit?.[c] !== undefined ? fmt(r.crit[c]) : '–'}</td>`).join('')}<td class="r">${r.n}</td><td>${esc(names(r.mvp || [])) || '–'}</td><td>${esc(names(r.winners || [])) || '–'}</td><td class="r">${r.minutes ? `${r.minutes} min` : '–'}</td></tr>`).join('')}</tbody></table></section>
-${d.awards.length ? `<section><h2>Premi speciali</h2><div class="grid">${d.awards.map((a) => `<div class="award"><span class="small">${esc(a.title)}</span><b>${esc(a.who)}</b><span class="small">${esc(a.value || '')}</span></div>`).join('')}</div></section>` : ''}
-${d.achievements.length ? `<section><h2>Traguardi sbloccati</h2><div class="grid">${d.achievements.map((a) => `<div class="award"><b>${esc(a.title)}</b><span class="small">${esc(a.who)}</span></div>`).join('')}</div></section>` : ''}
-${d.quotes.length ? `<section><h2>Commenti</h2><ul class="quotes">${d.quotes.map((q) => `<li>«${esc(q.text)}» <span class="small">${esc(q.name)}, ${esc(q.game)}</span></li>`).join('')}</ul></section>` : ''}
-${d.photos.length ? `<section><h2>Album</h2><div class="photos">${d.photos.slice(0, 12).map((p) => `<figure><img src="${esc(p.data)}" alt=""><figcaption>${esc(p.caption || '')}${p.by ? ` <span class="small">${esc(p.by)}</span>` : ''}</figcaption></figure>`).join('')}</div></section>` : ''}
-<div class="foot"><span>${d.next ? `Prossima serata: ${esc(d.next)}` : ''}</span><span>Fatto con GameNight Show</span></div>
+<section><h2>${esc(t('report.pdf.board'))}</h2>
+<table><thead><tr><th>#</th><th>${esc(t('report.pdf.colGame'))}</th><th class="r">${esc(t('report.pdf.colAvg'))}</th>${critHeads.map((c) => `<th class="r">${esc(c)}</th>`).join('')}<th class="r">${esc(t('report.pdf.colVotes'))}</th><th>MVP</th><th>${esc(t('report.pdf.colWinners'))}</th><th class="r">${esc(t('report.pdf.colTime'))}</th></tr></thead>
+<tbody>${d.rows.map((r, i) => `<tr class="${i === 0 ? 'first' : ''}"><td>${r.rank}</td><td><b>${esc(r.name)}</b>${r.audience !== null && r.audience !== undefined ? `<div class="small">${esc(t('report.pdf.audience', { avg: fmt(r.audience) }))}</div>` : ''}${r.consensus !== null && r.consensus !== undefined ? `<div class="small">${esc(t('report.pdf.consensus', { n: r.consensus }))}</div>` : ''}</td>
+<td class="r avg">${fmt(r.avg)}</td>${critHeads.map((c) => `<td class="r">${r.crit?.[c] !== null && r.crit?.[c] !== undefined ? fmt(r.crit[c]) : '–'}</td>`).join('')}<td class="r">${r.n}</td><td>${esc(names(r.mvp || [])) || '–'}</td><td>${esc(names(r.winners || [])) || '–'}</td><td class="r">${r.minutes ? esc(t('report.pdf.min', { n: r.minutes })) : '–'}</td></tr>`).join('')}</tbody></table></section>
+${d.awards.length ? `<section><h2>${esc(t('report.awards'))}</h2><div class="grid">${d.awards.map((a) => `<div class="award"><span class="small">${esc(a.title)}</span><b>${esc(a.who)}</b><span class="small">${esc(a.value || '')}</span></div>`).join('')}</div></section>` : ''}
+${d.achievements.length ? `<section><h2>${esc(t('report.pdf.achievements'))}</h2><div class="grid">${d.achievements.map((a) => `<div class="award"><b>${esc(a.title)}</b><span class="small">${esc(a.who)}</span></div>`).join('')}</div></section>` : ''}
+${d.quotes.length ? `<section><h2>${esc(t('report.pdf.quotes'))}</h2><ul class="quotes">${d.quotes.map((q) => `<li>${esc(t('report.pdf.quote', { text: q.text }))} <span class="small">${esc(q.name)}, ${esc(q.game)}</span></li>`).join('')}</ul></section>` : ''}
+${d.photos.length ? `<section><h2>${esc(t('report.pdf.album'))}</h2><div class="photos">${d.photos.slice(0, 12).map((p) => `<figure><img src="${esc(p.data)}" alt=""><figcaption>${esc(p.caption || '')}${p.by ? ` <span class="small">${esc(p.by)}</span>` : ''}</figcaption></figure>`).join('')}</div></section>` : ''}
+<div class="foot"><span>${d.next ? esc(t('report.pdf.next', { when: d.next })) : ''}</span><span>${esc(t('report.madeWith'))}</span></div>
 </body></html>`;
+}
+
+export const reportFileName = (ext = 'pdf') => `GameNight_resoconto_${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+/**
+ * Esporta il resoconto d (stesso oggetto di reportHTML).
+ * Browser: finestra di stampa ("Salva come PDF"), restituisce 'print'.
+ * App Android: PDF vero salvato in Documenti/GameNight Show (o "Condividi") e poi aperto, restituisce 'pdf'.
+ */
+export async function exportReport(d) {
+  if (!isApp()) return printReport(reportHTML(d)) ? 'print' : 'error';
+  toast(t('report.pdf.building'));
+  try {
+    const blob = await reportPDF(d);
+    const name = reportFileName('pdf');
+    const r = await saveInApp(blob, name);
+    if (r === 'saved') nativeOpen(blob, name, 'application/pdf').catch(() => {});
+    return 'pdf';
+  } catch (err) {
+    console.error(err);
+    toast(t('report.pdf.failed'), 'error');
+    return 'error';
+  }
+}
+
+/**
+ * Etichette con QR dell'armadio. Browser: html (pagina già pronta) nella finestra di stampa.
+ * App Android: PDF vero con gli stessi dati (data: { heading, labels: [{ title, sub, ref, url }] }).
+ */
+export async function exportLabels(html, data) {
+  if (!isApp() || !data) return printReport(html) ? 'print' : 'error';
+  try {
+    const blob = labelsPDF(data);
+    const name = `GameNight_etichette_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const r = await saveInApp(blob, name);
+    if (r === 'saved') nativeOpen(blob, name, 'application/pdf').catch(() => {});
+    return 'pdf';
+  } catch (err) {
+    console.error(err);
+    toast(t('report.pdf.failed'), 'error');
+    return 'error';
+  }
 }
 
 /** Apre la finestra di stampa con il resoconto (da lì: "Salva come PDF"). */
 export function printReport(html) {
-  // Nell'app Android non c'è la finestra di stampa: si salva la pagina, da aprire nel browser e stampare in PDF.
-  if (isApp()) { downloadFile(`GameNight_resoconto_${new Date().toISOString().slice(0, 10)}.html`, html, 'text/html'); return null; }
+  // Nell'app Android non c'è la finestra di stampa: chi ha i dati usa exportReport (PDF vero);
+  // qui resta la pagina HTML come ripiego.
+  if (isApp()) { downloadFile(reportFileName('html'), html, 'text/html'); return null; }
   document.getElementById('reportFrame')?.remove();
   const frame = document.createElement('iframe');
   frame.id = 'reportFrame';
-  frame.title = 'Resoconto della serata';
+  frame.title = t('report.pdf.frameTitle');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
   document.body.appendChild(frame);

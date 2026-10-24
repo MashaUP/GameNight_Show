@@ -15,6 +15,10 @@
 import { armadioRef, dbRef, get, set, update, remove, push } from './fb.js';
 import { cleanName, dbKey } from './util.js';
 import { tagsOf, isAvailable, GAME_STATUS, GAME_MODES } from './stats.js';
+import { t } from './i18n.js';
+
+/** Etichette nella lingua scelta, lette al momento (getter): gli oggetti restano usabili come prima (obj[k], Object.entries). */
+const labels = (map) => Object.defineProperties({}, Object.fromEntries(Object.entries(map).map(([k, key]) => [k, { enumerable: true, get: () => t(key) }])));
 
 export const THUMB_W = 240;
 export const THUMB_H = 180;
@@ -25,8 +29,8 @@ const CODE6 = /^[A-Z0-9]{6}$/;
 // ---------------------------------------------------------------------------
 
 export const LOC_KEYS = ['room', 'unit', 'shelf', 'box'];
-export const LOC_LABELS = { room: 'Stanza', unit: 'Mobile', shelf: 'Ripiano', box: 'Contenitore' };
-export const LOC_HINTS = { room: 'Es. Soggiorno', unit: 'Es. Libreria grande', shelf: 'Es. Ripiano 2', box: 'Es. Scatola rossa' };
+export const LOC_LABELS = labels({ room: 'coll.loc.room', unit: 'coll.loc.unit', shelf: 'coll.loc.shelf', box: 'coll.loc.box' });
+export const LOC_HINTS = labels({ room: 'coll.hint.room', unit: 'coll.hint.unit', shelf: 'coll.hint.shelf', box: 'coll.hint.box' });
 
 export function cleanLoc(loc) {
   const out = {};
@@ -79,22 +83,22 @@ export function duplicatePairs(lib) {
       const a = items[i]; const b = items[j];
       if (ok(a, b) || a.baseId === b.id || b.baseId === a.id) continue;
       const diff = [];
-      if ((a.edition || '') !== (b.edition || '') && (a.edition || b.edition)) diff.push('edizione');
-      if ((a.language || '').toLowerCase() !== (b.language || '').toLowerCase() && a.language && b.language) diff.push('lingua');
-      if (a.year && b.year && a.year !== b.year) diff.push('anno');
+      if ((a.edition || '') !== (b.edition || '') && (a.edition || b.edition)) diff.push(t('coll.why.edition'));
+      if ((a.language || '').toLowerCase() !== (b.language || '').toLowerCase() && a.language && b.language) diff.push(t('coll.why.language'));
+      if (a.year && b.year && a.year !== b.year) diff.push(t('coll.why.year'));
       const sameId = (a.ean && a.ean === b.ean) || (a.extId && a.extId === b.extId);
       const sameTitle = a._n === b._n || (a._o && a._o === b._n) || (b._o && b._o === a._n);
       if (sameId || sameTitle) {
-        pairs.push({ a: a.id, b: b.id, kind: diff.length ? 'edition' : 'dup', why: sameId ? 'stesso codice a barre o identificativo' : diff.length ? `stesso titolo, ${diff.join(', ')} divers${diff.length > 1 ? 'i' : 'a'}` : 'stesso titolo' });
+        pairs.push({ a: a.id, b: b.id, kind: diff.length ? 'edition' : 'dup', why: sameId ? t('coll.why.sameId') : diff.length ? t('coll.why.sameTitleDiff', { n: diff.length, what: diff.join(', ') }) : t('coll.why.sameTitle') });
         continue;
       }
       const ba = a._b; const bb = b._b;
-      if (ba && ba.length >= 3 && ba === bb) pairs.push({ a: a.id, b: b.id, kind: 'similar', why: 'nome simile: giochi diversi o forse un’espansione' });
+      if (ba && ba.length >= 3 && ba === bb) pairs.push({ a: a.id, b: b.id, kind: 'similar', why: t('coll.why.similar') });
     }
   }
   return pairs;
 }
-export const DUP_KINDS = { dup: 'Possibile duplicato', edition: 'Edizione diversa', similar: 'Nome simile' };
+export const DUP_KINDS = labels({ dup: 'coll.dup.dup', edition: 'coll.dup.edition', similar: 'coll.dup.similar' });
 export function duplicateIds(lib) {
   const s = new Set();
   for (const p of duplicatePairs(lib)) if (p.kind !== 'similar') { s.add(p.a); s.add(p.b); }
@@ -106,12 +110,12 @@ export function duplicateIds(lib) {
 // ---------------------------------------------------------------------------
 
 export const CHECK_FIELDS = [
-  { k: 'players', label: 'numero di giocatori', test: (it) => Boolean(it.minPlayers || it.maxPlayers) },
-  { k: 'duration', label: 'durata', test: (it) => Boolean(it.duration) },
-  { k: 'mode', label: 'tipologia', test: (it) => Boolean(it.mode) },
-  { k: 'weight', label: 'difficoltà', test: (it) => Boolean(it.weight) },
-  { k: 'loc', label: 'posizione', test: (it) => hasLoc(it) },
-  { k: 'photo', label: 'foto', test: (it) => Boolean(it.thumb || it.image) }
+  { k: 'players', get label() { return t('coll.check.players'); }, test: (it) => Boolean(it.minPlayers || it.maxPlayers) },
+  { k: 'duration', get label() { return t('coll.check.duration'); }, test: (it) => Boolean(it.duration) },
+  { k: 'mode', get label() { return t('coll.check.mode'); }, test: (it) => Boolean(it.mode) },
+  { k: 'weight', get label() { return t('coll.check.weight'); }, test: (it) => Boolean(it.weight) },
+  { k: 'loc', get label() { return t('coll.check.loc'); }, test: (it) => hasLoc(it) },
+  { k: 'photo', get label() { return t('coll.check.photo'); }, test: (it) => Boolean(it.thumb || it.image) }
 ];
 export function missingFields(it) {
   return CHECK_FIELDS.filter((f) => !f.test(it || {})).map((f) => f.k);
@@ -133,8 +137,8 @@ export function available(it) {
 
 /**
  * f: { text, players, durMin, durMax, mode, wMin, wMax, lang, avail, status, owner, room, unit,
- *      exp ('base'|'exp'|'hasExp'), loaned, noLoc, incomplete, dups, isNew, tag }
- * ctx: { lib, dupIds }
+ *      exp ('base'|'exp'|'hasExp'), loaned, noLoc, incomplete, dups, isNew, tag, fav }
+ * ctx: { lib, dupIds, favs (Set degli id preferiti) }
  */
 export function applyFilters(items, f, ctx = {}) {
   const text = normTitle(f.text || '');
@@ -170,32 +174,33 @@ export function applyFilters(items, f, ctx = {}) {
     if (f.incomplete && !missingFields(it).length) return false;
     if (f.dups && !ctx.dupIds?.has(it.id)) return false;
     if (f.isNew && !it.isNew) return false;
+    if (f.fav && !ctx.favs?.has(it.id)) return false;
     if (f.tag && !tagsOf(it).some((t) => t.toLowerCase() === f.tag.toLowerCase())) return false;
     return true;
   });
 }
 
 export const FILTER_LABELS = {
-  players: (v) => `${v} giocatori`, durMin: (v) => `da ${v} min`, durMax: (v) => `fino a ${v} min`,
-  mode: (v) => GAME_MODES[v] || v, wMin: (v) => `difficoltà ≥ ${v}`, wMax: (v) => `difficoltà ≤ ${v}`,
-  lang: (v) => `lingua: ${v}`, avail: (v) => (v === 'si' ? 'disponibili' : 'non disponibili'),
-  status: (v) => GAME_STATUS[v] || v, owner: (v) => `di ${v}`, room: (v) => `in ${v}`, unit: (v) => `nel mobile ${v}`, shelf: (v) => `📍 ${v}`,
-  exp: (v) => ({ base: 'solo giochi base', exp: 'solo espansioni', hasExp: 'con espansioni' })[v] || v,
-  loaned: () => 'prestati', noLoc: () => 'senza posizione', incomplete: () => 'schede incomplete',
-  dups: () => 'possibili duplicati', isNew: () => 'nuovi, da provare', tag: (v) => `#${v}`
+  players: (v) => t('coll.fl.players', { v: String(v) }), durMin: (v) => t('coll.fl.durMin', { v: String(v) }), durMax: (v) => t('coll.fl.durMax', { v: String(v) }),
+  mode: (v) => GAME_MODES[v] || v, wMin: (v) => t('coll.fl.wMin', { v: String(v) }), wMax: (v) => t('coll.fl.wMax', { v: String(v) }),
+  lang: (v) => t('coll.fl.lang', { v: String(v) }), avail: (v) => (v === 'si' ? t('coll.fl.avail') : t('coll.fl.unavail')),
+  status: (v) => GAME_STATUS[v] || v, owner: (v) => t('coll.fl.owner', { v: String(v) }), room: (v) => t('coll.fl.room', { v: String(v) }), unit: (v) => t('coll.fl.unit', { v: String(v) }), shelf: (v) => `📍 ${v}`,
+  exp: (v) => ({ base: t('coll.fl.expBase'), exp: t('coll.fl.expOnly'), hasExp: t('coll.fl.expHas') })[v] || v,
+  loaned: () => t('coll.fl.loaned'), noLoc: () => t('coll.fl.noLoc'), incomplete: () => t('coll.fl.incomplete'),
+  dups: () => t('coll.fl.dups'), isNew: () => t('coll.fl.isNew'), tag: (v) => `#${v}`, fav: () => `❤️ ${t('coll.fl.fav')}`
 };
 export function activeFilters(f) {
   return Object.entries(f || {}).filter(([k, v]) => k !== 'text' && FILTER_LABELS[k] && v !== '' && v !== null && v !== undefined && v !== false && v !== 0)
     .map(([k, v]) => ({ k, label: FILTER_LABELS[k](v) }));
 }
 
-export const SORTS = {
-  name: 'Nome (A–Z)', '-name': 'Nome (Z–A)', '-added': 'Aggiunti di recente', added: 'Aggiunti per primi',
-  duration: 'Durata (più brevi)', '-duration': 'Durata (più lunghi)', players: 'Giocatori (minimo)',
-  loc: 'Posizione', owner: 'Proprietario', status: 'Stato', '-updated': 'Modificati di recente'
-};
+export const SORTS = labels({
+  name: 'coll.sort.name', '-name': 'coll.sort.nameDesc', '-added': 'coll.sort.addedDesc', added: 'coll.sort.added',
+  duration: 'coll.sort.duration', '-duration': 'coll.sort.durationDesc', players: 'coll.sort.players',
+  loc: 'coll.sort.loc', owner: 'coll.sort.owner', status: 'coll.sort.status', '-updated': 'coll.sort.updatedDesc', fav: 'coll.sort.fav'
+});
 /** Ordina; i valori mancanti vanno sempre in fondo, a parità di valore si ordina per nome. */
-export function sortItems(items, sort = 'name') {
+export function sortItems(items, sort = 'name', ctx = {}) {
   const desc = sort.startsWith('-');
   const key = desc ? sort.slice(1) : sort;
   const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'it', { sensitivity: 'base' });
@@ -209,6 +214,7 @@ export function sortItems(items, sort = 'name') {
       case 'loc': return locText(it.loc).toLowerCase() || null;
       case 'owner': return (it.owner || '').toLowerCase() || null;
       case 'status': return it.loanId ? 'prestato' : (it.status || 'posseduto');
+      case 'fav': return ctx.favs?.has(it.id) ? 0 : null;
       default: return null;
     }
   };
@@ -231,7 +237,7 @@ function loadImg(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('immagine non leggibile'));
+    img.onerror = () => reject(new Error('immagine non leggibile')); // i18n-ok: errore interno, non mostrato
     img.src = src;
   });
 }
@@ -310,7 +316,7 @@ export async function migrateImages(aid, lib, { max = 40, onStep } = {}) {
       const thumb = it.thumb || await makeThumb(it.image);
       await update(armadioRef(aid), { [`images/${id}`]: it.image, ...(thumb && !it.thumb ? { [`library/${id}/thumb`]: thumb } : {}) });
       const back = (await get(armadioRef(aid, `images/${id}`))).val();
-      if (back !== it.image) throw new Error('copia non verificata');
+      if (back !== it.image) throw new Error('copia non verificata'); // i18n-ok: errore interno, non mostrato
       await update(armadioRef(aid), { [`library/${id}/image`]: null });
       done++;
     } catch { failed++; }
@@ -323,12 +329,12 @@ export async function migrateImages(aid, lib, { max = 40, onStep } = {}) {
 // Cronologia
 // ---------------------------------------------------------------------------
 
-export const OPS = {
-  add: '➕ Aggiunto', edit: '✏️ Modificato', loc: '📍 Posizione', status: '🔁 Stato', exp: '🧩 Espansioni',
-  lend: '🤝 Prestato', back: '↩️ Restituito', move: '🚚 Spostato', trash: '🗑️ Nel cestino', restore: '♻️ Ripristinato',
-  purge: '❌ Eliminato', import: '📥 Importato', rename: '🏷️ Armadio rinominato', bulk: '🧺 Modifica multipla',
-  dup: '👯 Duplicati', share: '🔗 Link pubblico', people: '👥 Persone'
-};
+export const OPS = labels({
+  add: 'coll.op.add', edit: 'coll.op.edit', loc: 'coll.op.loc', status: 'coll.op.status', exp: 'coll.op.exp',
+  lend: 'coll.op.lend', back: 'coll.op.back', move: 'coll.op.move', trash: 'coll.op.trash', restore: 'coll.op.restore',
+  purge: 'coll.op.purge', import: 'coll.op.import', rename: 'coll.op.rename', bulk: 'coll.op.bulk',
+  dup: 'coll.op.dup', share: 'coll.op.share', people: 'coll.op.people'
+});
 export function logEvent(aid, ev) {
   if (!aid) return Promise.resolve();
   const rec = { at: Date.now(), op: String(ev.op || 'edit').slice(0, 20) };
@@ -338,15 +344,15 @@ export function logEvent(aid, ev) {
   if (ev.by) rec.by = String(ev.by).slice(0, 40);
   return set(push(armadioRef(aid, 'log')), rec).catch(() => {});
 }
-/** Riepilogo leggibile delle differenze (per la cronologia, senza copiare tutto il gioco). */
+/** Riepilogo leggibile delle differenze (per la cronologia, senza copiare tutto il gioco). Finisce nel database (log/msg): resta in italiano. */
 export function diffSummary(before = {}, after = {}) {
-  const L = { name: 'nome', minPlayers: 'giocatori min', maxPlayers: 'giocatori max', duration: 'durata', mode: 'tipologia', weight: 'difficoltà', language: 'lingua', owner: 'proprietario', status: 'stato', edition: 'edizione', year: 'anno', baseId: 'gioco base', acq: 'acquisizione', isNew: 'nuovo', copies: 'copie', tags: 'etichette', publisher: 'editore', orig: 'titolo originale', ean: 'codice a barre', rules: 'regole', video: 'video', note: 'note' };
+  const L = { name: 'nome', minPlayers: 'giocatori min', maxPlayers: 'giocatori max', duration: 'durata', mode: 'tipologia', weight: 'difficoltà', language: 'lingua', owner: 'proprietario', status: 'stato', edition: 'edizione', year: 'anno', baseId: 'gioco base', acq: 'acquisizione', isNew: 'nuovo', copies: 'copie', tags: 'etichette', publisher: 'editore', orig: 'titolo originale', ean: 'codice a barre', rules: 'regole', video: 'video', manual: 'manuale', note: 'note' }; // i18n-ok: cronologia nel database
   const out = [];
   for (const [k, lab] of Object.entries(L)) {
     const a = JSON.stringify(before[k] ?? null); const b = JSON.stringify(after[k] ?? null);
     if (k in after && a !== b) out.push(lab);
   }
-  if ('loc' in after && locText(before.loc) !== locText(after.loc)) out.push(`posizione: ${locText(after.loc) || '—'}`);
+  if ('loc' in after && locText(before.loc) !== locText(after.loc)) out.push(`posizione: ${locText(after.loc) || '—'}`); // i18n-ok: cronologia nel database
   return out.join(', ');
 }
 
@@ -367,7 +373,7 @@ export async function trashGame(aid, id, it, by = '') {
  */
 export async function restoreGame(aid, id, rec, lib, { asCopy = false, by = '' } = {}) {
   const game = { ...(rec?.game || {}) };
-  if (!game.name) throw new Error('Elemento del cestino non valido.');
+  if (!game.name) throw Object.assign(new Error(t('coll.err.trashItem')), { user: true });
   if (lib?.[id]) return { conflict: 'id' };
   const same = Object.entries(lib || {}).find(([, it]) => it?.name && normTitle(it.name) === normTitle(game.name));
   if (same && !asCopy) return { conflict: 'name', other: same[0] };
@@ -397,6 +403,19 @@ export function activeLoans(loans) {
   return Object.entries(loans || {}).map(([id, l]) => ({ id, ...l })).filter((l) => !l.ret).sort((a, b) => (a.due || Infinity) - (b.due || Infinity));
 }
 export function isOverdue(l, now = Date.now()) { return !l.ret && l.due && l.due < now; }
+/**
+ * Prestiti da ricordare: scaduti e in scadenza (entro soonDays giorni), dai dati veri dell'armadio.
+ * I prestiti senza data di restituzione non sono mai "scaduti".
+ */
+export function loanAlerts(loans, now = Date.now(), soonDays = 3) {
+  const act = activeLoans(loans).filter((l) => Number(l.due) > 0);
+  return {
+    overdue: act.filter((l) => l.due < now).map((l) => ({ ...l, days: Math.max(1, Math.floor((now - l.due) / DAY)) })),
+    soon: act.filter((l) => l.due >= now && l.due - now <= soonDays * DAY).map((l) => ({ ...l, days: Math.max(0, Math.ceil((l.due - now) / DAY)) }))
+  };
+}
+/** Firma di un insieme di avvisi: se cambia (prestito nuovo o scaduto da poco) l'avviso torna anche se rimandato. */
+export function alertsSig(list) { return list.map((l) => `${l.aid || ''}/${l.id}`).sort().join(','); }
 
 /**
  * Registra un prestito. Con più copie (copies) si possono prestare fino a quel numero;
@@ -404,10 +423,10 @@ export function isOverdue(l, now = Date.now()) { return !l.ret && l.due && l.due
  */
 export async function lendGame(aid, id, it, loans, { to, toKey = '', due = null, note = '' }, by = '') {
   const name = cleanName(to, 40);
-  if (!name) throw Object.assign(new Error('Scrivi a chi lo presti.'), { user: true });
+  if (!name) throw Object.assign(new Error(t('coll.err.lendTo')), { user: true });
   const act = loansOf(loans, id).filter((l) => !l.ret);
   const copies = Number(it.copies) || 1;
-  if (act.length >= copies) throw Object.assign(new Error(copies > 1 ? `Tutte le ${copies} copie sono già in prestito.` : `È già in prestito a ${act[0].to}.`), { user: true });
+  if (act.length >= copies) throw Object.assign(new Error(copies > 1 ? t('coll.err.allLent', { n: copies }) : t('coll.err.lent', { name: act[0].to })), { user: true });
   const ref = push(armadioRef(aid, 'loans'));
   const loan = { item: id, name: String(it.name).slice(0, 60), to: name, start: Date.now() };
   if (toKey) loan.toKey = String(toKey).slice(0, 60);
@@ -422,7 +441,7 @@ export async function lendGame(aid, id, it, loans, { to, toKey = '', due = null,
     [`library/${id}/status`]: allOut ? 'prestato' : (it.status && it.status !== 'prestato' ? it.status : 'posseduto'),
     [`library/${id}/updatedAt`]: Date.now()
   });
-  logEvent(aid, { op: 'lend', item: id, name: it.name, msg: `a ${name}${due ? `, da restituire entro il ${new Date(due).toLocaleDateString('it-IT')}` : ''}`, by });
+  logEvent(aid, { op: 'lend', item: id, name: it.name, msg: `a ${name}${due ? `, da restituire entro il ${new Date(due).toLocaleDateString('it-IT')}` : ''}`, by }); // i18n-ok: cronologia nel database
   return ref.key;
 }
 export async function updateLoan(aid, lid, patch) {
@@ -446,7 +465,7 @@ export async function returnGame(aid, loan, it, loans, { state = 'ok', note = ''
     upd[`library/${loan.item}/updatedAt`] = Date.now();
   }
   await update(armadioRef(aid), upd);
-  logEvent(aid, { op: 'back', item: loan.item, name: loan.name || it?.name, msg: `da ${loan.to}${state !== 'ok' ? ` (${state})` : ''}`, by });
+  logEvent(aid, { op: 'back', item: loan.item, name: loan.name || it?.name, msg: `da ${loan.to}${state !== 'ok' ? ` (${state})` : ''}`, by }); // i18n-ok: cronologia nel database
 }
 
 // ---------------------------------------------------------------------------
@@ -460,11 +479,11 @@ export const CSV_COLS = [
   ['tipologia', 'mode'], ['difficolta', 'weight'], ['etichette', 'tags'], ['stato', 'status'], ['prestato_a', 'loanTo'],
   ['proprietario', 'owner'], ['copie', 'copies'], ['stanza', 'loc.room'], ['mobile', 'loc.unit'], ['ripiano', 'loc.shelf'],
   ['contenitore', 'loc.box'], ['gioco_base', 'baseName'], ['data_acquisizione', 'acq'], ['nuovo_da_provare', 'isNew'],
-  ['codice_a_barre', 'ean'], ['identificativo_esterno', 'extId'], ['video', 'video'], ['regole', 'rules'], ['preparazione', 'setup'], ['note', 'note']
+  ['codice_a_barre', 'ean'], ['identificativo_esterno', 'extId'], ['video', 'video'], ['manuale', 'manual'], ['regole', 'rules'], ['preparazione', 'setup'], ['note', 'note']
 ];
 const csvCell = (v) => {
   const s = v === null || v === undefined ? '' : String(v);
-  return /[";\n\r,]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return (/[";\n\r,]/).test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 function getPath(o, p) { return p.split('.').reduce((x, k) => (x == null ? x : x[k]), o); }
 
@@ -528,7 +547,7 @@ const HEAD_ALIASES = {
   tags: ['etichette', 'tags', 'categorie'], status: ['stato', 'status'], loanTo: ['prestato_a'], owner: ['proprietario', 'owner'], copies: ['copie', 'copies', 'quantity'],
   'loc.room': ['stanza', 'room'], 'loc.unit': ['mobile', 'unit', 'scaffale'], 'loc.shelf': ['ripiano', 'shelf'], 'loc.box': ['contenitore', 'box'],
   baseName: ['gioco_base', 'base'], acq: ['data_acquisizione', 'acquisizione', 'acquired', 'acquisitiondate'], isNew: ['nuovo_da_provare', 'nuovo'],
-  ean: ['codice_a_barre', 'ean', 'barcode'], extId: ['identificativo_esterno', 'objectid', 'bggid'], video: ['video'], rules: ['regole', 'rules'], setup: ['preparazione', 'setup'], note: ['note', 'comment', 'notes']
+  ean: ['codice_a_barre', 'ean', 'barcode'], extId: ['identificativo_esterno', 'objectid', 'bggid'], video: ['video'], manual: ['manuale', 'manual', 'rulebook'], rules: ['regole', 'rules'], setup: ['preparazione', 'setup'], note: ['note', 'comment', 'notes']
 };
 function headMap(headers) {
   const norm = (h) => String(h || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '_');
@@ -540,8 +559,8 @@ function headMap(headers) {
   return map;
 }
 
-const MODE_ALIASES = { competitivo: 'competitivo', competitive: 'competitivo', cooperativo: 'cooperativo', cooperative: 'cooperativo', coop: 'cooperativo', squadre: 'squadre', 'a squadre': 'squadre', team: 'squadre', misto: 'misto' };
-const STATUS_ALIASES = { disponibile: 'posseduto', posseduto: 'posseduto', prestato: 'prestato', 'non disponibile': 'non disponibile', venduto: 'venduto' };
+const MODE_ALIASES = { competitivo: 'competitivo', competitive: 'competitivo', cooperativo: 'cooperativo', cooperative: 'cooperativo', coop: 'cooperativo', squadre: 'squadre', 'a squadre': 'squadre', team: 'squadre', misto: 'misto' }; // i18n-ok: valori riconosciuti nei file importati (dati)
+const STATUS_ALIASES = { disponibile: 'posseduto', posseduto: 'posseduto', prestato: 'prestato', 'non disponibile': 'non disponibile', venduto: 'venduto' }; // i18n-ok: codici e valori dei file importati (dati)
 
 /**
  * Trasforma un oggetto grezzo (riga CSV o gioco JSON) in un gioco valido per l'armadio.
@@ -553,41 +572,42 @@ export function sanitizeGame(raw) {
   const num = (v, lo, hi, label) => {
     if (v === '' || v === null || v === undefined) return null;
     const x = Number(String(v).replace(',', '.'));
-    if (!Number.isFinite(x)) { warnings.push(`${label} non valido (“${String(v).slice(0, 20)}”), ignorato`); return null; }
-    if (x < lo || x > hi) { warnings.push(`${label} fuori intervallo (${x}), ignorato`); return null; }
+    if (!Number.isFinite(x)) { warnings.push(t('coll.warn.invalid', { label, v: String(v).slice(0, 20) })); return null; }
+    if (x < lo || x > hi) { warnings.push(t('coll.warn.range', { label, v: String(x) })); return null; }
     return x;
   };
   const g = {};
   g.name = str(raw.name, 40);
-  if (!g.name) errors.push('manca il nome');
-  if (raw.name && String(raw.name).trim().length > 40) warnings.push('nome accorciato a 40 caratteri');
+  if (!g.name) errors.push(t('coll.warn.noName'));
+  if (raw.name && String(raw.name).trim().length > 40) warnings.push(t('coll.warn.nameCut'));
   const set1 = (k, v) => { if (v !== null && v !== undefined && v !== '') g[k] = v; };
   set1('orig', str(raw.orig, 60));
   set1('edition', str(raw.edition, 40));
-  set1('year', (() => { const y = num(raw.year, 1900, 2100, 'anno'); return y ? Math.round(y) : null; })());
+  set1('year', (() => { const y = num(raw.year, 1900, 2100, t('coll.f.year')); return y ? Math.round(y) : null; })());
   set1('publisher', str(raw.publisher, 40));
   set1('language', str(raw.language, 20));
-  const mn = num(raw.minPlayers, 1, 20, 'giocatori min'); const mx = num(raw.maxPlayers, 1, 20, 'giocatori max');
-  if (mn && mx && mn > mx) warnings.push('giocatori min più alto del max: scambiati');
+  const mn = num(raw.minPlayers, 1, 20, t('coll.f.min')); const mx = num(raw.maxPlayers, 1, 20, t('coll.f.max'));
+  if (mn && mx && mn > mx) warnings.push(t('coll.warn.swapped'));
   set1('minPlayers', mn && mx && mn > mx ? Math.round(mx) : (mn ? Math.round(mn) : null));
   set1('maxPlayers', mn && mx && mn > mx ? Math.round(mn) : (mx ? Math.round(mx) : null));
-  set1('duration', (() => { const d = num(raw.duration, 1, 600, 'durata'); return d ? Math.round(d) : null; })());
-  if (raw.mode) { const m = MODE_ALIASES[String(raw.mode).trim().toLowerCase()]; if (m) g.mode = m; else warnings.push(`tipologia “${String(raw.mode).slice(0, 20)}” non riconosciuta`); }
-  set1('weight', (() => { const w = num(raw.weight, 1, 5, 'difficoltà'); return w ? Math.round(w * 10) / 10 : null; })());
+  set1('duration', (() => { const d = num(raw.duration, 1, 600, t('coll.f.duration')); return d ? Math.round(d) : null; })());
+  if (raw.mode) { const m = MODE_ALIASES[String(raw.mode).trim().toLowerCase()]; if (m) g.mode = m; else warnings.push(t('coll.warn.mode', { v: String(raw.mode).slice(0, 20) })); }
+  set1('weight', (() => { const w = num(raw.weight, 1, 5, t('coll.f.weight')); return w ? Math.round(w * 10) / 10 : null; })());
   const tags = Array.isArray(raw.tags) ? raw.tags : String(raw.tags || '').split(/[,|#]/);
   const tg = [...new Set(tags.map((t) => cleanName(t, 20)).filter(Boolean))].slice(0, 8);
   if (tg.length) g.tags = tg;
-  if (raw.status) { const st = STATUS_ALIASES[String(raw.status).trim().toLowerCase()]; if (st) g.status = st; else warnings.push('stato non riconosciuto, ignorato'); }
+  if (raw.status) { const st = STATUS_ALIASES[String(raw.status).trim().toLowerCase()]; if (st) g.status = st; else warnings.push(t('coll.warn.status')); }
   if (g.status === 'prestato') { const lt = str(raw.loanTo, 24); if (lt) g.loanTo = lt; }
   set1('owner', str(raw.owner, 24));
-  set1('copies', (() => { const c = num(raw.copies, 1, 20, 'copie'); return c ? Math.round(c) : null; })());
+  set1('copies', (() => { const c = num(raw.copies, 1, 20, t('coll.f.copies')); return c ? Math.round(c) : null; })());
   const loc = cleanLoc(raw.loc || { room: raw['loc.room'], unit: raw['loc.unit'], shelf: raw['loc.shelf'], box: raw['loc.box'] });
   if (loc) g.loc = loc;
-  if (raw.acq) { const a = String(raw.acq).trim(); const m = a.match(/^(\d{4})-(\d{2})-(\d{2})/) || a.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/); if (m) g.acq = m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; else warnings.push('data di acquisizione non valida'); }
+  if (raw.acq) { const a = String(raw.acq).trim(); const m = a.match(/^(\d{4})-(\d{2})-(\d{2})/) || a.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/); if (m) g.acq = m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; else warnings.push(t('coll.warn.acq')); }
   if (raw.isNew === true || /^(si|sì|yes|true|1|x)$/i.test(String(raw.isNew || '').trim())) g.isNew = true;
-  if (raw.ean) { const e = String(raw.ean).replace(/\D/g, ''); if (/^[0-9]{8,14}$/.test(e)) g.ean = e; else warnings.push('codice a barre non valido'); }
+  if (raw.ean) { const e = String(raw.ean).replace(/\D/g, ''); if (/^[0-9]{8,14}$/.test(e)) g.ean = e; else warnings.push(t('coll.warn.ean')); }
   set1('extId', str(raw.extId, 40));
-  if (raw.video) { const v = String(raw.video).trim(); if (/^https:\/\/[^\s"<>]+$/.test(v) && v.length <= 200) g.video = v; else warnings.push('link del video non valido'); }
+  if (raw.video) { const v = String(raw.video).trim(); if (/^https:\/\/[^\s"<>]+$/.test(v) && v.length <= 200) g.video = v; else warnings.push(t('coll.warn.video')); }
+  if (raw.manual) { const v = String(raw.manual).trim(); if (/^https:\/\/[^\s"<>'`]+$/.test(v) && v.length <= 300) g.manual = v; else warnings.push(t('coll.warn.manual')); }
   set1('rules', raw.rules ? String(raw.rules).trim().slice(0, 600) : null);
   set1('setup', raw.setup ? String(raw.setup).trim().slice(0, 300) : null);
   set1('note', raw.note ? String(raw.note).trim().slice(0, 300) : null);
@@ -597,20 +617,20 @@ export function sanitizeGame(raw) {
 
 /** Legge un file (testo) JSON o CSV e restituisce le righe come oggetti grezzi. */
 export function readImportFile(name, text) {
-  const t = String(text || '').trim();
-  if (/\.json$/i.test(name) || t.startsWith('{') || t.startsWith('[')) {
+  const txt = String(text || '').trim();
+  if (/\.json$/i.test(name) || txt.startsWith('{') || txt.startsWith('[')) {
     let data;
-    try { data = JSON.parse(t); } catch { throw Object.assign(new Error('Il file JSON non è leggibile (forse è incompleto).'), { user: true }); }
+    try { data = JSON.parse(txt); } catch { throw Object.assign(new Error(t('coll.err.json')), { user: true }); }
     const arr = Array.isArray(data) ? data : Array.isArray(data?.games) ? data.games : null;
-    if (!arr) throw Object.assign(new Error('Nel JSON non trovo l’elenco dei giochi (campo “games”).'), { user: true });
-    if (arr.length > 2000) throw Object.assign(new Error('Troppi giochi in un solo file (massimo 2000).'), { user: true });
+    if (!arr) throw Object.assign(new Error(t('coll.err.jsonGames')), { user: true });
+    if (arr.length > 2000) throw Object.assign(new Error(t('coll.err.tooMany')), { user: true });
     return { kind: 'JSON', rows: arr.map((x) => (x && typeof x === 'object' ? x : {})) };
   }
-  const rows = parseCSV(t);
-  if (rows.length < 2) throw Object.assign(new Error('Il CSV è vuoto o ha solo l’intestazione.'), { user: true });
+  const rows = parseCSV(txt);
+  if (rows.length < 2) throw Object.assign(new Error(t('coll.err.csvEmpty')), { user: true });
   const map = headMap(rows[0]);
-  if (!('name' in map)) throw Object.assign(new Error('Nel CSV manca la colonna con il nome del gioco (“nome”, “name” o “objectname”).'), { user: true });
-  if (rows.length > 2001) throw Object.assign(new Error('Troppe righe in un solo file (massimo 2000).'), { user: true });
+  if (!('name' in map)) throw Object.assign(new Error(t('coll.err.csvName')), { user: true });
+  if (rows.length > 2001) throw Object.assign(new Error(t('coll.err.tooManyRows')), { user: true });
   return {
     kind: 'CSV',
     rows: rows.slice(1).map((r) => Object.fromEntries(Object.entries(map).map(([k, i]) => [k, r[i] ?? '']))),
@@ -629,7 +649,7 @@ export function planImport(rows, lib, mode = 'add', { bgg = false } = {}) {
   const seen = new Map();
   rows.forEach((raw, i) => {
     const r = sanitizeGame(raw);
-    if (bgg && raw.own !== undefined && String(raw.own) === '0') { plan.invalid.push({ row: i + 2, name: r.game.name || '?', why: 'non posseduto su BoardGameGeek' }); return; }
+    if (bgg && raw.own !== undefined && String(raw.own) === '0') { plan.invalid.push({ row: i + 2, name: r.game.name || '?', why: t('coll.why.notOwned') }); return; }
     if (r.errors.length) { plan.invalid.push({ row: i + 2, name: r.game.name || '?', why: r.errors.join(', ') }); return; }
     plan.warnings += r.warnings.length;
     const nk = normTitle(r.game.name) + (r.game.edition ? `#${normTitle(r.game.edition)}` : '');
@@ -667,20 +687,20 @@ export async function applyImport(aid, plan, lib, by = '') {
   for (let i = 0; i < items.length; i += chunk) {
     const upd = {};
     for (const a of items.slice(i, i + chunk)) {
-      const g = { ...a.game, addedAt: Date.now(), updatedAt: Date.now(), addedBy: (by || 'Importazione').slice(0, 24) };
+      const g = { ...a.game, addedAt: Date.now(), updatedAt: Date.now(), addedBy: (by || 'Importazione').slice(0, 24) }; // i18n-ok: nome salvato nel database
       const base = (a.baseIdSrc && srcToNew.get(a.baseIdSrc)) || (a.baseName && nameToId.get(normTitle(a.baseName)));
       if (base && base !== a.id) g.baseId = base;
       upd[`library/${a.id}`] = g;
     }
     try { await update(armadioRef(aid), upd); undo.added.push(...items.slice(i, i + chunk).map((a) => a.id)); }
-    catch (err) { failed.push(...items.slice(i, i + chunk).map((a) => ({ name: a.game.name, why: err?.message || 'errore' }))); }
+    catch (err) { failed.push(...items.slice(i, i + chunk).map((a) => ({ name: a.game.name, why: err?.message || t('coll.err.generic') }))); }
   }
   for (const u of plan.update) {
     const before = Object.fromEntries(Object.keys(u.patch).map((k) => [k, lib[u.id]?.[k] ?? null]));
     try { await update(armadioRef(aid, `library/${u.id}`), { ...u.patch, updatedAt: Date.now() }); undo.updated.push({ id: u.id, before }); }
-    catch (err) { failed.push({ name: u.name, why: err?.message || 'errore' }); }
+    catch (err) { failed.push({ name: u.name, why: err?.message || t('coll.err.generic') }); }
   }
-  logEvent(aid, { op: 'import', msg: `${undo.added.length} aggiunti, ${undo.updated.length} completati${failed.length ? `, ${failed.length} non importati` : ''}`, by });
+  logEvent(aid, { op: 'import', msg: `${undo.added.length} aggiunti, ${undo.updated.length} completati${failed.length ? `, ${failed.length} non importati` : ''}`, by }); // i18n-ok: cronologia nel database
   return { added: undo.added.length, updated: undo.updated.length, failed, undo };
 }
 /** Annulla un'importazione appena fatta (i giochi aggiunti vanno nel cestino, i completati tornano come prima). */
@@ -690,12 +710,12 @@ export async function undoImport(aid, undo, lib, by = '') {
     const it = lib?.[id];
     if (!it) continue;
     const game = { ...it }; delete game.image;
-    upd[`trash/${id}`] = { game, at: Date.now(), by: (by || 'Annulla importazione').slice(0, 40) };
+    upd[`trash/${id}`] = { game, at: Date.now(), by: (by || 'Annulla importazione').slice(0, 40) }; // i18n-ok: nome salvato nel database
     upd[`library/${id}`] = null;
   }
   for (const u of undo.updated) for (const [k, v] of Object.entries(u.before)) upd[`library/${u.id}/${k}`] = v;
   if (Object.keys(upd).length) await update(armadioRef(aid), upd);
-  logEvent(aid, { op: 'import', msg: 'importazione annullata', by });
+  logEvent(aid, { op: 'import', msg: 'importazione annullata', by }); // i18n-ok: cronologia nel database
 }
 
 // ---------------------------------------------------------------------------
@@ -709,12 +729,28 @@ export function newToken() {
   const abc = 'abcdefghijklmnopqrstuvwxyz0123456789';
   return [...a].map((x) => abc[x % 36]).join('');
 }
+/**
+ * Cosa il proprietario sceglie di pubblicare (1.9). I cataloghi creati prima non hanno exp/rules/onlyAvail:
+ * valgono come prima (espansioni e regole incluse, anche i giochi non disponibili).
+ */
+export function pubFieldsOf(raw) {
+  const f = raw || {};
+  return { status: Boolean(f.status), loc: Boolean(f.loc), exp: f.exp !== false, rules: f.rules !== false, onlyAvail: Boolean(f.onlyAvail) };
+}
+/** Il gioco entra nel catalogo pubblico con queste scelte? */
+export function pubIncludes(it, fields) {
+  if (!it?.name) return false;
+  if (fields?.exp === false && it.baseId) return false;
+  if (fields?.onlyAvail && !available(it)) return false;
+  return true;
+}
 /** Solo i campi pubblicabili. Mai: prestiti, note, proprietario, cronologia. Posizione solo se scelta. */
 export function pubGame(it, fields = {}) {
   const g = { name: String(it.name).slice(0, 40) };
   for (const k of ['minPlayers', 'maxPlayers', 'duration', 'weight', 'year', 'copies']) if (Number.isFinite(Number(it[k])) && it[k] !== null && it[k] !== undefined && it[k] !== '') g[k] = Number(it[k]);
   for (const k of ['mode', 'language', 'edition', 'publisher', 'baseId', 'video']) if (typeof it[k] === 'string' && it[k]) g[k] = it[k].slice(0, k === 'video' ? 200 : 40);
-  if (typeof it.rules === 'string' && it.rules) g.rules = it.rules.slice(0, 600);
+  if (fields.rules !== false && typeof it.manual === 'string' && /^https:\/\//.test(it.manual)) g.manual = it.manual.slice(0, 300);
+  if (fields.rules !== false && typeof it.rules === 'string' && it.rules) g.rules = it.rules.slice(0, 600);
   if (it.isNew) g.isNew = true;
   const tags = tagsOf(it); if (tags.length) g.tags = tags.slice(0, 8);
   if (typeof it.thumb === 'string' && it.thumb.length < 40000) g.thumb = it.thumb;
@@ -726,14 +762,15 @@ export function pubGame(it, fields = {}) {
  * Aggiorna il catalogo pubblico scrivendo solo i giochi cambiati (prev = copia attuale del catalogo).
  */
 export async function syncPublic(token, aid, info, lib, fields, prev = {}) {
-  const upd = { aid, name: String(info?.name || 'Armadio').slice(0, 40), at: Date.now(), fields: { loc: Boolean(fields.loc), status: Boolean(fields.status) } };
+  const pf = pubFieldsOf(fields);
+  const upd = { aid, name: String(info?.name || 'Armadio').slice(0, 40), at: Date.now(), fields: pf }; // i18n-ok: nome salvato nel catalogo pubblico (database)
   if (info?.desc) upd.desc = String(info.desc).slice(0, 200); else upd.desc = null;
   if (info?.emoji) upd.emoji = String(info.emoji).slice(0, 8); else upd.emoji = null;
   let n = 0;
   const ids = new Set([...Object.keys(lib || {}), ...Object.keys(prev || {})]);
   for (const id of ids) {
     const it = lib?.[id];
-    const next = it?.name ? pubGame(it, fields) : null;
+    const next = pubIncludes(it, pf) ? pubGame(it, pf) : null;
     if (JSON.stringify(next) !== JSON.stringify(prev?.[id] || null)) { upd[`games/${id}`] = next; n++; }
   }
   await update(dbRef(`pub/${token}`), upd);
@@ -749,7 +786,7 @@ export async function syncPublic(token, aid, info, lib, fields, prev = {}) {
  * I prestiti attivi seguono il gioco; le espansioni non selezionate restano dove sono.
  */
 export async function moveGames(fromAid, toAid, ids, lib, loans, by = '') {
-  if (!CODE6.test(toAid) || toAid === fromAid) throw Object.assign(new Error('Scegli un altro armadio.'), { user: true });
+  if (!CODE6.test(toAid) || toAid === fromAid) throw Object.assign(new Error(t('coll.err.otherArm')), { user: true });
   const moved = []; const failed = [];
   for (const id of ids) {
     const it = lib?.[id];
@@ -759,7 +796,7 @@ export async function moveGames(fromAid, toAid, ids, lib, loans, by = '') {
       const game = { ...it, updatedAt: Date.now() };
       delete game.image;
       if (hasLoc(it)) game.locCheck = true;
-      if (game.baseId && !ids.includes(game.baseId)) game.note = cleanName(`${game.note ? `${game.note} · ` : ''}Espansione di ${lib[game.baseId]?.name || 'un gioco'} (rimasto nell’altro armadio)`, 300);
+      if (game.baseId && !ids.includes(game.baseId)) game.note = cleanName(`${game.note ? `${game.note} · ` : ''}Espansione di ${lib[game.baseId]?.name || 'un gioco'} (rimasto nell’altro armadio)`, 300); // i18n-ok: nota salvata nel database
       if (game.baseId && !ids.includes(game.baseId)) delete game.baseId;
       const tUpd = { [`library/${id}`]: game };
       if (full && full !== it.thumb) tUpd[`images/${id}`] = full;
@@ -768,10 +805,10 @@ export async function moveGames(fromAid, toAid, ids, lib, loans, by = '') {
       const fUpd = { [`library/${id}`]: null, [`images/${id}`]: null };
       for (const l of loansOf(loans, id).filter((x) => !x.ret)) fUpd[`loans/${l.id}`] = null;
       await update(armadioRef(fromAid), fUpd);
-      logEvent(fromAid, { op: 'move', item: id, name: it.name, msg: `nell’armadio ${toAid}`, by });
-      logEvent(toAid, { op: 'move', item: id, name: it.name, msg: `dall’armadio ${fromAid}`, by });
+      logEvent(fromAid, { op: 'move', item: id, name: it.name, msg: `nell’armadio ${toAid}`, by }); // i18n-ok: cronologia nel database
+      logEvent(toAid, { op: 'move', item: id, name: it.name, msg: `dall’armadio ${fromAid}`, by }); // i18n-ok: cronologia nel database
       moved.push(id);
-    } catch (err) { failed.push({ id, name: it.name, why: err?.message || 'errore' }); }
+    } catch (err) { failed.push({ id, name: it.name, why: err?.message || t('coll.err.generic') }); }
   }
   return { moved, failed };
 }

@@ -1,9 +1,10 @@
 # Guida di GameNight Show
 
 Tutto quello che si può fare in una serata, schermata per schermata. Per installare la tua copia
-(GitHub, Firebase, GitHub Pages, app Android) parti dal [README](../README.md).
+(GitHub, Firebase, GitHub Pages) parti da [INSTALLAZIONE.md](INSTALLAZIONE.md); per l'app Android c'è [ANDROID.md](ANDROID.md).
 
 - [Tutte le funzioni in breve](#tutte-le-funzioni-in-breve)
+- [Novità della 1.10: pausa, timer, ambiente, dati, armadio](#novità-della-110)
 - [La serata](#la-serata)
 - [L'app sul telefono e il profilo personale](#lapp-sul-telefono)
 - [Cosa cambia nell'app Android](#cosa-cambia-nellapp-android)
@@ -66,6 +67,38 @@ Tutto quello che si può fare in una serata, schermata per schermata. Per instal
 - **Armadio avanzato:** scheda completa di ogni gioco (modalità, peso, categorie, editore, anno, lingua, proprietario, stato e prestiti, espansioni) con le sue statistiche, e **ricerca a frasi**: "per 5 persone, massimo 45 minuti", "cooperativi", "mai giocati", "che Andrea non odia". I giochi prestati o non disponibili non vengono proposti.
 
 Funziona su Android e iPhone, senza installare niente. Serve solo una connessione a internet.
+
+## Novità della 1.10
+
+**Lingua e aspetto.** Tutta l'app parla italiano e inglese (**Impostazioni › Lingua**, per dispositivo: TV e telefoni possono usare lingue diverse nella stessa serata). Telefono, armadio, ludoteca, resoconto e download hanno lo stesso stile della home, nei temi Show e Giorno. Le domande del quiz restano nella lingua della TV.
+
+**Pausa della serata.** Dalla TV (tasto **P** o **Strumenti**) o dalla regia del telefono: tutto si ferma (votazione, quiz, timer), la TV e i telefoni mostrano la pausa; alla ripresa i tempi ripartono da dove erano.
+
+**Timer condiviso.** In **Strumenti da tavolo › Timer** (TV) o dalla regia del telefono: turno, round, intervallo o libero, con tempi pronti (30 s – 3 min) o a scelta e un nome facoltativo ("Turno di Anna"). Comandi: pausa, +30 s, turno successivo, azzera, togli. Si vede in alto sulla TV e su tutti i telefoni; lo comandano la TV e i telefoni regia, gli altri lo vedono soltanto. Opzioni: si ferma con la pausa della serata, suono e vibrazione allo scadere (una volta sola per dispositivo).
+
+**Schermo ambiente.** Tasto **A** sulla TV o comando dalla regia del telefono: tra una partita e l'altra la TV mostra il gioco in corso, chi gioca, il timer e l'orologio, a caratteri grandi. **Esc** o **Torna alla regia** per uscire.
+
+**Soundboard personalizzata.** In **Strumenti › Suoni personalizzati** la TV carica fino a 16 suoni (MP3, OGG, WAV…, al massimo 400 KB e 15 secondi), con nome e icona. I file restano solo sul computer della TV: su Firebase vanno solo nomi e icone, così i telefoni mostrano i pulsanti. **Ferma tutti i suoni** li interrompe.
+
+**Atmosfere.** Oltre all'animazione: intensità e suono d'ambiente (pioggia, candele, neon, stelle, nebbia) generato dal browser, che segue il volume della musica, il silenzioso e la Safe Mode.
+
+**Il vostro anno.** Nella classifica di sempre, scheda **Il vostro anno**: serate, partite, giochi più votati, scoperte dell'anno, MVP e record, da sfogliare con le frecce e da condividere come immagine (anche dal telefono, nel profilo).
+
+**Armadio.**
+- **BoardGameGeek:** **Cerca su BGG** nella scheda del gioco o "Aggiungi un gioco": risultati, anteprima e confronto campo per campo; si applicano solo i campi scelti. Serve il proxy attivo ([INSTALLAZIONE.md](INSTALLAZIONE.md#4-servizi-facoltativi)): senza, l'app lo dice e resta l'importazione del CSV.
+- **Manuali:** un link (BGG, editore), un file PDF o una foto salvati **solo su questo dispositivo**, oppure la ricerca guidata del regolamento. La scheda delle regole della TV mostra il QR del manuale.
+- **Preferiti:** il cuore sui giochi (legato al tuo profilo, su tutti i dispositivi); filtro, ordinamento e striscia dei preferiti; prima nella lista dei giochi di stasera e nel Consigliere.
+- **Consigliere:** filtri per tempo, peso e modalità, preferiti, giochi già sul tavolo; ogni consiglio dice il perché.
+- **Prestiti:** la home avvisa dei prestiti scaduti e in scadenza (3 giorni); "Più tardi" lo rimanda.
+- **Catalogo pubblico:** **Condividi** → scegli cosa mostrare (posizione, stato, durata, regole e manuale, solo disponibili), anteprima, apri, copia, revoca.
+- **Foto:** dopo lo scatto si può ritagliare (anche con le frecce e +/−).
+
+**I tuoi dati e la privacy** (home › Profilo e app):
+- **Esporta** profilo, preferiti, armadi, prestiti e gruppi in un file; **Importa** con anteprima e scelte, senza sovrascrivere niente in silenzio ([DATI.md](DATI.md)).
+- **Privacy:** cosa sta dove, spegnere un catalogo pubblico, cancellare il profilo, svuotare questo dispositivo.
+- **Centro diagnostico:** controlli automatici (Firebase, accesso, regole, rete, file offline, spazio, BoardGameGeek, aggiornamenti) e rapporto da scaricare senza codici né chiavi.
+
+**Telecomando.** Su Android TV, e con la tastiera sul computer, le frecce spostano il fuoco tra pulsanti e campi, OK conferma, Indietro/Esc chiude.
 
 ## La serata
 
@@ -375,7 +408,7 @@ Se ricarichi la pagina della TV o di un telefono, si riprende dal punto in cui e
 
 GameNight Show è una web app installabile: non serve passare dagli store.
 
-- **Android:** c'è la vera app da installare (vedi il [README](../README.md#app-android), **App Android**). In alternativa, in Chrome tocca **Installa** nella scheda "Installa l'app", oppure il menu ⋮ › **Installa app**.
+- **Android:** c'è la vera app da installare (vedi [ANDROID.md](ANDROID.md)). In alternativa, in Chrome tocca **Installa** nella scheda "Installa l'app", oppure il menu ⋮ › **Installa app**.
 - **iPhone (Safari):** tocca **Condividi** › **Aggiungi alla schermata Home**.
 
 L'app si apre sulla **home personale** (la stessa pagina iniziale del sito):
@@ -412,7 +445,8 @@ Quando cambi nome o personaggio dalla home, cambia anche nei gruppi. Entrando in
 - **📷 Inquadra il QR della TV**: nell'app si entra nella serata inquadrando il QR con il pulsante apposito (la fotocamera normale del telefono aprirebbe il sito nel browser). Funziona anche con il QR del profilo e con quello del passaggio di regia.
 - I QR e i link mostrati dall'app puntano sempre al sito pubblico su GitHub Pages, così chi non ha l'app entra dal browser.
 - Immagini, figurine e video si condividono con il pannello **Condividi** di Android (WhatsApp, Instagram, Drive…). Backup, registro errori e inviti al calendario si salvano in **Documenti/GameNight Show** (sui telefoni dove non si può, si apre **Condividi**).
-- Il resoconto in PDF dall'app si salva come pagina `.html`: aprila nel browser e stampala in PDF.
+- **PDF veri dall'app:** il PDF della serata, il resoconto e le etichette con QR dell'armadio si salvano in **Documenti/GameNight Show** e si aprono con il lettore PDF del telefono. I manuali salvati sul dispositivo si aprono con il lettore del telefono.
+- **Android TV:** la stessa app si installa sul televisore e si usa con il telecomando (frecce, OK, Indietro).
 - La memoria dell'app è separata da quella del browser: per avere lo stesso profilo del sito, sul sito apri **Il tuo profilo › 🔗 Dispositivi** e nell'app **Ce l’ho già › Inquadra il QR**.
 - **Tasto Indietro di Android:** chiude prima la finestra aperta (pannelli, armadio, quiz…), poi torna alla schermata precedente (nella regia fa come **← Indietro**, con le stesse conferme); dalle altre pagine torna alla home e dalla home riduce l'app a icona invece di chiuderla. Se stai votando e non hai ancora inviato il voto, chiede conferma.
 - **La regia sul telefono:** se apri **Crea la stanza** dall'app (o dal browser del telefono), tutte le schermate della TV si dispongono in colonna e la barra dei comandi in alto scorre di lato da sola: niente esce dallo schermo e la pagina non scorre più a destra. Ruota, squadre, clessidra, quiz, intervallo, scaletta, votazione dei giochi, reveal, classifica e premiazione funzionano come sulla TV.
@@ -431,7 +465,9 @@ Quando cambi nome o personaggio dalla home, cambia anche nei gruppi. Entrando in
 | Regia dal telefono di un giocatore (codice regia) | ✅ | ✅ identica |
 | Tasto Indietro di sistema | quello del browser | gestito (finestre → schermata → home) |
 | Condividere immagini, salvare backup e registro | download del browser | pannello Condividi e cartella Documenti |
-| Resoconto PDF | stampa del browser | file `.html` da stampare |
+| PDF della serata, resoconto, etichette con QR | stampa del browser (“Salva come PDF”) | PDF vero, salvato e aperto con il lettore del telefono |
+| Manuali salvati sul dispositivo | nuova scheda del browser | lettore del telefono (PDF o foto) |
+| Android TV | — | ✅ stessa APK, telecomando |
 | Schermo intero sulla TV | ✅ (tasto F) | — (l'app è già a tutto schermo) |
 | Installazione | "Aggiungi a Home" (anche iPhone) | APK da `scarica.html`, dalla home del sito o dal QR della TV |
 | Aggiornamenti | il sito si aggiorna da solo (avviso **Aggiorna**) | avviso nell’app, download controllato e installazione con conferma di Android |
@@ -439,8 +475,8 @@ Quando cambi nome o personaggio dalla home, cambia anche nei gruppi. Entrando in
 ## Problemi comuni
 
 - **"Manca la configurazione"**: `js/config.js` non è stato compilato o non è stato caricato su GitHub.
-- **"L'accesso anonimo non è attivo"**: rivedi il [README](../README.md), passo 2.4.
-- **"Il database ha rifiutato l'operazione"**: le regole ([README](../README.md), passo 2.3) non sono state pubblicate, oppure manca `databaseURL` in `config.js`.
+- **"L'accesso anonimo non è attivo"**: rivedi [INSTALLAZIONE.md](INSTALLAZIONE.md#24-accesso-anonimo), passo 2.4.
+- **"Il database ha rifiutato l'operazione"**: le regole ([INSTALLAZIONE.md](INSTALLAZIONE.md#23-regole-del-database), passo 2.3) non sono state pubblicate, oppure manca `databaseURL` in `config.js`.
 - **"Questa stanza è gestita da un altro dispositivo"**: la stanza si guida solo dal portatile e dal browser con cui è stata creata. Da un altro dispositivo crea una nuova serata.
 - **"Tutti i posti sono occupati"** sul telefono di chi arriva: aggiungi un posto dal pannello **Giocatori** sulla TV. La pagina del telefono si aggiorna da sola.
 - **La foto da link non si carica**: alcuni siti bloccano l'uso delle loro immagini altrove. Usa il link diretto all'immagine oppure scarica la foto e caricala con **Scegli file**.
@@ -449,7 +485,7 @@ Quando cambi nome o personaggio dalla home, cambia anche nei gruppi. Entrando in
 - **"Eri già in partita?" non mostra il mio nome**: compaiono solo i giocatori il cui telefono risulta scollegato. Se il vecchio telefono è ancora acceso con la pagina aperta, chiudila; se si è spento da poco, aspetta qualche secondo (fino a circa un minuto) e la lista si aggiorna da sola.
 - **Un giocatore risulta "Non collegato" anche se è lì**: i telefoni, soprattutto gli iPhone, sospendono la pagina quando lo schermo si spegne o si passa a un'altra app. Basta riaprire la pagina della serata e si ricollega da solo. Se il telefono si spegne di colpo, Firebase può impiegare fino a circa un minuto per accorgersene.
 - **Un gioco non compare tra le proposte di "Cosa giochiamo?"**: è già stato giocato stasera, il numero di giocatori indicato nell’armadio non va bene per quanti siete, oppure è segnato come prestato o non disponibile. Controlla con la matita nel pannello **Armadio**.
-- **"Il database ha rifiutato l'operazione" salvando foto, identità, prossima serata, pronostici, pettegolezzi, effetti, battito o stanza chiusa**: ricopia `database.rules.json` ([README](../README.md), passo 2.3): le regole vecchie non conoscono questi dati.
+- **"Il database ha rifiutato l'operazione" salvando foto, identità, prossima serata, pronostici, pettegolezzi, effetti, battito o stanza chiusa**: ricopia `firebase/database.rules.json` ([INSTALLAZIONE.md](INSTALLAZIONE.md#23-regole-del-database), passo 2.3): le regole vecchie non conoscono questi dati.
 - **Un telefono vede "Stanza chiusa"**: l'host ha chiuso la stanza. Riaprila dalla lobby, dal pannello Giocatori o dagli Strumenti. Chi era già in partita può rientrare dalla lista "Eri già in partita?".
 - **Un telefono vede "Sei fuori dalla serata"**: è stato espulso. Nel pannello Giocatori, sotto **Espulsi stasera**, premi **Riammetti**.
 - **"File corrotto" importando un backup**: il file è incompleto o è stato toccato a mano in modo sbagliato. Usa un altro backup di emergenza, oppure la macchina del tempo se sei sullo stesso computer.

@@ -2,9 +2,16 @@
 import { fmt } from './util.js';
 import { duck, isMuted } from './sounds.js';
 import { isSafeMode } from './safe.js';
+import { t, has, fmtList, locale } from './i18n.js';
 
 const KEY = 'gnr_commentator';
-export const COMMENTATOR_MODES = [['off', 'Spento'], ['festa', 'Telecronista (celebrativo)'], ['roast', 'Roast (satirico, ma con affetto)']];
+// I valori ('off', 'festa', 'roast') restano codici (localStorage); le etichette seguono la lingua.
+// L'elenco è "vivo": se la lingua cambia senza ricaricare, le etichette si aggiornano qui dentro.
+const MODES = ['off', 'festa', 'roast'];
+export const COMMENTATOR_MODES = [];
+function fillModes() { COMMENTATOR_MODES.splice(0, COMMENTATOR_MODES.length, ...MODES.map((m) => [m, t(`voice.mode.${m}`)])); }
+fillModes();
+if (typeof window !== 'undefined') window.addEventListener?.('gnr-lang', fillModes);
 
 export function commentatorMode() {
   try { return localStorage.getItem(KEY) || 'off'; } catch { return 'off'; }
@@ -13,19 +20,27 @@ export function setCommentatorMode(m) {
   try { localStorage.setItem(KEY, m); } catch { /* niente */ }
 }
 
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-function names(list) {
-  const l = list.filter(Boolean);
-  if (l.length <= 1) return l[0] || '';
-  return `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`;
+/**
+ * Frasi alternative. I dizionari accettano solo testi o plurali (niente array), quindi le varianti
+ * sono chiavi numerate: voice.roast.open.1, voice.roast.open.2, … ; variant('voice.roast.open', p)
+ * conta quante ne esistono nella lingua scelta e ne legge una a caso. Per aggiungere una frase basta
+ * aggiungere la chiave successiva in it-voice.js ed en-voice.js.
+ */
+function variant(base, params) {
+  let n = 0;
+  while (has(`${base}.${n + 1}`)) n++;
+  return t(n ? `${base}.${1 + Math.floor(Math.random() * n)}` : base, params);
 }
-const num = (x) => fmt(x).replace('.', ',');
+const names = (list) => fmtList(list.filter(Boolean));
+const num = (x) => fmt(x);
 function duration(min) {
   if (!min) return '';
-  if (min < 60) return `${min} minuti`;
+  if (min < 60) return t('voice.dur.min', { n: min });
   const h = Math.floor(min / 60), m = min % 60;
-  return `${h === 1 ? "un'ora" : `${h} ore`}${m ? ` e ${m} minuti` : ''}`;
+  const hours = t('voice.dur.hours', { n: h });
+  return m ? t('voice.dur.hm', { hours, minutes: t('voice.dur.min', { n: m }) }) : hours;
 }
+const band = (avg) => (avg >= 9 ? 's9' : avg >= 8 ? 's8' : avg >= 7 ? 's7' : avg >= 6 ? 's6' : avg >= 5 ? 's5' : 's0');
 
 /**
  * Commento al reveal di un gioco.
@@ -33,38 +48,28 @@ function duration(min) {
  */
 export function revealComment(d, mode) {
   if (!d || !d.n) return '';
-  const g = d.game;
-  const a = num(d.avg);
+  const game = d.game;
+  const avg = num(d.avg);
   const parts = [];
   if (mode === 'roast') {
-    parts.push(pick([`Ed ecco il verdetto su ${g}.`, `${g}, è il tuo momento.`, `Vediamo cosa pensate davvero di ${g}.`]));
-    if (d.avg >= 9) parts.push(pick([`${a}. Calma, non vi pagano mica.`, `${a}! Va bene, ammettiamolo: è un capolavoro.`]));
-    else if (d.avg >= 8) parts.push(pick([`${a}: ammettetelo, vi siete divertiti.`, `${a}. Promosso, anche se qualcuno fa finta di niente.`]));
-    else if (d.avg >= 7) parts.push(pick([`${a}: il classico voto da “carino, dai”.`, `${a}. Né carne né pesce, ma si mangia.`]));
-    else if (d.avg >= 6) parts.push(pick([`${a}: lo stesso entusiasmo di un lunedì mattina.`, `${a}. Sufficienza politica.`]));
-    else if (d.avg >= 5) parts.push(pick([`${a}: questo lo rigiocate solo se perdete una scommessa.`, `${a}. ${g}, possiamo parlarne.`]));
-    else parts.push(pick([`${a}. ${g}, torna nella scatola e pensa a quello che hai fatto.`, `${a}: un applauso al coraggio di chi l’ha proposto.`]));
-    if (d.max - d.min >= 4 && d.minNames.length) parts.push(pick([`${names(d.minNames)} ha dato ${d.min}: qualcuno controlli che stia bene.`, `Il voto più basso è di ${names(d.minNames)}: bastian contrario certificato.`]));
-    if (d.winners.length) parts.push(pick([`Ha vinto ${names(d.winners)}: preparatevi, lo farà pesare tutta la sera.`, `Vittoria di ${names(d.winners)}. Gli altri? Presenti.`]));
-    if (d.betsTotal && d.winners.length && !d.seers.length) parts.push(`Nessuno aveva previsto la vittoria di ${names(d.winners)}. Forse nemmeno ${d.winners.length === 1 ? 'lui' : 'loro'}.`);
-    else if (d.seers.length) parts.push(`${names(d.seers)} ${d.seers.length === 1 ? 'aveva' : 'avevano'} previsto tutto. Sospetto.`);
-    if (d.mvp.length) parts.push(pick([`MVP: ${names(d.mvp)}. Gli altri prendano appunti.`, `MVP a ${names(d.mvp)}: e adesso non montatevi la testa.`]));
-    if (d.rank === 1 && d.total > 1) parts.push('E va pure in testa alla classifica. Incredibile.');
+    parts.push(variant('voice.roast.open', { game }));
+    parts.push(variant(`voice.roast.${band(d.avg)}`, { avg, game }));
+    if (d.max - d.min >= 4 && d.minNames.length) parts.push(variant('voice.roast.low', { names: names(d.minNames), min: d.min }));
+    if (d.winners.length) parts.push(variant('voice.roast.win', { names: names(d.winners) }));
+    if (d.betsTotal && d.winners.length && !d.seers.length) parts.push(t('voice.roast.unforeseen', { n: d.winners.length, names: names(d.winners) }));
+    else if (d.seers.length) parts.push(t('voice.roast.seers', { n: d.seers.length, names: names(d.seers) }));
+    if (d.mvp.length) parts.push(variant('voice.roast.mvp', { names: names(d.mvp) }));
+    if (d.rank === 1 && d.total > 1) parts.push(t('voice.roast.top'));
     return parts.join(' ');
   }
-  parts.push(pick([`Signore e signori, il verdetto su ${g}!`, `Si accende il tabellone per ${g}!`, `Ed ecco i voti per ${g}!`]));
-  if (d.avg >= 9) parts.push(`${a}! Un capolavoro: il pubblico è in piedi!`);
-  else if (d.avg >= 8) parts.push(`${a}! Promosso a pieni voti!`);
-  else if (d.avg >= 7) parts.push(`${a}: un bel gioco, niente da dire.`);
-  else if (d.avg >= 6) parts.push(`${a}: sufficienza piena.`);
-  else if (d.avg >= 5) parts.push(`${a}: così così, stavolta.`);
-  else parts.push(`${a}: una partita da dimenticare.`);
-  if (d.max - d.min >= 4 && d.minNames.length && d.maxNames.length) parts.push(`Il gruppo si divide: dal ${d.min} di ${names(d.minNames)} al ${d.max} di ${names(d.maxNames)}.`);
-  else if (d.consensus !== null && d.consensus >= 85 && d.n >= 3) parts.push(`Tutti d’accordo: consenso al ${d.consensus} per cento.`);
-  if (d.winners.length) parts.push(`Vittoria per ${names(d.winners)}!`);
-  if (d.seers.length) parts.push(`Pronostico azzeccato da ${names(d.seers)}!`);
-  if (d.mvp.length) parts.push(`MVP della partita: ${names(d.mvp)}.`);
-  if (d.rank === 1 && d.total > 1) parts.push('Ed è primo in classifica!');
+  parts.push(variant('voice.party.open', { game }));
+  parts.push(t(`voice.party.${band(d.avg)}`, { avg }));
+  if (d.max - d.min >= 4 && d.minNames.length && d.maxNames.length) parts.push(t('voice.party.split', { min: d.min, max: d.max, minNames: names(d.minNames), maxNames: names(d.maxNames) }));
+  else if (d.consensus !== null && d.consensus >= 85 && d.n >= 3) parts.push(t('voice.party.consensus', { pct: d.consensus }));
+  if (d.winners.length) parts.push(t('voice.party.win', { names: names(d.winners) }));
+  if (d.seers.length) parts.push(t('voice.party.seers', { names: names(d.seers) }));
+  if (d.mvp.length) parts.push(t('voice.party.mvp', { names: names(d.mvp) }));
+  if (d.rank === 1 && d.total > 1) parts.push(t('voice.party.top'));
   return parts.join(' ');
 }
 
@@ -74,33 +79,29 @@ export function revealComment(d, mode) {
  */
 export function nightRecap(d, mode) {
   const parts = [];
-  const games = `${d.games} ${d.games === 1 ? 'gioco' : 'giochi'}`;
+  const games = t('voice.recap.games', { n: d.games });
+  const time = d.minutes ? duration(d.minutes) : '';
+  const m = mode === 'roast' ? 'roast' : 'party';
+  parts.push(d.group ? t(`voice.recap.${m}.openGroup`, { group: d.group }) : t(`voice.recap.${m}.open`));
+  parts.push(time ? t(`voice.recap.${m}.time`, { games, time }) : t('voice.recap.count', { games }));
   if (mode === 'roast') {
-    parts.push(`Ed eccoci al resoconto di questa serata${d.group ? `, ${d.group}` : ''}.`);
-    parts.push(`${games}${d.minutes ? ` in ${duration(d.minutes)} di vita che non torneranno indietro` : ''}.`);
-    if (d.top) parts.push(`Il migliore: ${d.top.name}, con ${num(d.top.avg)}.`);
-    if (d.flop && d.flop.name !== d.top?.name) parts.push(`Il peggiore: ${d.flop.name}, con ${num(d.flop.avg)}. Ci vediamo in tribunale.`);
-    if (d.kings.length) parts.push(`${names(d.kings)} ${d.kings.length === 1 ? 'ha' : 'hanno'} vinto ${d.kingWins} ${d.kingWins === 1 ? 'partita' : 'partite'}: la prossima volta invitate${d.kings.length === 1 ? 'lo' : 'li'} di meno.`);
-    if (d.mvp.length) parts.push(`MVP della serata: ${names(d.mvp)}. Complimenti, ora tornate con i piedi per terra.`);
-    for (const a of d.awards.slice(0, 3)) parts.push(`${a.title}: ${a.who}.`);
-    parts.push(d.next ? `Ci rivediamo ${d.next}. Se avete ancora amici.` : 'Alla prossima, se avete ancora amici!');
-    return parts.join(' ');
+    if (d.top) parts.push(t('voice.recap.roast.top', { game: d.top.name, avg: num(d.top.avg) }));
+    if (d.flop && d.flop.name !== d.top?.name) parts.push(t('voice.recap.roast.flop', { game: d.flop.name, avg: num(d.flop.avg) }));
+    if (d.kings.length) parts.push(t('voice.recap.roast.kings', { n: d.kings.length, names: names(d.kings), wins: t('voice.recap.wins', { n: d.kingWins }) }));
+    if (d.mvp.length) parts.push(t('voice.recap.roast.mvp', { names: names(d.mvp) }));
+  } else {
+    if (d.top) parts.push(t('voice.recap.party.top', { game: d.top.name, avg: num(d.top.avg) }));
+    if (d.kings.length) parts.push(t('voice.recap.party.kings', { names: names(d.kings), wins: t('voice.recap.winsWon', { n: d.kingWins }) }));
+    if (d.mvp.length) parts.push(t('voice.recap.party.mvp', { names: names(d.mvp) }));
   }
-  parts.push(`Che serata${d.group ? `, ${d.group}` : ''}!`);
-  parts.push(`${games}${d.minutes ? ` in ${duration(d.minutes)}` : ''}.`);
-  if (d.top) parts.push(`Il gioco della serata è ${d.top.name}, con ${num(d.top.avg)}!`);
-  if (d.kings.length) parts.push(`Chi ha vinto di più: ${names(d.kings)}, con ${d.kingWins} ${d.kingWins === 1 ? 'partita vinta' : 'partite vinte'}.`);
-  if (d.mvp.length) parts.push(`MVP della serata: ${names(d.mvp)}!`);
-  for (const a of d.awards.slice(0, 3)) parts.push(`${a.title}: ${a.who}.`);
-  parts.push(d.next ? `Grazie a tutti, e appuntamento a ${d.next}!` : 'Grazie a tutti, e alla prossima serata!');
+  for (const a of d.awards.slice(0, 3)) parts.push(t('voice.recap.award', { title: a.title, who: a.who }));
+  parts.push(d.next ? t(`voice.recap.${m}.next`, { next: d.next }) : t(`voice.recap.${m}.bye`));
   return parts.join(' ');
 }
 
 /** Il primo posto sul podio. */
 export function podiumLine(name, avg, mode) {
-  return mode === 'roast'
-    ? `Il gioco della serata è ${name}, con ${num(avg)}. Gli altri giochi possono andare a casa.`
-    : `E il gioco della serata è… ${name}, con ${num(avg)}!`;
+  return t(mode === 'roast' ? 'voice.podium.roast' : 'voice.podium.party', { game: name, avg: num(avg) });
 }
 
 // ---------------------------------------------------------------------------
@@ -108,13 +109,21 @@ export function podiumLine(name, avg, mode) {
 // ---------------------------------------------------------------------------
 
 let voice = null;
+/** Una voce nella lingua scelta (locale() di i18n.js): prima quella della stessa regione, poi la stessa lingua. */
 function pickVoice() {
   if (voice || !('speechSynthesis' in window)) return voice;
-  const vs = window.speechSynthesis.getVoices().filter((v) => /^it(-|_|$)/i.test(v.lang));
-  voice = vs.find((v) => /google/i.test(v.name)) || vs.find((v) => /alice|luca|elsa|isabella|diego|federica/i.test(v.name)) || vs[0] || null;
+  const loc = locale().toLowerCase().replace('_', '-');
+  const base = loc.slice(0, 2);
+  const norm = (v) => String(v.lang || '').toLowerCase().replace('_', '-');
+  const all = window.speechSynthesis.getVoices().filter((v) => norm(v) === base || norm(v).startsWith(`${base}-`));
+  const vs = [...all.filter((v) => norm(v) === loc), ...all.filter((v) => norm(v) !== loc)];
+  const nice = base === 'it' ? /alice|luca|elsa|isabella|diego|federica/i : /daniel|serena|kate|libby|sonia|ryan|samantha|aria|jenny/i;
+  voice = vs.find((v) => /google/i.test(v.name)) || vs.find((v) => nice.test(v.name)) || vs[0] || null;
   return voice;
 }
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener?.('voiceschanged', () => { voice = null; pickVoice(); });
+// Cambio di lingua senza ricaricare: si sceglie di nuovo la voce.
+window.addEventListener?.('gnr-lang', () => { voice = null; });
 
 export function voiceAvailable() {
   return 'speechSynthesis' in window && Boolean(pickVoice());
@@ -135,7 +144,7 @@ function caption(text) {
   el.lastChild.textContent = text;
 }
 
-/** Legge il testo (se c'è una voce italiana) e lo mostra come sottotitolo. */
+/** Legge il testo (se c'è una voce nella lingua scelta) e lo mostra come sottotitolo. */
 let speechToken = 0;
 export function speak(text, { captions = true } = {}) {
   if (!text || isSafeMode()) return;

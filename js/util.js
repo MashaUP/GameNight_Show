@@ -236,53 +236,178 @@ function rotatedCanvas(img, quarter, maxSide = 3000) {
  * Restituisce il file da usare (quello originale se non è stato ruotato) oppure lancia
  * un errore con cancelled = true se si annulla.
  */
+/**
+ * Ritaglio: rettangolo in coordinate normalizzate (0–1) sull'immagine già ruotata.
+ * aspect: rapporto larghezza/altezza da rispettare (null = libero), iw/ih: misure dell'immagine.
+ * Restituisce un rettangolo valido, dentro l'immagine, con il rapporto giusto e non troppo piccolo.
+ */
+export function clampCrop(r, aspect, iw, ih, minFrac = 0.12) {
+  let { x, y, w, h } = { x: 0, y: 0, w: 1, h: 1, ...r };
+  w = Math.min(1, Math.max(minFrac, w));
+  h = Math.min(1, Math.max(minFrac, h));
+  if (aspect && iw && ih) {
+    // h (normalizzata) per avere w*iw / (h*ih) = aspect
+    const hFor = (ww) => (ww * iw) / (aspect * ih);
+    h = hFor(w);
+    if (h > 1) { h = 1; w = (aspect * ih) / iw; }
+    if (h < minFrac) { h = minFrac; w = Math.min(1, (h * aspect * ih) / iw); }
+  }
+  x = Math.min(Math.max(0, x), 1 - w);
+  y = Math.min(Math.max(0, y), 1 - h);
+  return { x, y, w, h };
+}
+/** Il riquadro più grande con quel rapporto, al centro. */
+export function centerCrop(aspect, iw, ih) {
+  if (!aspect) return { x: 0, y: 0, w: 1, h: 1 };
+  const r = clampCrop({ x: 0, y: 0, w: 1, h: 1 }, aspect, iw, ih);
+  return { ...r, x: (1 - r.w) / 2, y: (1 - r.h) / 2 };
+}
+const isFullCrop = (r) => !r || (r.x < 0.002 && r.y < 0.002 && r.w > 0.996 && r.h > 0.996);
+
+/**
+ * Controlla la foto prima di usarla: rotazione e ritaglio (facoltativo), anteprima, conferma o annulla.
+ * kind: 'game' (riquadro 4:3 della scatola), 'square' (stemma, avatar), 'free'.
+ * Restituisce il file originale se non è cambiato niente, altrimenti un JPEG nuovo.
+ */
 export async function editPhoto(file, kind = 'free') {
   if (!file || !String(file.type || '').startsWith('image/')) throw new Error(t('img.notImage'));
   const url = URL.createObjectURL(file);
   let img;
   try { img = await loadAnyImage(url); } catch (err) { URL.revokeObjectURL(url); throw err; }
+  const ASPECT = { game: 4 / 3, square: 1 }[kind] || null;
   return new Promise((resolve, reject) => {
     let q = 0;
+    let crop = null; // null = nessun ritaglio
+    let cropping = false;
+    let base = null; // canvas ruotato per l'anteprima
     const el = document.createElement('div');
     el.className = 'overlay overlay--sheet photo-edit';
     el.innerHTML = `
       <div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="peTitle">
         <div class="panel-head"><h2 id="peTitle">${esc(t('img.check'))}</h2><button type="button" class="icon-btn" data-pecancel data-close aria-label="${esc(t('common.cancel'))}">✕</button></div>
-        <div class="pe-stage pe-stage--${kind}"><img id="peImg" alt="${esc(t('img.preview'))}"></div>
+        <div class="pe-stage pe-stage--${kind}">
+          <div class="pe-frame" id="peFrame"><img id="peImg" alt="${esc(t('img.preview'))}">
+            <div class="pe-crop" id="peCrop" hidden tabindex="0" role="slider" aria-label="${esc(t('img.cropArea'))}" aria-valuetext=""><i class="pe-h pe-h--tl" data-h="tl"></i><i class="pe-h pe-h--br" data-h="br"></i></div>
+          </div>
+        </div>
         <div class="pe-rot">
           <button type="button" class="btn-sec" id="peLeft" aria-label="${esc(t('img.rotLeftAria'))}">⟲ <span>${esc(t('img.rotLeft'))}</span></button>
           <button type="button" class="btn-sec" id="peRight" aria-label="${esc(t('img.rotRightAria'))}">⟳ <span>${esc(t('img.rotRight'))}</span></button>
+          <button type="button" class="btn-sec" id="peCropBtn" aria-pressed="false">✂️ <span>${esc(t('img.crop'))}</span></button>
+          <button type="button" class="btn-sec" id="peCropReset" hidden>↺ <span>${esc(t('img.cropReset'))}</span></button>
         </div>
-        <p class="muted small">${esc(kind === 'game' ? t('img.hintGame') : kind === 'square' ? t('img.hintSquare') : t('img.hintFree'))}</p>
+        <p class="muted small" id="peHint">${esc(kind === 'game' ? t('img.hintGame') : kind === 'square' ? t('img.hintSquare') : t('img.hintFree'))}</p>
         <button type="button" class="btn btn-block" id="peOk">${esc(t('img.use'))}</button>
       </div>`;
     document.body.appendChild(el);
     const prev = el.querySelector('#peImg');
+    const box = el.querySelector('#peCrop');
+    const stage = el.querySelector('.pe-stage');
+    /** Canvas ruotato e (se c'è) ritagliato, alla risoluzione richiesta. */
+    const output = (maxSide) => {
+      const cv = rotatedCanvas(img, q, maxSide);
+      if (isFullCrop(crop)) return cv;
+      const sx = Math.round(crop.x * cv.width), sy = Math.round(crop.y * cv.height);
+      const sw = Math.max(1, Math.round(crop.w * cv.width)), sh = Math.max(1, Math.round(crop.h * cv.height));
+      const out = document.createElement('canvas');
+      out.width = sw; out.height = sh;
+      const c = out.getContext('2d');
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(cv, sx, sy, sw, sh, 0, 0, sw, sh);
+      return out;
+    };
+    const paintBox = () => {
+      box.hidden = !cropping;
+      if (!cropping || !crop) return;
+      box.style.left = `${crop.x * 100}%`; box.style.top = `${crop.y * 100}%`;
+      box.style.width = `${crop.w * 100}%`; box.style.height = `${crop.h * 100}%`;
+      box.setAttribute('aria-valuetext', t('img.cropValue', { w: Math.round(crop.w * 100), h: Math.round(crop.h * 100) }));
+    };
     const paint = () => {
-      const cv = rotatedCanvas(img, q, 900);
+      base = rotatedCanvas(img, q, 900);
+      stage.classList.toggle('is-cropping', cropping);
+      if (cropping) { prev.src = base.toDataURL('image/jpeg', 0.85); paintBox(); return; }
+      const cv = output(900);
       if (kind === 'game') prev.src = drawStandard(cv);
       else if (kind === 'square') {
-        const s = Math.min(cv.width, cv.height);
+        const s2 = Math.min(cv.width, cv.height);
         const sq = document.createElement('canvas'); sq.width = sq.height = 320;
-        sq.getContext('2d').drawImage(cv, (cv.width - s) / 2, (cv.height - s) / 2, s, s, 0, 0, 320, 320);
+        sq.getContext('2d').drawImage(cv, (cv.width - s2) / 2, (cv.height - s2) / 2, s2, s2, 0, 0, 320, 320);
         prev.src = sq.toDataURL('image/jpeg', 0.85);
       } else prev.src = cv.toDataURL('image/jpeg', 0.85);
+      box.hidden = true;
+    };
+    const setCropping = (on) => {
+      cropping = on;
+      if (on && !crop) crop = centerCrop(ASPECT, base?.width || 1, base?.height || 1);
+      el.querySelector('#peCropBtn').setAttribute('aria-pressed', String(on));
+      el.querySelector('#peCropBtn span').textContent = on ? t('img.cropDone') : t('img.crop');
+      el.querySelector('#peCropReset').hidden = !crop || isFullCrop(crop);
+      el.querySelector('#peHint').textContent = on ? t('img.cropHint') : (kind === 'game' ? t('img.hintGame') : kind === 'square' ? t('img.hintSquare') : t('img.hintFree'));
+      paint();
+      if (on) box.focus({ preventScroll: true });
     };
     const finish = (ok) => {
       document.removeEventListener('keydown', onKey, true);
       el.remove();
       if (!ok) { URL.revokeObjectURL(url); reject(Object.assign(new Error(''), { cancelled: true })); return; }
-      if (!(q % 4)) { URL.revokeObjectURL(url); resolve(file); return; }
-      const cv = rotatedCanvas(img, q);
+      if (!(q % 4) && isFullCrop(crop)) { URL.revokeObjectURL(url); resolve(file); return; }
+      const cv = output(3000);
       URL.revokeObjectURL(url);
       cv.toBlob((b) => (b ? resolve(new File([b], 'foto.jpg', { type: 'image/jpeg' })) : resolve(file)), 'image/jpeg', 0.92);
     };
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (cropping) setCropping(false); else finish(false); return; }
+      if (cropping && document.activeElement === box && crop) {
+        const step = e.shiftKey ? 0.01 : 0.03;
+        const iw = base.width, ih = base.height;
+        let r = { ...crop };
+        if (e.key === 'ArrowLeft') r.x -= step; else if (e.key === 'ArrowRight') r.x += step;
+        else if (e.key === 'ArrowUp') r.y -= step; else if (e.key === 'ArrowDown') r.y += step;
+        else if (e.key === '+' || e.key === '=') { r.w += step; r.h += step; r.x -= step / 2; r.y -= step / 2; }
+        else if (e.key === '-') { r.w -= step; r.h -= step; r.x += step / 2; r.y += step / 2; }
+        else return;
+        e.preventDefault();
+        crop = clampCrop(r, ASPECT, iw, ih);
+        paintBox();
+      }
+    };
     document.addEventListener('keydown', onKey, true);
+    // Trascinare il riquadro (o i suoi angoli) con il dito o il mouse.
+    let drag = null;
+    box.addEventListener('pointerdown', (e) => {
+      if (!crop) return;
+      e.preventDefault();
+      box.setPointerCapture?.(e.pointerId);
+      const rect = prev.getBoundingClientRect();
+      drag = { h: e.target.dataset?.h || '', sx: e.clientX, sy: e.clientY, start: { ...crop }, rw: rect.width || 1, rh: rect.height || 1 };
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = (e.clientX - drag.sx) / drag.rw; const dy = (e.clientY - drag.sy) / drag.rh;
+      const s0 = drag.start;
+      let r;
+      if (drag.h === 'br') r = { x: s0.x, y: s0.y, w: s0.w + dx, h: s0.h + dy };
+      else if (drag.h === 'tl') r = { x: s0.x + dx, y: s0.y + dy, w: s0.w - dx, h: s0.h - dy };
+      else r = { ...s0, x: s0.x + dx, y: s0.y + dy };
+      if (ASPECT && drag.h) {
+        // Con il rapporto fisso conta lo spostamento più grande; l'angolo opposto resta fermo.
+        const nr = clampCrop({ ...r }, ASPECT, base.width, base.height);
+        if (drag.h === 'tl') { nr.x = Math.max(0, s0.x + s0.w - nr.w); nr.y = Math.max(0, s0.y + s0.h - nr.h); }
+        r = nr;
+      }
+      crop = clampCrop(r, ASPECT, base.width, base.height);
+      paintBox();
+    });
+    const endDrag = () => { drag = null; el.querySelector('#peCropReset').hidden = isFullCrop(crop); };
+    box.addEventListener('pointerup', endDrag);
+    box.addEventListener('pointercancel', endDrag);
     el.addEventListener('click', (e) => {
       if (e.target === el || e.target.closest('[data-pecancel]')) finish(false);
-      else if (e.target.closest('#peLeft')) { q--; paint(); }
-      else if (e.target.closest('#peRight')) { q++; paint(); }
+      else if (e.target.closest('#peLeft')) { q--; crop = null; paint(); if (cropping) setCropping(true); }
+      else if (e.target.closest('#peRight')) { q++; crop = null; paint(); if (cropping) setCropping(true); }
+      else if (e.target.closest('#peCropBtn')) setCropping(!cropping);
+      else if (e.target.closest('#peCropReset')) { crop = null; el.querySelector('#peCropReset').hidden = true; if (cropping) setCropping(true); else paint(); }
       else if (e.target.closest('#peOk')) finish(true);
     });
     paint();
@@ -411,7 +536,7 @@ export const ErrLog = {
     if (this.installed) return;
     this.installed = true;
     window.addEventListener('error', (e) => {
-      if (e.target && e.target !== window && e.target.tagName) { this.add('risorsa', `Non caricata: ${e.target.tagName.toLowerCase()} ${String(e.target.src || e.target.href || '').slice(0, 120)}`); return; }
+      if (e.target && e.target !== window && e.target.tagName) { this.add('risorsa', `Non caricata: ${e.target.tagName.toLowerCase()} ${String(e.target.src || e.target.href || '').slice(0, 120)}`); return; } // i18n-ok: registro tecnico
       this.add('errore', e.message, e.error?.stack);
     }, true);
     window.addEventListener('unhandledrejection', (e) => this.add('promessa', e.reason?.message || e.reason, e.reason?.stack));

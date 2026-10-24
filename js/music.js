@@ -2,17 +2,18 @@
 // Quattro atmosfere: lounge (attesa), suspense (votazione), festa (premiazione), pausa.
 import { audioCtx, musicOut, isMuted } from './sounds.js';
 import { isSafeMode } from './safe.js';
+import { t } from './i18n.js';
 
 const KEY = 'gnr_music';
 export const MUSIC_MODES = [
-  ['off', 'Spenta'],
-  ['auto', 'Automatica (segue la serata)'],
-  ['lounge', 'Lounge'],
-  ['suspense', 'Suspense'],
-  ['festa', 'Festa'],
-  ['pausa', 'Relax']
+  ['off', t('music.off')],
+  ['auto', t('music.auto')],
+  ['lounge', t('music.lounge')],
+  ['suspense', t('music.suspense')],
+  ['festa', t('music.festa')],
+  ['pausa', t('music.pausa')]
 ];
-export const MOOD_LABEL = { lounge: 'Lounge', suspense: 'Suspense', festa: 'Festa', pausa: 'Relax' };
+export const MOOD_LABEL = { lounge: t('music.lounge'), suspense: t('music.suspense'), festa: t('music.festa'), pausa: t('music.pausa') };
 
 const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
 let noise = null;

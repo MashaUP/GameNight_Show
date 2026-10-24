@@ -19,7 +19,7 @@ se vuoi, verrai ringraziato nel CHANGELOG della correzione.
 
 ## Cosa interessa di più
 
-- **Regole del database** (`database.rules.json`): letture o scritture permesse a chi non dovrebbe.
+- **Regole del database** (`firebase/database.rules.json`): letture o scritture permesse a chi non dovrebbe.
 - **Testi inseriti dagli utenti** (nomi, commenti, pettegolezzi, giochi) che finiscono nella pagina come codice.
 - **Link ufficiali** (`config/links.json`, `go.html`): modi per far aprire un indirizzo fuori dai domini ammessi.
 - **App Android**: aggiornamenti che installano un file diverso da quello pubblicato (controllo SHA-256), permessi.

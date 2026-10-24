@@ -1,15 +1,16 @@
 // Atmosfere animate dietro le schermate della TV (canvas leggero, 30 fotogrammi al secondo).
 import { isSafeMode } from './safe.js';
+import { t } from './i18n.js';
 export const ATMOS = [
-  ['none', 'Nessuna'],
-  ['auto', 'Automatica (dal gioco)'],
-  ['pioggia', '🌧️ Pioggia sul vetro (gialli, investigativi)'],
-  ['candele', '🕯️ Candele (fantasy, medievali)'],
-  ['neon', '🌆 Neon (fantascienza)'],
-  ['stelle', '✨ Cielo stellato (notte, spazio)'],
-  ['festa', '🎉 Festa (party game)'],
-  ['nebbia', '🌫️ Nebbia (horror, mistero)'],
-  ['palco', '🎲 Palcoscenico (dadi, segnalini e carte foil)']
+  ['none', t('atmo.n.none')],
+  ['auto', t('atmo.n.auto')],
+  ['pioggia', `🌧️ ${t('atmo.n.pioggia')}`],
+  ['candele', `🕯️ ${t('atmo.n.candele')}`],
+  ['neon', `🌆 ${t('atmo.n.neon')}`],
+  ['stelle', `✨ ${t('atmo.n.stelle')}`],
+  ['festa', `🎉 ${t('atmo.n.festa')}`],
+  ['nebbia', `🌫️ ${t('atmo.n.nebbia')}`],
+  ['palco', `🎲 ${t('atmo.n.palco')}`]
 ];
 
 /** Atmosfera adatta a un gioco, dalle sue categorie e dal nome. */

@@ -1,16 +1,18 @@
-// Elenco degli effetti della soundboard (condiviso da TV e telefoni).
+// Elenco degli effetti della soundboard (condiviso da TV e telefoni). I nomi seguono la lingua scelta.
+import { t } from './i18n.js';
+
 export const SFX_META = [
-  { k: 'applausi', icon: '👏', label: 'Applausi' },
-  { k: 'risate', icon: '😂', label: 'Risate' },
-  { k: 'trombone', icon: '🎺', label: 'Trombone triste' },
-  { k: 'badumtss', icon: '🥁', label: 'Ba-dum-tss' },
-  { k: 'rullo', icon: '🪘', label: 'Rullo di tamburi' },
-  { k: 'tensione', icon: '😱', label: 'Tensione' },
-  { k: 'tromba', icon: '📯', label: 'Trombetta' },
-  { k: 'ciak', icon: '🎬', label: 'Ciak' },
-  { k: 'allarme', icon: '🚨', label: 'Allarme' },
-  { k: 'grilli', icon: '🦗', label: 'Silenzio imbarazzante' },
-  { k: 'esatto', icon: '✅', label: 'Esatto!' },
-  { k: 'errore', icon: '❌', label: 'Sbagliato!' },
-  { k: 'fischio', icon: '😤', label: 'Fischio' }
+  { k: 'applausi', icon: '👏', label: t('sfx.applausi') },
+  { k: 'risate', icon: '😂', label: t('sfx.risate') },
+  { k: 'trombone', icon: '🎺', label: t('sfx.trombone') },
+  { k: 'badumtss', icon: '🥁', label: t('sfx.badumtss') },
+  { k: 'rullo', icon: '🪘', label: t('sfx.rullo') },
+  { k: 'tensione', icon: '😱', label: t('sfx.tensione') },
+  { k: 'tromba', icon: '📯', label: t('sfx.tromba') },
+  { k: 'ciak', icon: '🎬', label: t('sfx.ciak') },
+  { k: 'allarme', icon: '🚨', label: t('sfx.allarme') },
+  { k: 'grilli', icon: '🦗', label: t('sfx.grilli') },
+  { k: 'esatto', icon: '✅', label: t('sfx.esatto') },
+  { k: 'errore', icon: '❌', label: t('sfx.errore') },
+  { k: 'fischio', icon: '😤', label: t('sfx.fischio') }
 ];

@@ -1,5 +1,52 @@
 # Novità
 
+## 1.10.0 · Tutta in due lingue, pausa e timer condiviso, armadio completo, i tuoi dati (24 ottobre 2026)
+
+> Raccoglie in un solo ciclo i piani 1.6 → 1.10 (vedi `docs/AUDIT.md`). **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** ([docs/INSTALLAZIONE.md](docs/INSTALLAZIONE.md#23-regole-del-database), passo 2.3). Il file delle regole ora sta nella cartella `firebase/`.
+>
+> Conviene aggiornare insieme TV e telefoni: pausa, timer condiviso, schermo ambiente e suoni personalizzati usano nodi nuovi della stanza.
+
+**1.6 · Lo stesso stile ovunque**
+- Il sistema di design della home (colori, caratteri, angoli, bordi sottili, ombre morbide, temi Show e Giorno, alto contrasto) vale ora anche per telefono, armadio, ludoteca, resoconto, download e tavolo di verifica. La TV resta il palcoscenico, con gli stessi colori e caratteri.
+- Telecomando e tastiera: con le frecce il fuoco si sposta tra pulsanti e campi (anche nelle finestre aperte), sempre ben visibile.
+
+**1.7 · Tutta l'app in italiano e inglese**
+- Tradotti TV, armadio, resoconto, tavolo di verifica, pannelli extra del telefono, pre-partita, soundboard, atmosfere, musica, tutorial e messaggi comuni. Plurali, date e numeri nella lingua scelta.
+- Dizionari divisi per area (`js/lang/it-*.js`, `en-*.js`); `tests/check.mjs` controlla parità, parametri, chiavi usate e doppioni, e lo scanner `tests/i18n-scan.mjs` blocca i testi italiani rimasti scritti nel codice.
+- Limite noto: le domande del quiz sono scritte nella lingua della TV.
+
+**1.8 · BoardGameGeek, manuali, Consigliere**
+- **BoardGameGeek** dall'armadio: ricerca, anteprima della scheda, confronto campo per campo prima di applicare (niente sovrascritture senza conferma). Funziona appena il proxy `bgg-proxy/` è attivo e il suo indirizzo è in `js/services.js`; senza proxy lo dice chiaramente e resta l'importazione del CSV.
+- **Manuali in tre modi gratuiti:** link (BGG, sito dell'editore), file PDF o foto salvato **solo sul dispositivo**, ricerca guidata del regolamento. QR del manuale sulla scheda delle regole della TV.
+- **Consigliere** rinnovato: filtri per tempo, peso e modalità, giochi preferiti, giochi già sul tavolo, motivo di ogni consiglio.
+- **Preferiti** del profilo: cuore sui giochi, filtro e ordinamento nell'armadio, prima nella lista dei giochi di stasera.
+
+**1.9 · I tuoi dati e l'armadio**
+- **I tuoi dati e la privacy** (home): esportazione in un file JSON versionato (`gamenight-export` v2, [docs/DATI.md](docs/DATI.md)), **importazione guidata** con anteprima, conteggi e scelte (armadio nuovo o esistente, solo i mancanti o completa i campi vuoti), mai sovrascritture silenziose, armadio nuovo scritto tutto o niente.
+- **Centro privacy:** cosa sta dove, spegnere un catalogo pubblico, cancellare il profilo, svuotare il dispositivo.
+- **Diagnostica:** versione e aggiornamenti, rete, Firebase, accesso anonimo, regole pubblicate, file offline, spazio, BoardGameGeek, app, registro errori, profilo e lingua, con un rapporto da scaricare (senza codici e chiavi).
+- **Prestiti scaduti e in scadenza:** avviso nella home, rimandabile.
+- **Catalogo pubblico** (`pub/<token>`): scegli i campi (posizione, stato, durata, regole/manuale, solo disponibili), anteprima, apri, copia, revoca.
+- **Ritaglio delle foto** dei giochi, anche da tastiera.
+
+**1.10 · Show**
+- **Pausa della serata** (TV, tasto P, o dalla regia del telefono): ferma votazione, quiz e timer; tutti lo vedono.
+- **Timer condiviso** (turno, round, intervallo, libero): sulla TV e su tutti i telefoni, comandato dalla TV e dai telefoni regia. Niente scritture al secondo: si salva solo l'istante di fine, con revisione controllata dalle regole; la scadenza suona una volta sola.
+- **Schermo ambiente** (tasto A o dal telefono regia): gioco in corso, giocatori, timer e orologio tra una partita e l'altra.
+- **Soundboard personalizzata:** fino a 16 suoni caricati sulla TV (restano solo lì: su Firebase vanno solo nomi e icone), che i telefoni possono far partire.
+- **Atmosfere** con intensità e suono generato dal browser (pioggia, candele, neon, stelle, nebbia).
+- **Il vostro anno:** riepilogo dell'anno del gruppo, giochi più votati e scoperti, immagine da condividere, anche dal telefono.
+- **Android TV:** la stessa APK compare tra le app del televisore (banner, Leanback) e si usa con il telecomando.
+
+**App Android: esportazioni**
+- **PDF veri** (testo selezionabile, foto dell'album) per il PDF della serata, il resoconto e le etichette con QR dell'armadio: si salvano in Documenti/GameNight Show e si aprono con il lettore del telefono. Prima l'app salvava una pagina HTML.
+- I manuali salvati sul dispositivo si aprono con il lettore del telefono; nel browser non scaricano più il file due volte.
+
+**Progetto**
+- README snellito; guide separate: `docs/INSTALLAZIONE.md`, `docs/ANDROID.md`, `docs/SVILUPPO.md`, `docs/DATI.md`.
+- Radice più pulita: `database.rules.json` → `firebase/`, `VERIFICA.md` → `docs/`, `CONTRIBUTING.md` e `SECURITY.md` → `.github/`; tolta un'immagine non usata.
+- Prove nuove: `tests/nightclock.test.mjs`, `tests/features.test.mjs`, `tests/pdf.test.mjs`, regole del database per i nodi nuovi, e nel browser `night16.py` (pausa, timer, ambiente), `data16.py` (dati, privacy, catalogo, BGG, manuali) ed `exports16.py` (esportazioni dall'app Android).
+
 ## 1.5.0 · Link ufficiali, community, telefono in inglese (23 ottobre 2026)
 
 > Contiene anche tutta la 1.4.0, che non era stata pubblicata da sola. **Le regole del database sono cambiate rispetto alla 1.3.1** (vecchi profili di gruppo): ricopia `database.rules.json` in Firebase e premi **Pubblica** (README, passo 2.3).

@@ -4,6 +4,7 @@ import { avatarHTML } from './avatars.js';
 import { personKey } from './stats.js';
 import { tableGames, wishCounts, foodList, arrivals, buildPlan, planTimes, gameMinutes, hhmm } from './prep.js';
 import { ding, pop } from './sounds.js';
+import { t } from './i18n.js';
 
 let C = null;
 export function bindPrep(ctx) { C = ctx; }
@@ -13,11 +14,11 @@ const fail = (err) => toast(C.explainError(err), 'error');
 
 /** Giochi sul tavolo stasera { id: [nomi] }: quelli portati dai telefoni e quelli con la stellina "Stasera" nell'armadio. */
 export function onTable() {
-  const t = tableGames(S().tonight, S().next, S().library);
+  const tb = tableGames(S().tonight, S().next, S().library);
   // Nella stanza le stelline sono della serata (pick); senza stanza quelle dell'armadio.
   const room = Boolean(S().code && S().state);
-  for (const [id, it] of Object.entries(S().library || {})) if (it?.name && (room ? S().pick?.[id] === true : it.sel === true) && !t[id]) t[id] = [];
-  return t;
+  for (const [id, it] of Object.entries(S().library || {})) if (it?.name && (room ? S().pick?.[id] === true : it.sel === true) && !tb[id]) tb[id] = [];
+  return tb;
 }
 
 /**
@@ -42,18 +43,18 @@ export function prepHTML() {
   const food = foodList(S().next);
   const blocks = [];
   if (arr && (arr.coming.length || arr.maybe.length)) {
-    blocks.push(`<div class="prep-block prep-arrivals"><b>${arr.late ? '⏰ In ritardo' : '🚶 In arrivo'}</b>
-      <span>${esc(arr.coming.join(', ')) || '—'}${arr.maybe.length ? ` <small>· forse ${esc(arr.maybe.join(', '))}</small>` : ''}</span>
-      ${arr.expected > (S().meta.maxPlayers || 0) ? `<small class="prep-warn">Servono ${arr.expected} posti: aumentali con +</small>` : ''}</div>`);
+    blocks.push(`<div class="prep-block prep-arrivals"><b>${t(arr.late ? 'prep.arr.late' : 'prep.arr.coming')}</b>
+      <span>${esc(arr.coming.join(', ')) || '—'}${arr.maybe.length ? ` <small>${t('prep.arr.maybe', { names: esc(arr.maybe.join(', ')) })}</small>` : ''}</span>
+      ${arr.expected > (S().meta.maxPlayers || 0) ? `<small class="prep-warn">${t('prep.arr.seats', { n: arr.expected })}</small>` : ''}</div>`);
   }
   const ids = Object.keys(table);
-  blocks.push(`<div class="prep-block prep-table"><b>🎲 Sul tavolo stasera${ids.length ? ` (${ids.length})` : ''}</b>
-    ${ids.length ? `<div class="prep-chips">${ids.sort((a, b) => (w[b] || 0) - (w[a] || 0)).slice(0, 10).map((id) => `<span class="prep-chip" title="${esc(table[id].length ? `Portato da ${table[id].join(', ')}` : '')}">${esc(lib[id]?.name || '')}${w[id] ? ` <em>⭐${w[id]}</em>` : ''}${table[id].length ? `<small>${esc(table[id].join(', '))}</small>` : ''}</span>`).join('')}</div>`
-      : '<span class="muted">Dal telefono: "I giochi di stasera" per segnare cosa avete portato (anche con il codice a barre della scatola).</span>'}</div>`);
+  blocks.push(`<div class="prep-block prep-table"><b>${t('prep.table.title')}${ids.length ? ` (${ids.length})` : ''}</b>
+    ${ids.length ? `<div class="prep-chips">${ids.sort((a, b) => (w[b] || 0) - (w[a] || 0)).slice(0, 10).map((id) => `<span class="prep-chip" title="${esc(table[id].length ? t('prep.table.broughtBy', { names: table[id].join(', ') }) : '')}">${esc(lib[id]?.name || '')}${w[id] ? ` <em>⭐${w[id]}</em>` : ''}${table[id].length ? `<small>${esc(table[id].join(', '))}</small>` : ''}</span>`).join('')}</div>`
+      : `<span class="muted">${t('prep.table.empty')}</span>`}</div>`);
   const top = Object.entries(w).filter(([id]) => lib[id] && !table[id]).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  if (top.length) blocks.push(`<div class="prep-block"><b>⭐ Più desiderati</b><span>${top.map(([id, n]) => `${esc(lib[id].name)} (${n})`).join(' · ')}</span></div>`);
-  if (food.length) blocks.push(`<div class="prep-block"><b>🍕 Da mangiare</b><span>${food.map((f) => `${esc(f.name)}: ${esc(f.food)}`).join(' · ')}</span></div>`);
-  return `${blocks.join('')}<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${S().plan?.items?.length ? 'Scaletta della serata' : 'Prepara la scaletta'}</span></button>`;
+  if (top.length) blocks.push(`<div class="prep-block"><b>${t('prep.wished')}</b><span>${top.map(([id, n]) => `${esc(lib[id].name)} (${n})`).join(' · ')}</span></div>`);
+  if (food.length) blocks.push(`<div class="prep-block"><b>${t('prep.food')}</b><span>${food.map((f) => `${esc(f.name)}: ${esc(f.food)}`).join(' · ')}</span></div>`);
+  return `${blocks.join('')}<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${t(S().plan?.items?.length ? 'prep.plan.open' : 'prep.plan.prepare')}</span></button>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +76,7 @@ export function planNextHTML() {
   const n = nextPlanned();
   if (!n) return '';
   const it = S().library[n.id];
-  return `<button type="button" class="plan-next" data-plan-use="${esc(n.id)}">🗓️ Prossimo in scaletta: <b>${esc(it.name)}</b> <small>${n.minutes} min</small></button>`;
+  return `<button type="button" class="plan-next" data-plan-use="${esc(n.id)}">${t('prep.plan.next', { name: esc(it.name), min: n.minutes })}</button>`;
 }
 
 export const PlanPanel = {
@@ -89,11 +90,11 @@ export const PlanPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="plTitle">
-        <div class="panel-head"><h2 id="plTitle">🗓️ Scaletta della serata</h2><button type="button" class="icon-btn" id="plClose" aria-label="Chiudi">${ICONS.x}</button></div>
-        <p class="muted">La TV mette in fila i giochi ${poolIds() ? '<b>sul tavolo stasera</b>' : 'dell’armadio'} adatti a quanti siete: uno breve per scaldarsi, poi i più desiderati, e si chiude con uno veloce. Cinque minuti a gioco per spiegazione e preparazione. Si riordina con le frecce.</p>
-        <div class="rc-filter"><span class="field-label">Tempo a disposizione</span>
-          <div class="seg" id="plTime">${[60, 90, 120, 180, 240].map((m) => `<button type="button" data-min="${m}" aria-pressed="${this.minutes === m}">${m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? 'ora' : 'ore'}`.replace('1.5 ore', '1 ora e ½')}</button>`).join('')}</div>
-          <button type="button" class="btn" id="plMake">Proponi la scaletta</button></div>
+        <div class="panel-head"><h2 id="plTitle">${t('prep.plan.title')}</h2><button type="button" class="icon-btn" id="plClose" aria-label="${t('common.close')}">${ICONS.x}</button></div>
+        <p class="muted">${t('prep.plan.intro', { pool: t(poolIds() ? 'prep.plan.poolTable' : 'prep.plan.poolAll') })}</p>
+        <div class="rc-filter"><span class="field-label">${t('prep.plan.time')}</span>
+          <div class="seg" id="plTime">${[60, 90, 120, 180, 240].map((m) => `<button type="button" data-min="${m}" aria-pressed="${this.minutes === m}">${m < 60 ? `${m} min` : m === 90 ? t('prep.plan.h90') : t('prep.plan.hours', { n: m / 60 })}</button>`).join('')}</div>
+          <button type="button" class="btn" id="plMake">${t('prep.plan.make')}</button></div>
         <ol class="plan-list" id="plList"></ol>
       </div>`;
     document.body.appendChild(el);
@@ -121,7 +122,7 @@ export const PlanPanel = {
     const n = activePlayers(S().players).length;
     const played = new Set(C.libraryItems().filter((it) => C.playedTonight().has(nameKey(it.name))).map((it) => it.id));
     const list = buildPlan({ items: this.candidates(), minutes: this.minutes, fits: (it) => C.libOk(it, n), wishes: wishes(), played });
-    if (!list.length) { toast(`Nessun gioco adatto a ${n} giocatori.`, 'warn'); return; }
+    if (!list.length) { toast(t('prep.plan.none', { n }), 'warn'); return; }
     C.set(room('plan'), { items: list.map((p) => p.id), minutes: this.minutes, at: C.serverTimestamp() }).then(() => { pop(); C.logEvent(`Scaletta: ${list.map((p) => S().library[p.id].name).join(', ')}`, '🗓️'); }).catch(fail);
   },
   save(items) { C.update(room('plan'), { items }).catch(fail); },
@@ -151,10 +152,10 @@ export const PlanPanel = {
       const done = played.has(nameKey(it.name));
       return `<li class="plan-item ${done ? 'is-done' : ''}" style="--i:${i}">
         <span class="plan-time">${done ? '✓' : hhmm(p.start)}</span>${gameImageHTML(it, 'game-img--thumb')}
-        <span class="plan-name"><b>${esc(it.name)}</b><small>${p.minutes} min${w[p.id] ? ` · ⭐ ${w[p.id]}` : ''}${table[p.id]?.length ? ` · portato da ${esc(table[p.id].join(', '))}` : ''}</small></span>
-        <span class="plan-tools"><button type="button" class="icon-btn" data-plmove="-1" data-i="${i}" aria-label="Su">▲</button><button type="button" class="icon-btn" data-plmove="1" data-i="${i}" aria-label="Giù">▼</button><button type="button" class="icon-btn" data-pldel="${i}" aria-label="Togli">${ICONS.x}</button>
-        ${done ? '' : `<button type="button" class="btn-sec btn-sec--sm" data-plan-use="${esc(p.id)}">Giochiamo</button>`}</span></li>`;
-    }).join('') + `<li class="plan-total muted">Totale circa ${Math.floor(total / 60)} h ${total % 60} min · fine verso le ${hhmm(Date.now() + total * 60000)}</li>` : '<li class="muted">Scegli il tempo e premi "Proponi la scaletta".</li>';
+        <span class="plan-name"><b>${esc(it.name)}</b><small>${p.minutes} min${w[p.id] ? ` · ⭐ ${w[p.id]}` : ''}${table[p.id]?.length ? ` · ${t('prep.plan.broughtBy', { names: esc(table[p.id].join(', ')) })}` : ''}</small></span>
+        <span class="plan-tools"><button type="button" class="icon-btn" data-plmove="-1" data-i="${i}" aria-label="${t('prep.plan.up')}">▲</button><button type="button" class="icon-btn" data-plmove="1" data-i="${i}" aria-label="${t('prep.plan.down')}">▼</button><button type="button" class="icon-btn" data-pldel="${i}" aria-label="${t('prep.plan.remove')}">${ICONS.x}</button>
+        ${done ? '' : `<button type="button" class="btn-sec btn-sec--sm" data-plan-use="${esc(p.id)}">${t('prep.plan.play')}</button>`}</span></li>`;
+    }).join('') + `<li class="plan-total muted">${t('prep.plan.total', { h: Math.floor(total / 60), m: total % 60, end: hhmm(Date.now() + total * 60000) })}</li>` : `<li class="muted">${t('prep.plan.empty')}</li>`;
   },
   update() {
     if (!this.el) return;
@@ -179,25 +180,27 @@ export const RulesPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide rules-panel" role="dialog" aria-modal="true" aria-labelledby="rlTitle">
-        <div class="panel-head"><h2 id="rlTitle">📖 Si gioca a ${esc(it.name)}</h2><button type="button" class="icon-btn" id="rlClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="rlTitle">${t('prep.rules.title', { name: esc(it.name) })}</h2><button type="button" class="icon-btn" id="rlClose" aria-label="${t('common.close')}">${ICONS.x}</button></div>
         <div class="rules-grid">
           <div class="rules-main">
             ${gameImageHTML(it, 'game-img--rules')}
-            <p class="rules-meta">${[it.minPlayers && it.maxPlayers ? `${it.minPlayers}–${it.maxPlayers} giocatori` : '', `${gameMinutes(it)} min`, it.weight ? `peso ${String(it.weight).replace('.', ',')}/5` : ''].filter(Boolean).join(' · ')}</p>
-            ${it.rules ? `<h3>In breve</h3><p class="rules-text">${esc(it.rules)}</p>` : '<p class="muted">Nessun riassunto delle regole: si aggiunge dalla scheda del gioco nell’armadio.</p>'}
-            ${it.setup ? `<h3>Preparazione</h3><ul class="rules-setup">${esc(it.setup).split(/\n|;/).map((s) => s.trim()).filter(Boolean).map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}
+            <p class="rules-meta">${[it.minPlayers && it.maxPlayers ? t('prep.rules.players', { min: it.minPlayers, max: it.maxPlayers }) : '', `${gameMinutes(it)} min`, it.weight ? t('prep.rules.weight', { w: Number(it.weight) }) : ''].filter(Boolean).join(' · ')}</p>
+            ${it.rules ? `<h3>${t('prep.rules.short')}</h3><p class="rules-text">${esc(it.rules)}</p>` : `<p class="muted">${t('prep.rules.none')}</p>`}
+            ${it.setup ? `<h3>${t('prep.rules.setup')}</h3><ul class="rules-setup">${esc(it.setup).split(/\n|;/).map((s) => s.trim()).filter(Boolean).map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}
           </div>
           <aside class="rules-side">
-            <div class="rules-clock"><span>Spiegazione</span><b id="rlClock">0:00</b></div>
+            <div class="rules-clock"><span>${t('prep.rules.clock')}</span><b id="rlClock">0:00</b></div>
             <div id="rlKnows"></div>
-            ${it.video ? `<div class="rules-video"><div class="qr qr--sm" id="rlQr"></div><small>Video delle regole: inquadra con il telefono</small></div>` : ''}
+            ${it.video ? `<div class="rules-video"><div class="qr qr--sm" id="rlQr"></div><small>${t('prep.rules.videoQr')}</small></div>` : ''}
+            ${it.manual && /^https:\/\//.test(it.manual) ? `<div class="rules-video"><div class="qr qr--sm" id="rlManQr"></div><small>📘 ${t('man.qr')}</small></div>` : ''}
           </aside>
         </div>
-        <div class="claim-actions"><button type="button" class="btn-sec" id="rlLater">Non ancora</button><button type="button" class="btn btn-big" id="rlGo">${ICONS.play}<span>Iniziamo!</span></button></div>
+        <div class="claim-actions"><button type="button" class="btn-sec" id="rlLater">${t('prep.rules.later')}</button><button type="button" class="btn btn-big" id="rlGo">${ICONS.play}<span>${t('prep.rules.go')}</span></button></div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
     if (it.video && /^https:\/\//.test(it.video)) $('#rlQr', el).innerHTML = qrSVG(it.video);
+    if (it.manual && /^https:\/\//.test(it.manual)) $('#rlManQr', el).innerHTML = qrSVG(it.manual);
     el.addEventListener('click', (e) => {
       if (e.target === el || e.target.closest('#rlClose') || e.target.closest('#rlLater')) { this.close(); return; }
       if (e.target.closest('#rlGo')) { const id = this.lid; this.close(); C.useLibraryGame(id); C.startPlay(it.name); }
@@ -223,7 +226,7 @@ export const RulesPanel = {
     const wait = ps.filter((p) => typeof kn[p.uid] !== 'boolean');
     const row = (list, label) => list.length ? `<p class="rules-k"><b>${label}</b></p><div class="rules-avs">${list.map((p) => `<span>${avatarHTML(p, '2.4rem')}<small>${esc(p.name)}</small></span>`).join('')}</div>` : '';
     const teacher = yes.length ? yes[Math.floor((this.lid.length + yes.length) % yes.length)] : null;
-    box.innerHTML = `${teacher ? `<p class="rules-teacher">🎓 Spiega <b>${esc(teacher.name)}</b></p>` : ''}${row(yes, '✅ Lo conoscono')}${row(no, '🆕 Da spiegare a')}${row(wait, '⏳ Rispondono dal telefono')}`;
+    box.innerHTML = `${teacher ? `<p class="rules-teacher">${t('prep.rules.teacher', { name: esc(teacher.name) })}</p>` : ''}${row(yes, t('prep.rules.know'))}${row(no, t('prep.rules.new'))}${row(wait, t('prep.rules.wait'))}`;
   },
   update() {
     if (!this.el) return;

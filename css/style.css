@@ -1340,7 +1340,7 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
 /* ---------- TV: voto veloce, oracolo, riapri, voto per conto di ---------- */
 
 .win-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
-.quick-toggle { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 900; font-size: 0.95rem; cursor: pointer; white-space: nowrap; }
+.quick-toggle { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 900; font-size: 0.95rem; cursor: pointer; white-space: normal; text-align: left; }
 .quick-toggle input { width: 1.2rem; height: 1.2rem; accent-color: var(--tomato); }
 .oracle-chip {
   display: inline-flex; align-items: center; gap: 0.5rem; align-self: flex-start;
@@ -4467,3 +4467,179 @@ html[data-theme="night"] .install-qr-url { color: var(--fg); }
   .install-qr-code { width: min(18rem, 80vw); }
   .install-qr-text .btn { align-self: center; }
 }
+
+/* ==========================================================================
+   1.6 · Timer condiviso (sharedtimer.js): chip su TV e telefoni, display, comandi
+   ========================================================================== */
+.sh-chip {
+  --tc: #3DDC84;
+  position: fixed; z-index: 56; cursor: pointer; display: inline-flex; align-items: center; gap: 0.55rem;
+  font: inherit; font-weight: 900; color: #1F1A3D; background: var(--tc);
+  border: var(--bw, 0.18rem) solid var(--ink, #1F1A3D); border-radius: 999px; padding: 0.35rem 1rem 0.35rem 0.8rem;
+  box-shadow: 0.2rem 0.2rem 0 var(--ink, #1F1A3D), 0 0 1.2rem var(--tc);
+  transition: background-color var(--ui-mid, .2s) ease;
+}
+.sh-chip b { font-family: var(--num, inherit); font-weight: 400; font-variant-numeric: tabular-nums; }
+.sh-chip-k { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85em; }
+.sh-chip--tv { right: 1.4rem; bottom: 1.4rem; font-size: 1.45rem; }
+.sh-chip--phone { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 0.5rem); font-size: 1rem; min-height: 2.75rem; max-width: calc(100vw - 1.5rem); }
+.sh-chip.is-paused { color: #F6F3FF; background: #4A4470; }
+.sh-chip.is-hot { animation: shPulse 1s ease-in-out infinite; }
+.sh-chip.is-over { background: #B3121E; color: #FFF3E0; animation: lateShake .45s ease-in-out 4; }
+.sh-chip:focus-visible { outline: 0.25rem solid var(--sun, #FFD34D); outline-offset: 0.2rem; }
+body.has-dock .sh-chip--tv { bottom: 6rem; }
+@keyframes shPulse { 50% { box-shadow: 0.2rem 0.2rem 0 var(--ink, #1F1A3D), 0 0 2.4rem var(--tc); } }
+
+.sh-display { --tc: #3DDC84; display: grid; gap: 0.4rem; justify-items: center; text-align: center; padding: 1rem; border-radius: 1.2rem; background: color-mix(in srgb, var(--tc) 12%, transparent); border: 0.15rem solid color-mix(in srgb, var(--tc) 55%, transparent); }
+.sh-display.is-none { opacity: 0.6; }
+.sh-kind { font-weight: 900; font-size: 1.1rem; min-height: 1.3em; }
+.sh-num { font-family: var(--num, inherit); font-weight: 400; font-size: clamp(3rem, 9vw, 7rem); line-height: 1; font-variant-numeric: tabular-nums; color: var(--tc); text-shadow: 0 0 0.25em color-mix(in srgb, var(--tc) 45%, transparent); }
+.sh-display.is-paused .sh-num { color: inherit; opacity: 0.7; }
+.sh-display.is-hot .sh-num { animation: shBeat 1s ease-in-out infinite; }
+.sh-display.is-over .sh-num { color: #FF5A4E; animation: lateShake .45s ease-in-out 3; }
+.sh-bar { width: min(100%, 26rem); height: 0.7rem; border-radius: 999px; background: rgba(127, 127, 160, 0.25); overflow: hidden; }
+.sh-bar i { display: block; height: 100%; width: 0; background: var(--tc); border-radius: inherit; transition: width .25s linear; }
+.sh-status { font-weight: 700; opacity: 0.85; }
+@keyframes shBeat { 50% { transform: scale(1.06); } }
+
+.sh-ctrl { display: grid; gap: 0.8rem; }
+.sh-kinds, .sh-presets, .sh-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.sh-kinds .chip-btn { cursor: pointer; font: inherit; font-weight: 800; padding: 0.45rem 0.9rem; border-radius: 999px; min-height: 2.75rem; border: 0.15rem solid var(--ink, currentColor); background: transparent; color: inherit; }
+.sh-kinds .chip-btn[aria-pressed="true"] { background: var(--sun, #FFD34D); color: #1F1A3D; }
+.sh-custom { display: flex; flex-wrap: wrap; align-items: end; gap: 0.6rem; }
+.sh-custom label { display: grid; gap: 0.2rem; font-weight: 700; font-size: 0.9rem; }
+.sh-custom input[type="number"] { width: 5.5rem; }
+.sh-custom .sh-label { flex: 1 1 12rem; }
+.sh-custom .sh-label input { width: 100%; }
+.tb-timer { display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.tb-timer .sh-num { font-size: clamp(4rem, 8vw, 8rem); }
+.timer-sheet .sheet { display: grid; gap: 1rem; }
+@media (max-width: 760px) { .tb-timer { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .sh-chip.is-hot, .sh-display.is-hot .sh-num, .sh-chip.is-over, .sh-display.is-over .sh-num { animation: none; } }
+html.a11y-motion .sh-chip, html.a11y-motion .sh-display .sh-num { animation: none !important; }
+
+/* ==========================================================================
+   1.6 · Schermata ambientale della TV (ambient.js)
+   ========================================================================== */
+body.ambient-on #app, body.ambient-on .pause-overlay, body.ambient-on .ticker, body.ambient-on .sand-chip { visibility: hidden; }
+.ambient {
+  position: fixed; inset: 0; z-index: 5; display: grid; color: #F6F3FF;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 26rem); grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(1rem, 3vw, 3rem); padding: clamp(1.2rem, 4vw, 4rem);
+  font-size: clamp(1rem, 1.3vw, 1.6rem);
+  animation: fadeIn .6s ease both;
+}
+.amb-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 30% 40%, rgba(14, 10, 38, 0.35), rgba(8, 5, 24, 0.82) 75%); }
+.ambient > :not(.amb-vignette) { position: relative; }
+.amb-main { display: flex; align-items: center; min-width: 0; }
+.amb-main > div { min-width: 0; }
+.amb-main { gap: clamp(1rem, 3vw, 3rem); }
+.amb-cover { flex: 0 0 auto; width: clamp(12rem, 30vw, 34rem); aspect-ratio: 1; border-radius: 1.6rem; overflow: hidden; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.55), 0 0 0 0.2rem rgba(255, 255, 255, 0.12); }
+.amb-cover .game-img { width: 100%; height: 100%; border-radius: 0; }
+.amb-cover .game-img--empty span { font-size: clamp(3rem, 8vw, 8rem); }
+.amb-info { display: grid; gap: 0.6rem; min-width: 0; }
+.amb-kicker { margin: 0; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #FFD23F; font-size: 1.05em; }
+.amb-title { margin: 0; font-family: var(--num, inherit); font-weight: 400; font-size: clamp(2.6rem, 6vw, 6.5rem); line-height: 1; overflow-wrap: anywhere; text-shadow: 0 0.1em 0.5em rgba(0, 0, 0, 0.5); }
+.amb-meta { margin: 0; font-size: 1.3em; color: #DCD5FF; }
+.amb-play { margin: 0; font-size: 1.4em; } .amb-play b { font-family: var(--num, inherit); font-weight: 400; font-variant-numeric: tabular-nums; }
+.amb-players { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.9rem; }
+.amb-players li { display: grid; justify-items: center; gap: 0.2rem; font-weight: 800; font-size: 0.9em; max-width: 6.5rem; text-align: center; }
+.amb-players li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.amb-idle { display: grid; gap: 0.7rem; justify-items: start; }
+.amb-emblem { font-size: clamp(4rem, 9vw, 9rem); line-height: 1; }
+.amb-emblem .emblem--img { width: clamp(6rem, 12vw, 12rem); height: auto; border-radius: 1.2rem; }
+.amb-board { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.5rem; font-size: 1.4em; }
+.amb-board li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) auto; gap: 0.8rem; align-items: center; padding: 0.5rem 1rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.08); }
+.amb-board li:first-child { background: rgba(255, 210, 63, 0.22); }
+.amb-pos { font-family: var(--num, inherit); color: #FFD23F; text-align: center; }
+.amb-board b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.amb-avg { font-family: var(--num, inherit); font-variant-numeric: tabular-nums; }
+.amb-side { display: flex; flex-direction: column; gap: 1.2rem; align-self: center; }
+.amb-clock { margin: 0; font-family: var(--num, inherit); font-size: clamp(2.4rem, 4vw, 4.4rem); text-align: right; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.amb-pause { display: grid; gap: 0.3rem; padding: 1rem 1.2rem; border-radius: 1.2rem; background: rgba(255, 210, 63, 0.92); color: #1A1236; font-size: 1.3em; text-align: center; }
+.amb-timer .sh-display { background: rgba(10, 6, 30, 0.55); }
+.amb-timer .sh-display.is-none { display: none; }
+.amb-timer .sh-num { font-size: clamp(3.4rem, 6vw, 6.5rem); }
+.amb-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-weight: 700; color: #C3BAEA; }
+.amb-exit { display: inline-flex; align-items: center; gap: 0.5rem; font: inherit; font-weight: 800; color: inherit; background: rgba(255, 255, 255, 0.08); border: 0.12rem solid rgba(255, 255, 255, 0.25); border-radius: 999px; padding: 0.5rem 1.1rem; cursor: pointer; opacity: 0.55; transition: opacity .2s; min-height: 2.75rem; }
+.amb-exit:hover, .amb-exit:focus-visible { opacity: 1; outline: 0.2rem solid #FFD23F; outline-offset: 0.15rem; }
+.amb-exit svg { width: 1.1em; height: 1.1em; }
+.ambient.is-paused .amb-main { opacity: 0.55; filter: saturate(0.6); transition: opacity .4s, filter .4s; }
+@media (max-aspect-ratio: 4/3) {
+  .ambient { grid-template-columns: 1fr; grid-template-rows: auto auto auto; overflow: auto; }
+  .amb-main { flex-direction: column; align-items: flex-start; }
+  .amb-clock { text-align: left; }
+}
+html.a11y-motion .ambient, html.safe-mode .ambient { animation: none; }
+html.a11y-contrast .amb-vignette { background: rgba(0, 0, 0, 0.88); }
+
+/* ==========================================================================
+   1.6 · Preferiti rapidi (favs.js): stella sulle schede, riga dei preferiti
+   ========================================================================== */
+.am-card { position: relative; }
+.am-fav { cursor: pointer; font: inherit; line-height: 1; border: 0; background: transparent; color: #B9B2D9; min-width: 2.75rem; min-height: 2.75rem; display: inline-grid; place-items: center; font-size: 1.45rem; border-radius: 999px; }
+.am-fav.is-on { color: #FF4F7E; text-shadow: 0 0 0.6rem rgba(255, 79, 126, 0.55); }
+.am-fav:hover { color: #FF8FB1; }
+.am-fav:focus-visible { outline: 0.2rem solid var(--sun, #FFD34D); outline-offset: 0.1rem; }
+.am-fav--card { position: absolute; top: 0.3rem; right: 0.3rem; z-index: 2; background: rgba(14, 10, 38, 0.62); backdrop-filter: blur(2px); }
+.am-fav--inline { min-width: 2.2rem; min-height: 2.2rem; font-size: 1.15rem; vertical-align: middle; margin-right: 0.15rem; }
+.am-fav--head { font-size: 1.35rem; vertical-align: middle; }
+.am-favs { margin: 0.4rem 0 0.8rem; padding: 0.8rem; border-radius: 1rem; background: rgba(255, 79, 126, 0.08); border: 0.12rem solid rgba(255, 79, 126, 0.35); }
+.am-favs-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.am-favs-head h2 { margin: 0; font-size: 1.1rem; }
+.am-favs-row { display: flex; gap: 0.6rem; overflow-x: auto; padding: 0.5rem 0.1rem 0.3rem; scroll-snap-type: x proximity; }
+.am-fav-item { flex: 0 0 auto; scroll-snap-align: start; display: flex; align-items: center; gap: 0.5rem; max-width: 15rem; cursor: pointer; font: inherit; color: inherit; text-align: left; padding: 0.35rem 0.7rem 0.35rem 0.35rem; border-radius: 0.8rem; border: 0.12rem solid var(--ui-line-strong, rgba(168, 148, 255, 0.34)); background: var(--ui-surface, rgba(255, 255, 255, 0.05)); min-height: 2.75rem; }
+.am-fav-item span { display: grid; min-width: 0; }
+.am-fav-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-fav-item small { color: var(--ui-warn, #FFB547); font-weight: 700; }
+.am-fav-item.is-off { opacity: 0.7; }
+
+/* 1.9 · Ritaglio delle foto (util.js › editPhoto) */
+.pe-frame { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.pe-stage.is-cropping img { aspect-ratio: auto; width: auto; border-radius: 0.3rem; }
+.pe-stage--square.is-cropping img { border-radius: 0.3rem; border: 0; width: auto; aspect-ratio: auto; }
+.pe-crop { position: absolute; box-sizing: border-box; border: 0.18rem solid #FFD23F; box-shadow: 0 0 0 200vmax rgba(10, 6, 30, 0.55); cursor: move; touch-action: none; border-radius: 0.2rem; }
+.pe-stage--square .pe-crop { border-radius: 50%; }
+.pe-crop:focus-visible { outline: 0.2rem dashed #FFFFFF; outline-offset: 0.15rem; }
+.pe-h { position: absolute; width: 1.5rem; height: 1.5rem; background: #FFD23F; border: 0.15rem solid #1A1236; border-radius: 50%; touch-action: none; }
+.pe-h--tl { left: -0.8rem; top: -0.8rem; cursor: nwse-resize; }
+.pe-h--br { right: -0.8rem; bottom: -0.8rem; cursor: nwse-resize; }
+.pe-stage { overflow: hidden; }
+.pe-rot { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+.sh-prev { border: 0.12rem dashed var(--ui-line-strong, rgba(168, 148, 255, 0.34)); border-radius: 0.9rem; padding: 0.7rem; }
+.sh-prev-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.sh-prev-list li { display: flex; gap: 0.6rem; align-items: center; min-width: 0; }
+.sh-prev-list span { display: grid; min-width: 0; }
+.sh-prev-list small { opacity: 0.8; }
+
+/* 1.8 · BoardGameGeek e manuali nell'armadio */
+.am-bgg-btn { margin-top: 0.4rem; }
+.am-bgg-form { display: flex; gap: 0.5rem; }
+.am-bgg-form .input { flex: 1; }
+.am-bgg-list { list-style: none; margin: 0.6rem 0; padding: 0; display: grid; gap: 0.45rem; }
+.am-bgg-item { width: 100%; display: flex; gap: 0.7rem; align-items: center; text-align: left; cursor: pointer; font: inherit; color: inherit; padding: 0.45rem; border-radius: 0.8rem; border: 0.12rem solid var(--ui-line-strong, rgba(168, 148, 255, 0.34)); background: var(--ui-surface, rgba(255, 255, 255, 0.04)); min-height: 3.2rem; }
+.am-bgg-item:hover, .am-bgg-item:focus-visible { border-color: var(--sun, #FFD34D); }
+.am-bgg-item img, .am-bgg-noimg { width: 3.4rem; height: 3.4rem; object-fit: cover; border-radius: 0.5rem; flex: 0 0 auto; display: grid; place-items: center; background: rgba(127, 127, 160, 0.2); font-size: 1.6rem; }
+.am-bgg-item > span { display: grid; gap: 0.15rem; min-width: 0; }
+.am-bgg-table-wrap { overflow-x: auto; }
+.am-bgg-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.am-bgg-table th, .am-bgg-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--ui-line, rgba(168, 148, 255, 0.16)); text-align: left; vertical-align: middle; }
+.am-bgg-table tr.is-conflict td:nth-child(3) { color: var(--ui-warn, #B86E00); font-weight: 700; }
+.am-bgg-table tr.is-fill td:nth-child(3) { color: var(--ui-ok, #12A36B); font-weight: 700; }
+.am-bgg-credit { font-size: 0.95rem; }
+.am-manual-local p { margin: 0.3rem 0; }
+.wr-list { margin: 0.6rem auto; padding: 0; list-style: none; counter-reset: wr; display: grid; gap: 0.5rem; text-align: left; max-width: 34rem; font-weight: 900; font-size: 1.5rem; }
+.wr-list li { counter-increment: wr; display: flex; gap: 0.7rem; align-items: baseline; }
+.wr-list li::before { content: counter(wr); font-family: var(--num, inherit); color: var(--wc, #FFC93C); min-width: 1.2em; }
+
+/* 1.10 · Soundboard personalizzata (TV) */
+.cs-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.5rem; max-height: 55vh; overflow: auto; }
+.cs-row { display: grid; grid-template-columns: 4.2rem minmax(8rem, 1fr) auto minmax(6rem, 9rem) auto; gap: 0.5rem; align-items: center; }
+.cs-btns { display: inline-flex; gap: 0.3rem; }
+.sfx-btn--custom { outline: 0.12rem dashed rgba(255, 210, 63, 0.6); outline-offset: -0.25rem; }
+@media (max-width: 760px) { .cs-row { grid-template-columns: 4.2rem 1fr; } }
+
+/* 1.10 · Telecomando e Android TV: fuoco ben visibile da lontano */
+html.tv :focus-visible, html.tv-remote :focus-visible { outline: 0.3rem solid #FFD23F !important; outline-offset: 0.2rem; box-shadow: 0 0 0 0.55rem rgba(255, 210, 63, 0.28); }
+html.tv-remote body { font-size: 1.12em; }
+html.tv-remote .btn, html.tv-remote .btn-sec, html.tv-remote .ui-btn { min-height: 3rem; }

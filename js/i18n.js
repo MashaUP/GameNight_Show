@@ -153,6 +153,12 @@ export function applyStatic(root = document) {
 if (typeof document !== 'undefined' && document.readyState !== 'loading') applyStatic(document);
 else if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => applyStatic(document));
 
+/** Pulsante piccolo per passare all'altra lingua (pagine senza impostazioni: download, resoconto, verifica). */
+export function langToggleHTML(cls = 'ph-home') {
+  const other = current === 'en' ? 'it' : 'en';
+  return `<button type="button" class="${cls}" data-lang-set="${other}" lang="${other}" title="${LANGS[other]}" aria-label="${LANGS[other]}">${other.toUpperCase()}</button>`;
+}
+
 /** Selettore "Lingua: Italiano / English" (stesso aspetto del selettore del tema). */
 export function langSwitchHTML(id = 'langSwitch') {
   const opt = (v) => `<button type="button" data-lang-set="${v}" aria-pressed="${current === v}" lang="${v}">${LANGS[v]}</button>`;

@@ -2,6 +2,7 @@
 // e registrata con MediaRecorder. Niente server: il file si crea nel browser della TV.
 import { avatarUri } from './avatars.js';
 import { fmt, safeColor } from './util.js';
+import { t as tr } from './i18n.js';
 
 const W = 1080;
 const H = 1920;
@@ -35,8 +36,11 @@ function fitText(c, t, max) {
   while (c.measureText(s).width > max && s.length > 2) s = s.slice(0, -1);
   return s === String(t || '') ? s : `${s.trimEnd()}…`;
 }
-function text3d(c, t, x, y, size, color = '#FFF3E0', depth = '#B0266A') {
+/** Scritta a rilievo; se è più larga dello schermo (es. in inglese) il corpo si riduce. */
+function text3d(c, t, x, y, size, color = '#FFF3E0', depth = '#B0266A', max = W - 120) {
   c.font = `${size}px ${DISPLAY}`;
+  const w = c.measureText(t).width;
+  if (w > max) { size = Math.floor(size * max / w); c.font = `${size}px ${DISPLAY}`; }
   c.textAlign = 'center';
   for (let i = 6; i >= 1; i--) { c.fillStyle = depth; c.fillText(t, x, y + i * size * 0.012); }
   c.fillStyle = color;
@@ -65,7 +69,7 @@ async function scenes(data) {
     if (data.number) text3d(c, `#${data.number}`, W / 2, 870, 130, '#FFF3E0');
     c.font = `56px ${DISPLAY}`; c.fillStyle = '#C2B5F2';
     c.fillText(fitText(c, data.group, W - 160), W / 2, 1010);
-    c.font = `600 44px ${BODY}`; c.fillText(data.subtitle || '', W / 2, 1080);
+    c.font = `600 44px ${BODY}`; c.fillText(fitText(c, data.subtitle || '', W - 160), W / 2, 1080);
     c.globalAlpha = 1;
   } });
   // 2. I giochi, dal quinto al primo
@@ -83,7 +87,7 @@ async function scenes(data) {
       c.lineWidth = 12; c.strokeStyle = '#06030F'; c.stroke();
       c.textAlign = 'center';
       c.fillStyle = rank === 1 ? '#1F1A3D' : '#FFD34D';
-      c.font = `120px ${NUM}`; c.fillText(`${rank}°`, 0, -260);
+      c.font = `120px ${NUM}`; c.fillText(tr('report.video.rank', { n: rank }), 0, -260);
       if (img) { c.save(); rr(c, -150, -230, 300, 300, 28); c.clip(); c.drawImage(img, -150, -230, 300, 300); c.restore(); }
       c.fillStyle = rank === 1 ? '#1F1A3D' : '#FFF3E0';
       c.font = `76px ${DISPLAY}`; c.fillText(fitText(c, g.name, 760), 0, img ? 160 : -40);
@@ -95,7 +99,7 @@ async function scenes(data) {
   // 3. Campioni della serata
   if (data.champs.length) {
     list.push({ d: 3.4, draw(c, t) {
-      text3d(c, 'CAMPIONI', W / 2, 360, 120, '#FFE27A', '#9C6300');
+      text3d(c, tr('report.video.champs'), W / 2, 360, 120, '#FFE27A', '#9C6300');
       const order = [1, 0, 2];
       const xs = [W / 2 - 330, W / 2, W / 2 + 330];
       order.forEach((i, col) => {
@@ -118,7 +122,7 @@ async function scenes(data) {
           if (img) c.drawImage(img, x - 110, ay - 110, 220, 220);
           c.restore();
           c.fillStyle = '#FFF3E0'; c.font = `56px ${DISPLAY}`; c.fillText(fitText(c, ch.name, 300), x, ay + 175);
-          c.font = `40px ${NUM}`; c.fillStyle = '#FFD34D'; c.fillText(`${ch.points} PT`, x, ay + 225);
+          c.font = `40px ${NUM}`; c.fillStyle = '#FFD34D'; c.fillText(tr('report.video.points', { n: ch.points }), x, ay + 225);
           if (i === 0) { c.font = '150px serif'; c.fillText('🏆', x, ay - 140); }
         }
       });
@@ -128,7 +132,7 @@ async function scenes(data) {
   if (data.awards.length) {
     const aw = data.awards.slice(0, 5);
     list.push({ d: 3, draw(c, t) {
-      text3d(c, 'PREMI SPECIALI', W / 2, 330, 96, '#FFF3E0');
+      text3d(c, tr('report.video.awards'), W / 2, 330, 96, '#FFF3E0');
       aw.forEach((a, i) => {
         const k = ease((t - i * 0.3) / 0.5);
         const y = 480 + i * 250;
@@ -152,7 +156,7 @@ async function scenes(data) {
       c.save(); c.translate(W / 2, 960); c.rotate((i % 2 ? 1 : -1) * 0.05 * k); c.globalAlpha = k;
       c.fillStyle = '#FFFFFF'; c.fillRect(-w / 2 - 24, -h / 2 - 24, w + 48, h + 120);
       c.drawImage(img, -w / 2, -h / 2, w, h);
-      c.fillStyle = '#1F1A3D'; c.font = `48px ${DISPLAY}`; c.textAlign = 'center'; c.fillText('📸 Album della serata', 0, h / 2 + 75);
+      c.fillStyle = '#1F1A3D'; c.font = `48px ${DISPLAY}`; c.textAlign = 'center'; c.fillText(fitText(c, tr('report.video.album'), w + 24), 0, h / 2 + 75);
       c.restore();
     } });
   });
@@ -160,7 +164,7 @@ async function scenes(data) {
   list.push({ d: 2.2, draw(c, t) {
     const k = ease(t / 0.6);
     c.globalAlpha = k;
-    text3d(c, 'ALLA PROSSIMA!', W / 2, 900, 110, '#FFE27A', '#9C6300');
+    text3d(c, tr('report.video.bye'), W / 2, 900, 110, '#FFE27A', '#9C6300');
     c.font = `600 46px ${BODY}`; c.fillStyle = '#C2B5F2'; c.textAlign = 'center';
     c.fillText('GameNight Show', W / 2, 1010);
     c.globalAlpha = 1;
@@ -188,7 +192,7 @@ function background(c, t, conf) {
 
 /** Registra il video; onProgress(0..1). Restituisce { blob, type, seconds }. */
 export async function makeRecapVideo(data, onProgress = () => {}) {
-  if (!videoSupported()) throw new Error('Questo browser non sa registrare video (serve Chrome, Edge o Firefox recenti).');
+  if (!videoSupported()) throw new Error(tr('report.video.unsupported'));
   try { await document.fonts?.load?.('80px "Fredoka"'); await document.fonts?.load?.('700 60px "Fredoka"'); } catch { /* niente */ }
   const list = await scenes(data);
   const total = list.reduce((a, s) => a + s.d, 0);

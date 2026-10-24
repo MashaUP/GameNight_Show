@@ -1,6 +1,17 @@
 // Testi in italiano (lingua di riferimento). Le chiavi devono essere le stesse di js/lang/en.js:
 // tests/check.mjs controlla che non ne manchi nessuna e che i parametri {così} coincidano.
 // Plurali: { one: '…', other: '…' } (si sceglie con il parametro n).
+import report from './it-report.js';
+import selftest from './it-selftest.js';
+import voice from './it-voice.js';
+import prep from './it-prep.js';
+import tv from './it-tv.js';
+import phone from './it-phone.js';
+import arm from './it-arm.js';
+import feat from './it-feat.js';
+import misc from './it-misc.js';
+import tvx from './it-tvx.js';
+
 export default {
   // ---------------------------------------------------------------- comuni
   'common.language': 'Lingua',
@@ -41,7 +52,7 @@ export default {
   'file.saveFailed': 'Non sono riuscito a salvare il file.',
   'file.documents': 'Documenti',
   'cfg.missingTitle': 'Manca la configurazione',
-  'cfg.missingText': 'Apri il file <code>js/config.js</code> e incolla i dati del tuo progetto Firebase. Trovi la guida passo passo nel README del progetto.',
+  'cfg.missingText': 'Apri il file <code>js/config.js</code> e incolla i dati del tuo progetto Firebase. Trovi la guida passo passo in <code>docs/INSTALLAZIONE.md</code>.',
 
   'lib.players': { one: '{n} giocatore', other: '{n} giocatori' },
   'lib.playersRange': '{min}–{max} giocatori',
@@ -73,7 +84,7 @@ export default {
 
   'fb.err.anon': 'L’accesso anonimo non è attivo su Firebase. Apri Authentication › Metodo di accesso e abilita “Anonimo”.',
   'fb.err.domain': 'Questo indirizzo non è autorizzato su Firebase. Aggiungilo in Authentication › Impostazioni › Domini autorizzati.',
-  'fb.err.permission': 'Il database ha rifiutato l’operazione. Controlla di aver pubblicato le regole di database.rules.json.',
+  'fb.err.permission': 'Il database ha rifiutato l’operazione. Controlla di aver pubblicato le regole di firebase/database.rules.json.',
   'fb.err.network': 'Connessione assente. Controlla il wifi e riprova.',
   'fb.err.other': 'Qualcosa non ha funzionato ({code}). Ricarica la pagina e riprova.',
 
@@ -90,7 +101,7 @@ export default {
   'upd.err.missing': 'Non c’è ancora un’APK pubblicata nelle Releases del repository.',
   'upd.err.invalid': 'Le informazioni sulla versione pubblicata non sono valide: riprova più tardi.',
   'upd.err.http': 'Il servizio degli aggiornamenti ha risposto con un errore: riprova più tardi.',
-  'upd.err.noconfig': 'Indirizzo ufficiale dell’APK non configurato: il sito non è su GitHub Pages (vedi README, “App Android”).',
+  'upd.err.noconfig': 'Indirizzo ufficiale dell’APK non configurato: il sito non è su GitHub Pages (vedi docs/ANDROID.md).',
   'upd.err.notapp': 'Il download con installazione si fa dall’app Android.',
   'upd.err.url': 'Indirizzo dell’APK non ufficiale: download annullato.',
   'upd.err.dlOffline': 'Sei offline: collegati a internet e riprova.',
@@ -220,7 +231,7 @@ export default {
   'home.back.ended': 'finita',
   'home.me.loading': 'Carico il tuo profilo…',
   'home.me.title': 'Il tuo profilo',
-  'home.me.noFirebase': 'Profilo non disponibile: Firebase non è ancora configurato (vedi README).',
+  'home.me.noFirebase': 'Profilo non disponibile: Firebase non è ancora configurato (vedi docs/INSTALLAZIONE.md).',
   'home.me.revoked': 'Questo dispositivo è stato scollegato dal profilo da un altro dispositivo.',
   'home.me.missing': 'Il profilo salvato qui non esiste più.',
   'home.me.create': 'Crea un profilo',
@@ -377,7 +388,7 @@ export default {
   'dl.lead': 'L’app per Android: si apre a schermo intero, legge il QR della TV e usa lo stesso profilo del sito. Gratuita, senza pubblicità.',
   'dl.inApp': 'Sei già nell’app: qui sotto vedi se c’è una versione più nuova.',
   'dl.ios': 'Su iPhone e iPad l’app Android non si installa: apri il <a href="index.html">sito</a> in Safari, tocca <b>Condividi</b> e poi <b>Aggiungi alla schermata Home</b>.',
-  'dl.noconfig': 'Il download non è configurato su questo sito: l’indirizzo ufficiale dell’APK si ricava dal sito pubblicato su GitHub Pages (README, “App Android”).',
+  'dl.noconfig': 'Il download non è configurato su questo sito: l’indirizzo ufficiale dell’APK si ricava dal sito pubblicato su GitHub Pages (docs/ANDROID.md).',
   'dl.howTitle': 'Come si installa',
   'dl.step1': 'Tocca <b>Scarica APK</b> e aspetta la fine del download.',
   'dl.step2': 'Apri il file <b>GameNight-Show.apk</b> (dalle notifiche o dalla cartella Download).',
@@ -959,5 +970,17 @@ export default {
   'go.manual': 'Se non succede nulla, tocca qui: {name}',
   'go.missing': 'Questo collegamento non è disponibile in questo momento.',
   'go.others': 'Ecco gli altri collegamenti ufficiali:',
-  'go.home': 'Apri GameNight Show'
+  'go.home': 'Apri GameNight Show',
+
+  // Testi delle singole aree (file separati: it-<area>.js)
+  ...report,
+  ...selftest,
+  ...voice,
+  ...prep,
+  ...tv,
+  ...phone,
+  ...arm,
+  ...feat,
+  ...misc,
+  ...tvx,
 };

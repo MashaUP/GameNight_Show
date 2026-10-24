@@ -5,6 +5,8 @@
 // - cronologia degli eventi della serata.
 // Se IndexedDB non è disponibile (navigazione privata) si ripiega su localStorage.
 
+import { t } from './i18n.js';
+
 export const SCHEMA_VERSION = 2;
 const DB_NAME = 'gnr_vault';
 const MAX_SNAPS = 60;
@@ -290,57 +292,57 @@ export function validateBackup(raw, expect = 'night') {
   const warnings = [];
   let obj = raw;
   if (typeof raw === 'string') {
-    if (raw.length > 60 * 1024 * 1024) return { ok: false, errors: ['Il file è troppo grande (oltre 60 MB).'], warnings };
-    try { obj = JSON.parse(raw); } catch (e) { return { ok: false, errors: [`File corrotto: non è un JSON valido (${String(e.message).slice(0, 80)}).`], warnings }; }
+    if (raw.length > 60 * 1024 * 1024) return { ok: false, errors: [t('vault.tooBig')], warnings };
+    try { obj = JSON.parse(raw); } catch (e) { return { ok: false, errors: [t('vault.notJson', { msg: String(e.message).slice(0, 80) })], warnings }; }
   }
-  if (!isObj(obj) || !['GameNight_Show', 'GameNight_Rank'].includes(obj.app)) return { ok: false, errors: ['Questo file non è una copia di GameNight Show.'], warnings };
-  if (Number(obj.schema) > SCHEMA_VERSION) return { ok: false, errors: [`Il file viene da una versione più nuova dell’app (formato ${obj.schema}): aggiorna la pagina e riprova.`], warnings };
+  if (!isObj(obj) || !['GameNight_Show', 'GameNight_Rank'].includes(obj.app)) return { ok: false, errors: [t('vault.notOurs')], warnings };
+  if (Number(obj.schema) > SCHEMA_VERSION) return { ok: false, errors: [t('vault.newer', { schema: String(obj.schema) })], warnings };
   let tampered = false;
   if (obj.sum) {
     const body = { ...obj };
     delete body.sum;
     tampered = checksum(JSON.stringify(body)) !== obj.sum;
-    if (tampered) warnings.push('Il file è stato modificato dopo il salvataggio (il checksum non corrisponde).');
+    if (tampered) warnings.push(t('vault.tampered'));
   }
   const d = migrate(obj);
   const kind = d.kind || 'night';
-  if (kind !== expect) return { ok: false, errors: [expect === 'night' ? 'Questo è il backup di un gruppo, non di una serata.' : 'Questo è il backup di una serata, non di un gruppo.'], warnings };
+  if (kind !== expect) return { ok: false, errors: [expect === 'night' ? t('vault.groupNotNight') : t('vault.nightNotGroup')], warnings };
 
   if (expect === 'night') {
-    if (!isObj(d.players)) errors.push('Mancano i giocatori.');
-    if (!isObj(d.games)) errors.push('Mancano i giochi.');
-    if (d.votes !== undefined && d.votes !== null && !isObj(d.votes)) errors.push('I voti non sono nel formato giusto.');
+    if (!isObj(d.players)) errors.push(t('vault.noPlayers'));
+    if (!isObj(d.games)) errors.push(t('vault.noGames'));
+    if (d.votes !== undefined && d.votes !== null && !isObj(d.votes)) errors.push(t('vault.votesFormat'));
     if (errors.length) return { ok: false, errors, warnings, tampered };
     for (const [uid, p] of Object.entries(d.players)) {
-      if (!KEY_RE.test(uid)) { errors.push(`Codice giocatore non valido: ${uid.slice(0, 20)}`); continue; }
-      if (!isObj(p) || !str(p.name, 16)) errors.push(`Giocatore senza nome valido (${uid.slice(0, 8)}).`);
-      else if (p.color && !/^#[0-9A-Fa-f]{6}$/.test(p.color)) errors.push(`Colore non valido per ${p.name}.`);
-      if (isObj(p) && p.photo && !(typeof p.photo === 'string' && p.photo.startsWith('data:image/'))) errors.push(`Foto non valida per ${p.name}.`);
+      if (!KEY_RE.test(uid)) { errors.push(t('vault.badPlayerCode', { code: uid.slice(0, 20) })); continue; }
+      if (!isObj(p) || !str(p.name, 16)) errors.push(t('vault.playerName', { code: uid.slice(0, 8) }));
+      else if (p.color && !/^#[0-9A-Fa-f]{6}$/.test(p.color)) errors.push(t('vault.color', { name: p.name }));
+      if (isObj(p) && p.photo && !(typeof p.photo === 'string' && p.photo.startsWith('data:image/'))) errors.push(t('vault.photo', { name: p.name }));
     }
     for (const [gid, g] of Object.entries(d.games)) {
-      if (!KEY_RE.test(gid)) { errors.push(`Codice gioco non valido: ${gid.slice(0, 20)}`); continue; }
-      if (!isObj(g) || !str(g.name, 40)) errors.push(`Gioco senza nome valido (${gid.slice(0, 8)}).`);
-      else if (g.status && !STATUS.has(g.status)) errors.push(`Stato sconosciuto per ${g.name}: ${String(g.status).slice(0, 12)}.`);
-      if (isObj(g) && g.image && typeof g.image !== 'string') errors.push(`Foto non valida per ${g.name}.`);
+      if (!KEY_RE.test(gid)) { errors.push(t('vault.badGameCode', { code: gid.slice(0, 20) })); continue; }
+      if (!isObj(g) || !str(g.name, 40)) errors.push(t('vault.gameName', { code: gid.slice(0, 8) }));
+      else if (g.status && !STATUS.has(g.status)) errors.push(t('vault.gameStatus', { name: g.name, status: String(g.status).slice(0, 12) }));
+      if (isObj(g) && g.image && typeof g.image !== 'string') errors.push(t('vault.photo', { name: g.name }));
     }
     for (const [gid, gv] of Object.entries(d.votes || {})) {
-      if (!d.games[gid]) { warnings.push('Voti di un gioco che non c’è più: verranno ignorati.'); continue; }
-      if (!isObj(gv)) { errors.push(`Voti illeggibili per ${d.games[gid].name}.`); continue; }
+      if (!d.games[gid]) { warnings.push(t('vault.orphanVotes')); continue; }
+      if (!isObj(gv)) { errors.push(t('vault.votesUnreadable', { game: d.games[gid].name })); continue; }
       for (const [uid, v] of Object.entries(gv)) {
-        const who = d.players[uid]?.name || 'un ex giocatore';
-        if (!isObj(v) || !num(v.overall, 1, 10)) { errors.push(`Voto fuori scala di ${who} a ${d.games[gid].name}.`); continue; }
-        for (const k of ['coinv', 'sempl', 'rigioc', 'c1', 'c2']) if (v[k] !== undefined && v[k] !== null && !num(v[k], 1, 5)) errors.push(`${k} fuori scala nel voto di ${who} a ${d.games[gid].name}.`);
-        if (v.guess !== undefined && v.guess !== null && !num(v.guess, 1, 10)) errors.push(`Previsione fuori scala di ${who}.`);
-        if (!d.players[uid]) warnings.push(`Un voto a ${d.games[gid].name} è di un giocatore che non c’è nel file.`);
+        const who = d.players[uid]?.name || t('vault.exPlayer');
+        if (!isObj(v) || !num(v.overall, 1, 10)) { errors.push(t('vault.voteRange', { who, game: d.games[gid].name })); continue; }
+        for (const k of ['coinv', 'sempl', 'rigioc', 'c1', 'c2']) if (v[k] !== undefined && v[k] !== null && !num(v[k], 1, 5)) errors.push(t('vault.critRange', { k, who, game: d.games[gid].name }));
+        if (v.guess !== undefined && v.guess !== null && !num(v.guess, 1, 10)) errors.push(t('vault.guessRange', { who }));
+        if (!d.players[uid]) warnings.push(t('vault.strayVote', { game: d.games[gid].name }));
       }
     }
   } else {
-    if (!isObj(d.group) || !/^[A-Z0-9]{6}$/.test(d.group.id || '')) errors.push('Manca il codice del gruppo.');
+    if (!isObj(d.group) || !/^[A-Z0-9]{6}$/.test(d.group.id || '')) errors.push(t('vault.noGroup'));
     for (const [k, it] of Object.entries(d.library || {})) {
-      if (!KEY_RE.test(k) || !isObj(it) || !str(it.name, 40)) { errors.push(`Gioco dell’armadio non valido (${String(k).slice(0, 10)}).`); }
+      if (!KEY_RE.test(k) || !isObj(it) || !str(it.name, 40)) { errors.push(t('vault.badArmGame', { code: String(k).slice(0, 10) })); }
     }
     for (const [room, n] of Object.entries(d.nights || {})) {
-      if (!/^[A-Z0-9]{4}$/.test(room) || !isObj(n) || !isObj(n.games || {}) || !num(Number(n.at), 0, 1e14)) errors.push(`Serata non valida (${String(room).slice(0, 8)}).`);
+      if (!/^[A-Z0-9]{4}$/.test(room) || !isObj(n) || !isObj(n.games || {}) || !num(Number(n.at), 0, 1e14)) errors.push(t('vault.badNight', { code: String(room).slice(0, 8) }));
     }
   }
   // Niente doppioni, niente esplosioni: al massimo i primi 8 problemi

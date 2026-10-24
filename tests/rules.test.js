@@ -1,6 +1,6 @@
-// Prove delle regole di database.rules.json con il simulatore targaryen.
+// Prove delle regole di firebase/database.rules.json con il simulatore targaryen.
 const targaryen = require('targaryen');
-const rules = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'database.rules.json'), 'utf8'));
+const rules = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'firebase', 'database.rules.json'), 'utf8'));
 const P = (name, color = '#FF5A4E') => ({ name, style: 'adventurer', seed: 'abc', color });
 function base(extraMeta = {}) {
   return {
@@ -297,5 +297,44 @@ check('un collaboratore lascia da solo', arm12(), 'col1', 'set', `${A}/admins/co
 check('revocato: non modifica più i giochi', (() => { const d = arm12(); delete d.armadi.ARM001.admins.col1; return d; })(), 'col1', 'set', `${A}/library/L9`, { name: 'Dixit' }, false);
 check('nome del collaboratore', arm12(), 'col1', 'set', `${A}/adminInfo/col1`, { name: 'Bea', at: 1 }, true);
 check('nome a nome di un altro: rifiutato', arm12(), 'col1', 'set', `${A}/adminInfo/col9`, { name: 'Bea' }, false);
+// Timer condiviso (1.6): TV e regia; ogni scrittura parte dallo stato attuale (rev + 1)
+const tmr = (extra = {}) => ({ v: 1, id: 'tabc123', kind: 'turn', secs: 60, left: 60000, status: 'running', startAt: TS, rev: 1, follow: true, sound: true, round: 1, by: 'host', ...extra });
+const withTimer = (t, cohost) => { const d = idle(); if (t) d.rooms.ABCD.timer = { ...t, startAt: Date.now() - 1000 }; if (cohost) d.rooms.ABCD.cohosts = { [cohost]: true }; return d; };
+check('timer: la TV lo avvia', withTimer(null), 'host', 'set', `${R}/timer`, tmr(), true);
+check('timer: la regia dal telefono lo mette in pausa', withTimer(tmr(), 'p2'), 'p2', 'set', `${R}/timer`, tmr({ status: 'paused', left: 40000, startAt: null, rev: 2, by: 'p2' }), true);
+check('timer: un giocatore normale NON lo tocca', withTimer(tmr()), 'p1', 'set', `${R}/timer`, tmr({ rev: 2 }), false);
+check('timer: scrittura su uno stato vecchio rifiutata (rev uguale)', withTimer(tmr({ rev: 5 })), 'host', 'set', `${R}/timer`, tmr({ rev: 5 }), false);
+check('timer: scrittura su uno stato vecchio rifiutata (rev indietro)', withTimer(tmr({ rev: 5 })), 'host', 'set', `${R}/timer`, tmr({ rev: 3 }), false);
+check('timer: durata fuori misura', withTimer(null), 'host', 'set', `${R}/timer`, tmr({ secs: 99999 }), false);
+check('timer: tipo sconosciuto', withTimer(null), 'host', 'set', `${R}/timer`, tmr({ kind: 'bomba' }), false);
+check('timer: campo in più rifiutato', withTimer(null), 'host', 'set', `${R}/timer`, tmr({ html: '<b>' }), false);
+check('timer: partenza nel futuro lontano rifiutata', withTimer(null), 'host', 'set', `${R}/timer`, tmr({ startAt: Date.now() + 3600000 }), false);
+check('timer: la TV lo cancella', withTimer(tmr()), 'host', 'set', `${R}/timer`, null, true);
+check('timer: pausa della serata e timer insieme (aggiornamento multiplo dalla TV)', withTimer(tmr()), 'host', 'update', R, { 'state/paused': true, 'state/pausedAt': TS, timer: tmr({ status: 'paused', left: 30000, startAt: null, nightPaused: true, rev: 2 }) }, true);
+check('schermata ambientale: la TV la accende', idle(), 'host', 'update', `${R}/meta`, { ambient: true }, true);
+check('schermata ambientale: un telefono NON la accende', idle(), 'p1', 'update', `${R}/meta`, { ambient: true }, false);
+check('schermata ambientale: valore non booleano', idle(), 'host', 'update', `${R}/meta`, { ambient: 'sì' }, false);
+check('pausa: un telefono NON mette in pausa la serata (deve chiederlo alla TV)', idle(), 'p1', 'update', `${R}/state`, { paused: true }, false);
+// Preferiti personali (1.6): solo i dispositivi del profilo, valori numerici, id puliti
+check('preferiti: un mio dispositivo aggiunge una stella', personBase(), 'dev1', 'set', '/people/PER001/favs/ARM001/-Nabc123', Date.now(), true);
+check('preferiti: un estraneo NON li scrive', personBase(), 'zz', 'set', '/people/PER001/favs/ARM001/-Nabc123', Date.now(), false);
+check('preferiti: un estraneo NON li legge', personBase(), 'zz', 'read', '/people/PER001/favs', null, false);
+check('preferiti: armadio con codice non valido', personBase(), 'dev1', 'set', '/people/PER001/favs/xx/-Nabc123', 1, false);
+check('preferiti: id del gioco non valido', personBase(), 'dev1', 'set', '/people/PER001/favs/ARM001/' + 'x'.repeat(41), 1, false);
+check('preferiti: valore non numerico', personBase(), 'dev1', 'set', '/people/PER001/favs/ARM001/-Nabc123', '<b>', false);
+check('preferiti: si toglie una stella', (() => { const d = personBase(); d.people.PER001.favs = { ARM001: { g1: 5 } }; return d; })(), 'dev1', 'set', '/people/PER001/favs/ARM001/g1', null, true);
+// Catalogo pubblico: le nuove scelte del proprietario (1.9) e niente campi inventati
+check('catalogo: nuove scelte (espansioni, regole, solo disponibili)', arm12(), 'owner', 'set', '/pub/abcdefghijklmnop', { aid: 'ARM001', name: 'Casa', fields: { status: true, loc: false, exp: false, rules: true, onlyAvail: true } }, true);
+check('catalogo: scelta sconosciuta rifiutata', arm12(), 'owner', 'set', '/pub/abcdefghijklmnop', { aid: 'ARM001', name: 'Casa', fields: { owners: true } }, false);
+// Link del manuale (1.8): solo https, niente caratteri pericolosi
+check('manuale: link https accettato', arm12(), 'owner', 'set', '/armadi/ARM001/library/L9', { name: 'Dixit', manual: 'https://editore.example/dixit-regole.pdf' }, true);
+check('manuale: link non https rifiutato', arm12(), 'owner', 'set', '/armadi/ARM001/library/L9', { name: 'Dixit', manual: 'javascript:alert(1)' }, false);
+check('manuale: virgolette rifiutate', arm12(), 'owner', 'set', '/armadi/ARM001/library/L9', { name: 'Dixit', manual: 'https://x.example/"onmouseover=' }, false);
+// Soundboard personalizzata (1.10): nella stanza solo nome e icona, niente audio, niente HTML
+check('suoni personalizzati: la TV pubblica nomi e icone', idle(), 'host', 'update', `${R}/meta`, { customSfx: { cab12: { l: 'Gallina', i: '🐔' } } }, true);
+check('suoni personalizzati: niente audio nel database', idle(), 'host', 'update', `${R}/meta`, { customSfx: { cab12: { l: 'Gallina', i: '🐔', data: 'data:audio/mp3;base64,AAAA' } } }, false);
+check('suoni personalizzati: niente HTML nel nome', idle(), 'host', 'update', `${R}/meta`, { customSfx: { cab12: { l: '<img src=x>', i: '🐔' } } }, false);
+check('suoni personalizzati: un telefono NON cambia l’elenco', idle(), 'p1', 'update', `${R}/meta`, { customSfx: { cab12: { l: 'X', i: '🐔' } } }, false);
+check('soundboard: un telefono fa partire un suono personalizzato', (() => { const d = idle({ soundboard: true }); return d; })(), 'p1', 'update', R, { 'sfx/s1': { k: 'c:cab12', by: 'p1', at: { '.sv': 'timestamp' } }, 'rate/p1/sfx': { '.sv': 'timestamp' } }, true);
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

@@ -72,6 +72,9 @@ export const Person = {
     return loc && c?.pid === loc.pid ? c : null;
   },
 
+  /** Salva la copia locale del profilo (dopo una modifica fatta da un altro modulo, es. i preferiti). */
+  saveCache() { if (this.data?.pid) write(CACHE, this.data); },
+
   async ready() {
     if (!this.uid) this.uid = await connect();
     return this.uid;
@@ -102,7 +105,7 @@ export const Person = {
       }
       if (!v?.info) { this.data = null; return { missing: true, pid: loc.pid }; }
     }
-    this.data = { pid: loc.pid, info: v.info, groups: v.groups || {}, alts: v.alts || {}, armadi: v.armadi || {}, devices: Object.keys(v.uids || {}).length };
+    this.data = { pid: loc.pid, info: v.info, groups: v.groups || {}, alts: v.alts || {}, armadi: v.armadi || {}, favs: v.favs || {}, devices: Object.keys(v.uids || {}).length };
     write(CACHE, this.data);
     this.syncLocal();
     return this.data;
@@ -125,13 +128,13 @@ export const Person = {
       await this.load();
       return pid;
     }
-    throw new Error('nessun codice libero');
+    throw new Error(t('common.noFreeCode'));
   },
 
   /** Salva nome, personaggio, colore (vince sempre l'ultima modifica). */
   async saveLook(look) {
     const d = this.data || (await this.load());
-    if (!d?.info) throw new Error('Nessun profilo su questo dispositivo');
+    if (!d?.info) throw new Error(t('person.none'));
     const info = { ...lookOf(look), ownerUid: d.info.ownerUid, updatedAt: Date.now(), ...(d.info.createdAt ? { createdAt: d.info.createdAt } : {}) };
     await set(dbRef(`people/${d.pid}/info`), info);
     d.info = info;

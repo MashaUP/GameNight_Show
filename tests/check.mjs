@@ -68,7 +68,7 @@ for (const html of fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'))) {
 }
 
 // 6. Regole del database: JSON valido con la radice "rules"
-try { ok(Boolean(JSON.parse(read('database.rules.json')).rules), 'database.rules.json senza "rules"'); } catch (e) { fail(`database.rules.json non è JSON valido: ${e.message}`); }
+try { ok(Boolean(JSON.parse(read('firebase/database.rules.json')).rules), 'firebase/database.rules.json senza "rules"'); } catch (e) { fail(`firebase/database.rules.json non è JSON valido: ${e.message}`); }
 
 // 7. Lingue: stesse chiavi in italiano e inglese, stessi {parametri}, stesse forme del plurale,
 //    nessun testo vuoto, e ogni chiave usata nel codice esiste.
@@ -86,8 +86,21 @@ for (const k of Object.keys(dicts.it)) {
   ok(new Set(vals.map(params)).size <= 1, `Parametri diversi tra le lingue per ${k}: ${vals.map(params).join(' / ')}`);
   ok(new Set(vals.map((v) => typeof v)).size <= 1, `Forma diversa (testo/plurale) tra le lingue per ${k}`);
 }
+// I dizionari sono divisi per area (js/lang/it-<area>.js): la stessa chiave non può stare in due file
+// (l'ultimo vincerebbe in silenzio), e ogni area ha le stesse chiavi nelle due lingue.
+for (const l of LANGS) {
+  const seen = new Map();
+  const base = read(`js/lang/${l}.js`);
+  const parts = fs.readdirSync(path.join(ROOT, 'js', 'lang')).filter((f) => f.startsWith(`${l}-`) && f.endsWith('.js'));
+  for (const m of base.matchAll(/^\s*'([a-z][\w.-]+)':/gm)) seen.set(m[1], `${l}.js`);
+  for (const f of parts) {
+    const d = (await import(path.join(ROOT, 'js', 'lang', f))).default;
+    for (const k of Object.keys(d)) { ok(!seen.has(k), `Chiave ${k} ripetuta in ${f} e ${seen.get(k)}`); seen.set(k, f); }
+    ok(base.includes(`from './${f}'`), `js/lang/${l}.js non importa ${f}`);
+  }
+}
 const used = new Set();
-for (const f of jsFiles.filter((x) => !x.startsWith('lang/'))) for (const m of read(`js/${f}`).matchAll(/\bt\(\s*'([a-z][\w.-]+)'/g)) used.add(m[1]);
+for (const f of jsFiles.filter((x) => !x.startsWith('lang/'))) for (const m of read(`js/${f}`).matchAll(/\b(?:t|tr)\(\s*'([a-z][\w.-]+)'/g)) used.add(m[1]);
 for (const html of fs.readdirSync(ROOT).filter((f) => f.endsWith('.html'))) {
   const src = read(html);
   for (const m of src.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)) used.add(m[1]);
@@ -109,6 +122,17 @@ for (const k of used) ok(k in dicts.it, `Chiave usata nel codice ma assente nei 
   const HARD = /https:\/\/(?:www\.)?(?:ko-fi\.com|discord\.gg|discord\.com\/invite|github\.com\/MashaUP)/i;
   const files = [...fs.readdirSync(ROOT).filter((f) => f.endsWith('.html')), ...jsFiles.map((f) => `js/${f}`)];
   for (const f of files) ok(!HARD.test(read(f)), `${f} contiene un link ufficiale scritto a mano: usa config/links.json (data-link / js/links.js)`);
+}
+
+// 9. Testi scritti nel codice (dalla 1.10 tutta l'app è bilingue): lo scanner deve dare zero su ogni modulo.
+//    I testi che devono restare (nomi propri, dati salvati, parole chiave della ricerca) si marcano // i18n-ok.
+{
+  const { scan } = await import('./i18n-scan.mjs');
+  const I18N_DONE = jsFiles.filter((f) => f.endsWith('.js') && !f.startsWith('lang/'));
+  for (const f of I18N_DONE) {
+    const hits = scan(path.join(ROOT, 'js', f));
+    ok(!hits.length, `js/${f}: ${hits.length} testi italiani scritti nel codice (usa t('chiave'); es. riga ${hits[0]?.line}: "${(hits[0]?.text || '').slice(0, 60)}")`);
+  }
 }
 
 if (errors.length) {

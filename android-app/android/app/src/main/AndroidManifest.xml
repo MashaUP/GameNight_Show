@@ -7,6 +7,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/banner"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
@@ -21,6 +22,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- Android TV (1.10): l'app compare anche nella schermata Home dei televisori -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 
         </activity>
@@ -45,6 +48,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Android TV: niente schermo touch obbligatorio (si usa il telecomando) e app installabile anche sui televisori. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <!-- Aggiornamenti: aprire la schermata di installazione di Android sull'APK scaricata e controllata.
          Android chiede sempre conferma all'utente (e la prima volta il permesso "Installa app sconosciute"). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

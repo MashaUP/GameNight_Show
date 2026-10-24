@@ -20,15 +20,20 @@ import { confettiBurst } from './fx.js';
 import { publicUrl, isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
 import { bindPhonePrep, gameRowHTML, tonightSummaryHTML, markTonight, Scanner, rulesCardHTML, planCardHTML, bringHTML } from './phone-prep.js';
 import { bindPhone, knock, checkCohost, tableHTML, paintSand, scoreHTML, QuizPhone, cardSectionHTML, bindCardSection, rivalsSectionHTML, seasonLineHTML, icsButtonHTML } from './phone-extras.js';
-import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from './share.js';
+import { renderShareImage, renderStoryImage, renderYearImage, shareOrDownload, nightDate } from './share.js';
 import { SFX_META } from './sfx.js';
+import { sfxKey } from './customsfx.js';
+/** Suoni della soundboard: quelli predefiniti più quelli caricati sulla TV (meta.customSfx: solo nome e icona). */
+const allSfx = () => [...SFX_META, ...Object.entries(P.meta?.customSfx || {}).filter(([id, c]) => /^c[a-z0-9]{1,8}$/.test(id) && c?.l).map(([id, c]) => ({ k: sfxKey(id), icon: String(c.i || '🔔').slice(0, 8), label: String(c.l).slice(0, 24) }))];
 import { setRoomSafeMode } from './safe.js';
 import { Person, lookOf } from './person.js';
 import { t, has, lang, fmtDate, fmtList, fmtNum, langSwitchHTML } from './i18n.js';
+import { bindSharedTimer, SharedTimer, TimerSheet, phoneExpire } from './sharedtimer.js';
+import { Favs, favFirst } from './favs.js';
 import { saveGame, newGameId, logEvent as armLog } from './collection.js';
 
 const app = $('#app');
-const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows'];
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer'];
 const VOTE_KEYS = ['overall', 'coinv', 'sempl', 'rigioc', 'c1', 'c2', 'mvp', 'guess', 'comment'];
 const emptyVote = () => Object.fromEntries(VOTE_KEYS.map((k) => [k, null]));
 
@@ -65,7 +70,7 @@ const P = {
 
 // Segnapunti, quiz, figurine…: ricevono lo stato e le funzioni del telefono.
 bindPhone({ P, roomRef, set, serverTimestamp, serverNow, explainError, Net: { track: (l, pr) => Net.track(l, pr) }, shareOrDownload: (...a) => shareOrDownload(...a) });
-bindPhonePrep({ P, roomRef, groupRef, libraryRef, set, update, push, serverTimestamp, explainError, Net: { track: (l, pr) => Net.track(l, pr) } });
+bindPhonePrep({ P, roomRef, groupRef, libraryRef, set, update, push, serverTimestamp, explainError, Net: { track: (l, pr) => Net.track(l, pr) }, render: () => render() });
 
 installImageFallback();
 applyTheme();
@@ -141,7 +146,7 @@ async function createMember(data) {
       return id;
     }
   }
-  throw new Error('nessun codice libero');
+  throw new Error(t('common.noFreeCode'));
 }
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -459,13 +464,23 @@ function openRoom(code) {
 
 const SCREENS = {};
 
+// Timer condiviso: lo vedono tutti (chip in alto); la regia lo comanda dal suo foglio.
+bindSharedTimer({
+  role: 'phone', code: () => P.code, uid: () => P.uid, timer: () => P.timer, state: () => P.state,
+  canControl: () => Boolean(P.code && P.cohosts?.[P.uid]), explainError,
+  openPanel: () => TimerSheet.open(),
+  onExpire: (v) => phoneExpire(v)
+});
+
 // Motivi del time-out: si salvano come codici, la TV li mostra nella sua lingua.
 const TIMEOUT_REASONS = ['rules', 'bathroom', 'smoke', 'pizza', 'other'];
 /** Nome di un invio in coda ("vote", "photo"…) nella lingua scelta. */
 const netLabel = (l) => (has(`ph.net.label.${l}`) ? t(`ph.net.label.${l}`) : l);
 /** Evento casuale della Modalità Chaos: testo nella lingua del telefono (le serate vecchie hanno il testo salvato). */
-const eventTitle = (ev) => (ev?.id && has(`chaos.${ev.id}.t`) ? t(`chaos.${ev.id}.t`) : ev?.title || '');
-const eventText = (ev) => (ev?.id && has(`chaos.${ev.id}.d`) ? t(`chaos.${ev.id}.d`) : ev?.text || '');
+// Evento Chaos: dalla 1.10 la TV salva un codice neutro (k) con i parametri (p); i vecchi eventi hanno solo il testo.
+const evParams = (ev) => Object.fromEntries(Object.entries(ev?.p || {}).map(([a, b]) => [a, String(b ?? '')]));
+const eventTitle = (ev) => (ev?.k && has(`tv.chaos.${ev.k}.t`) ? t(`tv.chaos.${ev.k}.t`, evParams(ev)) : ev?.id && has(`chaos.${ev.id}.t`) ? t(`chaos.${ev.id}.t`) : ev?.title || '');
+const eventText = (ev) => (ev?.k && has(`tv.chaos.${ev.k}.x`) ? t(`tv.chaos.${ev.k}.x`, evParams(ev)) : ev?.id && has(`chaos.${ev.id}.d`) ? t(`chaos.${ev.id}.d`) : ev?.text || '');
 
 function watchGroup() {
   const gid = P.meta?.groupId;
@@ -672,6 +687,8 @@ function render() {
   checkCohost();
   Regia.sync();
   Dock.sync();
+  SharedTimer.sync();
+  TimerSheet.update();
   Buzz.sync();
   QuizPhone.sync();
   if (key !== P.screenKey) {
@@ -928,7 +945,7 @@ const Buzz = {
           <label class="sr-only" for="gsText">${esc(t('ph.gossip.aria'))}</label>
           <textarea class="input" id="gsText" maxlength="90" rows="2" placeholder="${esc(t('ph.gossip.ph'))}"></textarea>
           <div class="tb-row"><span class="muted small">${esc(t('ph.gossip.hint'))}</span><button type="button" class="btn-sec btn-sec--sm" id="gsSend">${esc(t('ph.send'))}</button></div></section>` : ''}
-        ${x.board ? `<section class="tb-sec"><h3>🔊 ${esc(t('ph.sfx.title'))}</h3><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></section>` : ''}
+        ${x.board ? `<section class="tb-sec"><h3>🔊 ${esc(t('ph.sfx.title'))}</h3><div class="sfx-grid">${allSfx().map((m) => `<button type="button" class="sfx-btn" data-sfx="${esc(m.k)}"><span aria-hidden="true">${esc(m.icon)}</span><small>${esc(m.label)}</small></button>`).join('')}</div></section>` : ''}
         <section class="tb-sec"><h3>✋ ${esc(t('ph.buzz.timeout'))}</h3><p class="muted small">${esc(t('ph.buzz.lead'))}</p>
           <div class="tb-reasons">${TIMEOUT_REASONS.map((r) => `<button type="button" class="btn-sec" data-bz="${r}">${esc(t(`timeout.${r}`))}</button>`).join('')}</div></section>
       </div>`;
@@ -1002,6 +1019,10 @@ function betBannerHTML() {
   if (!b || !b.open) return '';
   return `<button type="button" class="bet-banner ${b.mine ? 'is-done' : ''}" data-dock="bet">🔮 <span>${b.mine ? t('ph.bet.bannerMine', { name: `<b>${esc(P.players[b.mine]?.name || '')}</b>` }) : t('ph.bet.banner')}</span><small data-betclock-mini>${mmss(b.left)}</small></button>`;
 }
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-timer]')) TimerSheet.open();
+});
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-bet]');
@@ -1096,7 +1117,7 @@ const Dock = {
     let html = '';
     if (sh.kind === 'bet') html = betHTML();
     else if (sh.kind === 'score') html = scoreHTML() || `<p class="muted">${esc(t('ph.score.notYet'))}</p>`;
-    else if (sh.kind === 'sfx') html = `<h2>🔊 ${esc(t('ph.sfx.title'))}</h2><p class="muted small">${esc(t('ph.sfx.lead'))}</p><div class="sfx-grid sfx-grid--big">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-sfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div>`;
+    else if (sh.kind === 'sfx') html = `<h2>🔊 ${esc(t('ph.sfx.title'))}</h2><p class="muted small">${esc(t('ph.sfx.lead'))}</p><div class="sfx-grid sfx-grid--big">${allSfx().map((m) => `<button type="button" class="sfx-btn" data-sfx="${esc(m.k)}"><span aria-hidden="true">${esc(m.icon)}</span><small>${esc(m.label)}</small></button>`).join('')}</div>`;
     const sig = sh.kind === 'bet' ? html.replace(/<b>\d+:\d\d<\/b>/, '') : html;
     if (sh.kind === 'bet') { const c = sh.el.querySelector('[data-betclock] b'); const b = betState(); if (c && b?.open) c.textContent = mmss(b.left); }
     if (!force && sig === sh.sig) return;
@@ -1270,8 +1291,10 @@ SCREENS.addgame = {
     const f = q.trim() ? parseQuery(q, people, tags) : {};
     if (q.trim() && !Object.keys(f).length) f.text = q.trim();
     const mineT = (it) => (P.tonight?.[it.id]?.[P.uid] ? 1 : 0);
-    const items = searchLibrary(P.library, f, P.nights).sort((a, b) => mineT(b) - mineT(a));
-    const sig = JSON.stringify([all.map((it) => [it.name, Boolean(it.image), libInfo(it), it.status, it.loanTo, tagsOf(it)]), q, P.tonight, P.wish?.[P.uid], P.next?.bring]);
+    // Prima i giochi portati da me, poi i miei preferiti (personali: nessun altro li vede).
+    const favs = P.meta?.armadioId ? Favs.ids(P.meta.armadioId) : new Set();
+    const items = favFirst(searchLibrary(P.library, f, P.nights), favs).sort((a, b) => mineT(b) - mineT(a));
+    const sig = JSON.stringify([all.map((it) => [it.name, Boolean(it.image), libInfo(it), it.status, it.loanTo, tagsOf(it)]), q, P.tonight, P.wish?.[P.uid], P.next?.bring, [...favs]]);
     if (sig === this.sig) return;
     this.sig = sig;
     $('#tnSum').innerHTML = tonightSummaryHTML();
@@ -2051,8 +2074,15 @@ SCREENS.profile = {
       ${w.deadliest ? `<li>${t('ph.wr.deadliest', { game: `<b>${esc(w.deadliest.name)}</b>`, n: w.deadliest.wins })}</li>` : ''}
       ${w.mvp ? `<li>${t('ph.wr.mvp', { name: `<b>${esc(w.mvp.name)}</b>` })}</li>` : ''}
       ${w.longestMatch ? `<li>${t('ph.wr.longest', { game: `<b>${esc(w.longestMatch.name)}</b>`, n: w.longestMatch.minutes })}</li>` : ''}
-      ${w.bestMonth ? `<li>${t('ph.wr.month', { month: `<b>${esc(w.bestMonth.name)}</b>` })}</li>` : ''}</ul>` : '';
+      ${w.bestMonth ? `<li>${t('ph.wr.month', { month: `<b>${esc(w.bestMonth.name)}</b>` })}</li>` : ''}</ul>
+      <button type="button" class="btn-sec btn-sec--sm" id="myYearShare">📤 <span>${esc(t('year.share'))}</span></button>` : '';
     $('#myWrapped').hidden = !w;
+    const ys = $('#myYearShare');
+    if (ys) ys.onclick = async () => {
+      ys.disabled = true;
+      try { await shareOrDownload(await renderYearImage(w, { group: P.meta?.groupName || '', color: P.identity?.color }), `gamenight_anno_${w.year}.png`, t('year.shareText', { year: String(w.year) })); } catch (err) { toast(explainError(err), 'error'); }
+      ys.disabled = false;
+    };
   },
 
   /** Livello, XP, traguardi (anche segreti) e note private. */
@@ -2208,7 +2238,7 @@ const Regia = {
   /** Il gioco consigliato per i presenti (dopo almeno una serata). */
   bestHTML(active, played) {
     if (!Object.keys(P.nights || {}).length) return '';
-    const rec = recommend({ library: P.library, nights: P.nights, present: active.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...played].map((k) => k.replace(/[.#$\[\]\/]/g, '_'))) });
+    const rec = recommend({ library: P.library, nights: P.nights, present: active.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...played].map((k) => k.replace(/[.#$\[\]\/]/g, '_'))), favs: P.meta?.armadioId ? Favs.ids(P.meta.armadioId) : null });
     const r = rec.all[0];
     return r ? `<button type="button" class="best-pick" data-rglib="${esc(r.id)}"><span>💡 ${t('ph.rg.best', { game: `<b>${esc(r.item.name)}</b>`, pct: `${r.score}%` })}</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>` : '';
   },
@@ -2254,7 +2284,7 @@ const Regia = {
         <p class="rg-watch" id="rgWatch" role="status"></p>
         <div id="rgBody"></div>
         <details class="rg-safety" id="rgSafety"><summary>🛡️ ${esc(t('ph.rg.safety'))}</summary><div id="rgSafeBody"></div></details>
-        <details class="rg-sfx"><summary>🔊 ${esc(t('ph.rg.sfx'))}</summary><div class="sfx-grid">${SFX_META.map((m) => `<button type="button" class="sfx-btn" data-rgsfx="${m.k}"><span aria-hidden="true">${m.icon}</span><small>${esc(m.label)}</small></button>`).join('')}</div></details>
+        <details class="rg-sfx"><summary>🔊 ${esc(t('ph.rg.sfx'))}</summary><div class="sfx-grid">${allSfx().map((m) => `<button type="button" class="sfx-btn" data-rgsfx="${esc(m.k)}"><span aria-hidden="true">${esc(m.icon)}</span><small>${esc(m.label)}</small></button>`).join('')}</div></details>
       </div>`;
     document.body.appendChild(this.sheet);
     this.sheet.addEventListener('click', (e) => this.onClick(e));
@@ -2379,7 +2409,7 @@ const Regia = {
     const st = P.state || {};
     const phase = st.phase || 'lobby';
     const gid = st.gameId;
-    const sig = JSON.stringify([phase, gid, st.done, st.paused, st.playStart, st.event?.id, P.nights && Object.keys(P.nights).length, P.poll, P.votes?.[gid], Object.keys(P.players), Object.keys(P.library || {}), P.games?.[gid]?.status, P.presence]);
+    const sig = JSON.stringify([phase, gid, st.done, st.paused, P.meta?.ambient, st.playStart, st.event?.id, P.nights && Object.keys(P.nights).length, P.poll, P.votes?.[gid], Object.keys(P.players), Object.keys(P.library || {}), P.games?.[gid]?.status, P.presence]);
     if (sig === this.sig) return;
     this.sig = sig;
     const btn = (cmd, label, cls = 'btn btn-block', extra = '') => `<button type="button" class="${cls}" data-cmd="${cmd}" ${extra}>${label}</button>`;
@@ -2435,6 +2465,10 @@ const Regia = {
     }
     if (st.paused) html = `<p>${esc(t('ph.rg.paused'))}</p>${btn('resume', esc(t('ph.rg.resume')))}`;
     else html += btn('pause', esc(t('ph.rg.pause')), 'btn-sec btn-block');
+    // Timer condiviso e schermata ambientale della TV (1.6)
+    if (phase !== 'awards') {
+      html += `<div class="rg-row"><button type="button" class="btn-sec" data-open-timer>⏱️ ${esc(t('timer.title'))}</button>${btn('ambient', `🌙 ${esc(P.meta?.ambient ? t('amb.off') : t('amb.on'))}`, 'btn-sec', `data-arg="${P.meta?.ambient ? '0' : '1'}" data-argk="on"`)}</div>`;
+    }
     $('#rgBody', this.sheet).innerHTML = html || `<p class="muted">${esc(t('ph.rg.nothing'))}</p>`;
   }
 };

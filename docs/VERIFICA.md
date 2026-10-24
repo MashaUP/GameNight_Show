@@ -1,12 +1,39 @@
-# Verifica della versione 1.5.0
+# Verifica della versione 1.10.0
 
 Come è stata provata questa versione prima della consegna. Per ogni richiesta: **stato**, **come è stata provata**, **risultato** e **cosa resta da provare a mano**.
 
 I test automatici girano su Chromium (Playwright): TV a 1280×720, 1366×657, 1600×900, 1920×969 e 1024×600; telefoni a 412×915 e 360×760, in modalità mobile e touch. Firebase è sostituito da un piccolo server di prova in due versioni:
 - **senza regole**, per provare le schermate;
-- **con le regole vere** di `database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
+- **con le regole vere** di `firebase/database.rules.json`, applicate dal simulatore *targaryen*: ogni scrittura e lettura viene accettata o rifiutata come farebbe Firebase.
 
 Legenda: ✅ verificata · ✋ da provare a mano (serve un dispositivo vero) · ⚠️ verificata in parte.
+
+## Novità della 1.10.0 (piani 1.6 → 1.10)
+
+Prove nuove: `tests/nightclock.test.mjs` (8), `tests/features.test.mjs` (15), `tests/pdf.test.mjs` (5), 32 casi nuovi in `tests/rules.test.js`, nel browser `night16.py`, `data16.py`, `exports16.py`; `check.mjs` sezione 9 (nessun testo italiano scritto nel codice).
+
+| Funzione | Stato | Come è stata provata | Risultato / limiti |
+|---|---|---|---|
+| Sistema di design su tutte le pagine | ✅ | Screenshot di telefono, armadio, ludoteca, resoconto, download e verifica a 390 e 1366 px, temi Show e Giorno; `look.py` e `fit.py` (niente fuori schermo da 360 a 1920 px). | Stesso stile della home. La TV tiene la sua scenografia. |
+| Telecomando / tastiera | ✅ | `features.test` (scelta del pulsante nella direzione giusta). | ✋ Da provare con un telecomando vero su Android TV. |
+| App bilingue | ✅ | `check.mjs`: 3.687 testi in 2 lingue, stessi parametri e plurali, chiavi usate esistenti, zero testi italiani nel codice di 81 moduli; `i18n.py`, `phone_en.py` (TV in italiano, telefono in inglese). | Le domande del quiz restano nella lingua della TV; cronologia dell'armadio salvata in italiano (è un dato). |
+| Pausa della serata | ✅ | `nightclock.test`; `night16.py`: pausa dalla TV e dalla regia del telefono, votazione e quiz fermi, tempi che riprendono giusti. | La finestra dei pronostici (5 minuti) non si ferma in pausa. |
+| Timer condiviso | ✅ | `nightclock.test`; `night16.py`: avvio, vista dei telefoni, comandi dalla regia, scrittura concorrente (rev), pausa collegata o indipendente, riconnessione, scadenza vista da più dispositivi (un avviso ciascuno, nessuna scrittura); regole vere: un giocatore normale non scrive. | Nessuna scrittura al secondo. ✋ Suono e vibrazione da sentire a mano. |
+| Schermo ambiente | ✅ | `night16.py`: gioco, giocatori, copertina mancante, timer, pausa, uscita, comando dal telefono, ricarica della TV, votazione che lo sospende. | |
+| Preferiti, Consigliere | ✅ | `features.test`; `data16.py` (cuore, filtro, gioco rimosso). | |
+| Prestiti scaduti | ✅ | `features.test`; `data16.py`: avviso in home, link al gioco, "Più tardi". | |
+| Catalogo pubblico | ✅ | `features.test`, `rules.test`; `data16.py`: campi scelti, anteprima, solo disponibili, revoca. | |
+| BoardGameGeek | ⚠️ | `features.test` (confronto dei campi); `data16.py` con un proxy simulato: ricerca, anteprima, campi vuoti riempiti, quelli scritti a mano intatti, errori chiari. | ✋ Con BGG vero solo dopo il token, il Worker pubblicato e `BGG_PROXY_URL`. |
+| Manuali | ✅ | `data16.py` (link https obbligatorio), `exports16.py` (file sul dispositivo aperto nell'app). | |
+| Esportazione e importazione | ✅ | `features.test` (andata e ritorno, file rovinati, estranei, più nuovi, piano senza sovrascritture); `data16.py`: esportazione e importazione tra due installazioni diverse. | |
+| Privacy e diagnostica | ✅ | `data16.py`: cataloghi, cancellazione del profilo, svuota dispositivo, controlli e rapporto senza codici. | |
+| Ritaglio delle foto | ✅ | `features.test`; `data16.py`. | |
+| Soundboard personalizzata | ⚠️ | `features.test` (elenco pubblico, chiavi, controlli dei file); `rules.test` (solo nomi e icone, niente audio nel database, niente HTML, i telefoni non cambiano l'elenco). | ✋ Caricamento e ascolto dei suoni da provare a mano sulla TV. |
+| Atmosfere con suono | ✋ | Codice controllato (`atmosound.js`), nessuna prova automatica dell'audio. | Da ascoltare sulla TV. |
+| Il vostro anno | ✅ | `features.test` (solo dati veri, gruppi nuovi, giochi nuovi); `tranche2.py` (diapositive, anche quelle a elenco). | |
+| Esportazioni dall'app Android | ✅ | `exports16.py` con Capacitor simulato (porta 8766): PDF del resoconto (testo e accenti, salvato in Documenti e aperto), PDF della serata con foto, etichette con QR (QR riletti con OpenCV in una prova a mano), CSV, JSON, calendario, registro errori, immagine condivisa, manuale aperto con il lettore. `pdf.test` controlla il file con qpdf e pdftotext. | ✋ Da provare su un telefono vero (lettore PDF, cartella Documenti). |
+| Android TV | ⚠️ | Manifest: banner, `LEANBACK_LAUNCHER`, touchscreen e leanback non obbligatori. | ✋ Installazione e uso con il telecomando su un televisore vero. |
+| Pulizia del repository | ✅ | `check.mjs` e tutte le prove con i percorsi nuovi (`firebase/database.rules.json`). | |
 
 ## Novità della 1.5.0 · Link ufficiali e configurazione remota
 
@@ -143,6 +170,14 @@ Quattro test che seguivano il vecchio percorso dell’armadio (armadio, arm2, im
 
 ## Controlli generali
 
+Eseguiti il 24 ottobre 2026 sulla versione 1.10.0:
+
+- Controlli dei file del sito: **32.505** controlli superati (`tests/check.mjs`: versioni, 110 file offline, 81 moduli, 3.687 testi in 2 lingue, link, nessun testo italiano scritto nel codice).
+- Controllo del codice: ESLint senza errori (`npm run lint`).
+- Regole del database: **266/266** casi come previsto (`tests/rules.test.js`).
+- Prove unitarie: **51/51** (`links` 23, `nightclock` 8, `features` 15, `pdf` 5). Proxy BoardGameGeek: **14/14**.
+- Prove nel browser: suite completa (35 prove) **34/35** al primo giro; `exports16` falliva solo per il percorso in cui salvava il PDF di prova (errore della prova, non dell'app): corretto e rieseguito, **1/1**.
+
 Eseguiti il 23 ottobre 2026 sulla versione 1.5.0:
 
 - Controlli dei file del sito: **7.497** controlli superati (`tests/check.mjs`: versioni, 78 file offline, 49 moduli, 921 testi in 2 lingue, link).
@@ -153,10 +188,12 @@ Eseguiti il 23 ottobre 2026 sulla versione 1.5.0:
 
 ## Non verificabile qui
 
+- **1.10.0:** APK costruita su GitHub (si fa con la release `v1.10.0`); Android TV vero; PDF aperti dal lettore di un telefono vero; suoni personalizzati e atmosfere udibili; BoardGameGeek vero (manca ancora il token); regole nuove su Firebase vero (usa `test.html` dopo averle ricopiate).
+
 - APK Android reale (costruzione su GitHub Actions; installazione).
 - Telefono vero: barra di stato, tasto Indietro fisico, fotocamera e QR, vibrazione.
 - Audio udibile sulla TV.
-- Firebase vero: le regole sono provate con il simulatore. Sul tuo progetto usa `test.html` dopo aver ricopiato `database.rules.json`.
+- Firebase vero: le regole sono provate con il simulatore. Sul tuo progetto usa `test.html` dopo aver ricopiato `firebase/database.rules.json`.
 - Workflow **App Android** avviato da un tag (`v1.5.0`): va controllato nella scheda Actions dopo il primo tag.
 - Indirizzi pubblici della 1.5.0 (`config/links.json` e `go.html` su GitHub Pages): esistono solo dopo il caricamento.
 - Apertura dei link dall'app Android vera (devono aprirsi nel browser del telefono, come gli altri link esterni).

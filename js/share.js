@@ -1,6 +1,7 @@
 // Immagine della classifica da condividere (PNG disegnato su canvas).
 import { fmt, saveInApp } from './util.js';
 import { isApp } from './native.js';
+import { t, fmtDate, fmtList } from './i18n.js';
 
 const C = {
   cream: '#FFF4DE', paper: '#FFFFFF', ink: '#1F1A3D', soft: '#4A4468',
@@ -69,7 +70,7 @@ function rrTop(ctx, x, y, w, h, r) {
 
 function namesList(names) {
   if (names.length <= 1) return names[0] || '';
-  return names.slice(0, -1).join(', ') + ' e ' + names[names.length - 1];
+  return fmtList(names);
 }
 
 function initials(name) {
@@ -254,7 +255,7 @@ export async function renderShareImage({ title, subtitle, board, awards }) {
     ctx.font = `800 26px ${BODY}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(`e altri ${extra} ${extra === 1 ? 'gioco' : 'giochi'}`, W / 2, listTop + rest.length * 78 + 30);
+    ctx.fillText(fit(ctx, t('report.img.more', { n: extra }), W - PAD * 2), W / 2, listTop + rest.length * 78 + 30);
   }
 
   // Premi speciali, su due colonne
@@ -263,7 +264,7 @@ export async function renderShareImage({ title, subtitle, board, awards }) {
     ctx.font = `52px ${DISPLAY}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('Premi speciali', PAD, awardsTop + 46);
+    ctx.fillText(fit(ctx, t('report.awards'), W - PAD * 2), PAD, awardsTop + 46);
     const cw = (W - PAD * 2 - 24) / 2;
     awards.forEach((a, i) => {
       const x = PAD + (i % 2) * (cw + 24);
@@ -291,10 +292,10 @@ export async function renderShareImage({ title, subtitle, board, awards }) {
   ctx.font = `800 22px ${BODY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Fatto con GameNight Show', W / 2, H - 34);
+  ctx.fillText(t('report.madeWith'), W / 2, H - 34);
 
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Immagine non creata'))), 'image/png');
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(t('report.img.failed')))), 'image/png');
   });
 }
 
@@ -349,7 +350,7 @@ export async function renderStoryImage({ title, subtitle, number, board, mvp = [
   ctx.font = `92px ${DISPLAY}`;
   ctx.fillText('GameNight Show', SW / 2, 150);
   ctx.font = `900 46px ${BODY}`;
-  ctx.fillText(fit(ctx, `${emblem ? `${emblem} ` : ''}${title || 'La nostra serata'}`, SW - 140), SW / 2, 232);
+  ctx.fillText(fit(ctx, `${emblem ? `${emblem} ` : ''}${title || t('report.ourNight')}`, SW - 140), SW / 2, 232);
   ctx.font = `800 34px ${BODY}`;
   ctx.fillStyle = C.soft;
   ctx.fillText(fit(ctx, subtitle || '', SW - 140), SW / 2, 284);
@@ -360,7 +361,7 @@ export async function renderStoryImage({ title, subtitle, number, board, mvp = [
   if (top) {
     ctx.fillStyle = C.ink;
     ctx.font = `58px ${DISPLAY}`;
-    ctx.fillText('Il gioco della serata', SW / 2, 540);
+    ctx.fillText(fit(ctx, t('report.img.topGame'), SW - 140), SW / 2, 540);
     const img = await loadImg(top.image);
     gameTile(ctx, img, top.name, (SW - 480) / 2, 580, 480);
     ctx.fillStyle = C.ink;
@@ -388,7 +389,7 @@ export async function renderStoryImage({ title, subtitle, number, board, mvp = [
   // MVP e vincitore
   const cardY = y + 24;
   const half = (SW - 180 - 30) / 2;
-  [['👑 MVP della serata', mvp, C.tomato], ['🏆 Vincitore della serata', winners, C.teal]].forEach(([label, who, fill], i) => {
+  [[t('report.img.mvp'), mvp, C.tomato], [t('report.img.winner'), winners, C.teal]].forEach(([label, who, fill], i) => {
     const x = 90 + i * (half + 30);
     box(ctx, x, cardY, half, 150, 26, fill, 6, 5);
     ctx.fillStyle = C.ink;
@@ -423,13 +424,74 @@ export async function renderStoryImage({ title, subtitle, number, board, mvp = [
   ctx.textAlign = 'center';
   ctx.fillStyle = C.soft;
   ctx.font = `800 26px ${BODY}`;
-  ctx.fillText('Fatto con GameNight Show', SW / 2, SH - 50);
+  ctx.fillText(t('report.madeWith'), SW / 2, SH - 50);
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Immagine non creata'))), 'image/png');
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(t('report.img.failed')))), 'image/png');
   });
 }
 
 /** Condivide l'immagine (WhatsApp, ecc.) dove il browser lo permette, altrimenti la scarica. */
+/**
+ * Scheda "Il vostro anno" (1080×1350) da condividere: solo dati veri del gruppo (wrapped in stats.js).
+ * Le voci che mancano (gruppo nuovo, niente voti MVP…) semplicemente non compaiono.
+ */
+export async function renderYearImage(w, { group = '', emblem = '', color = C.sun } = {}) {
+  await fontsReady();
+  const SW = 1080, SH = 1350;
+  const canvas = document.createElement('canvas');
+  canvas.width = SW; canvas.height = SH;
+  const ctx = canvas.getContext('2d');
+  dots(ctx, SW, SH);
+  const accent = /^#[0-9A-Fa-f]{6}$/.test(color || '') ? color : C.sun;
+  ctx.fillStyle = accent;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(SW, 0); ctx.lineTo(SW, 300); ctx.lineTo(0, 360); ctx.closePath(); ctx.fill();
+  ctx.lineWidth = 8; ctx.strokeStyle = C.ink;
+  ctx.beginPath(); ctx.moveTo(0, 360); ctx.lineTo(SW, 300); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.fillStyle = C.ink;
+  ctx.font = `64px ${DISPLAY}`;
+  ctx.fillText(fit(ctx, t('year.img.kicker'), SW - 140), SW / 2, 110);
+  ctx.font = `120px ${DISPLAY}`;
+  ctx.fillText(fit(ctx, t('year.img.title', { year: String(w.year) }), SW - 120), SW / 2, 230);
+  ctx.font = `900 40px ${BODY}`; ctx.fillStyle = C.soft;
+  ctx.fillText(fit(ctx, `${emblem ? `${emblem} ` : ''}${group || ''}${w.inProgress ? ` · ${t('year.soFar')}` : ''}`, SW - 140), SW / 2, 290);
+  // Tre numeri grandi
+  const stats = [[String(w.nights), t('year.img.nights', { n: w.nights })], [String(w.matches), t('year.img.matches', { n: w.matches })], [w.hours ? fmt(w.hours) : String(w.distinctGames), w.hours ? t('year.img.hours') : t('year.img.games', { n: w.distinctGames })]];
+  stats.forEach(([big, small], i) => {
+    const cx = SW / 6 + (i * SW) / 3;
+    box(ctx, cx - 150, 410, 300, 200, 28, C.paper);
+    ctx.fillStyle = C.ink; ctx.font = `92px ${DISPLAY}`; ctx.fillText(fit(ctx, big, 260), cx, 520);
+    ctx.font = `900 30px ${BODY}`; ctx.fillStyle = C.soft; ctx.fillText(fit(ctx, small, 270), cx, 574);
+  });
+  // Classifica dei giochi più intavolati
+  let y = 690;
+  if (w.topGames?.length) {
+    ctx.textAlign = 'left'; ctx.fillStyle = C.ink; ctx.font = `52px ${DISPLAY}`;
+    ctx.fillText(fit(ctx, t('year.img.top'), SW - 2 * PAD), PAD, y);
+    y += 30;
+    w.topGames.slice(0, 3).forEach((g, i) => {
+      box(ctx, PAD, y, SW - 2 * PAD, 104, 24, i === 0 ? C.sun : C.paper);
+      ctx.fillStyle = C.ink; ctx.font = `58px ${DISPLAY}`; ctx.textAlign = 'left';
+      ctx.fillText(`${i + 1}`, PAD + 30, y + 72);
+      ctx.font = `900 44px ${BODY}`;
+      ctx.fillText(fit(ctx, g.name, SW - 2 * PAD - 360), PAD + 100, y + 68);
+      ctx.textAlign = 'right'; ctx.font = `800 34px ${BODY}`; ctx.fillStyle = C.soft;
+      ctx.fillText(fit(ctx, `${t('year.img.matchesN', { n: g.matches })}${g.avg !== null ? ` · ⭐ ${fmt(g.avg)}` : ''}`, 300), SW - PAD - 30, y + 66);
+      y += 122;
+    });
+  }
+  // Due titoli dell'anno, se ci sono
+  const titles = [w.mvp && [t('year.img.mvp'), w.mvp.name], w.mostPresent && [t('year.img.present'), w.mostPresent.name], w.loved && [t('year.img.loved'), w.loved.name]].filter(Boolean).slice(0, 2);
+  ctx.textAlign = 'center';
+  titles.forEach(([k, v], i) => {
+    const cx = titles.length === 1 ? SW / 2 : SW / 4 + (i * SW) / 2;
+    ctx.fillStyle = C.soft; ctx.font = `900 30px ${BODY}`; ctx.fillText(fit(ctx, k, SW / 2 - 60), cx, Math.min(y + 50, SH - 150));
+    ctx.fillStyle = C.ink; ctx.font = `56px ${DISPLAY}`; ctx.fillText(fit(ctx, v, SW / 2 - 60), cx, Math.min(y + 110, SH - 90));
+  });
+  ctx.fillStyle = C.soft; ctx.font = `800 28px ${BODY}`; ctx.textAlign = 'center';
+  ctx.fillText('GameNight Show', SW / 2, SH - 34);
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+}
+
 export async function shareOrDownload(blob, filename, text, preferDownload = false) {
   if (isApp()) {
     // App Android: "Condividi" di sistema (WhatsApp, Instagram…) oppure Documenti/GameNight Show.
@@ -456,8 +518,7 @@ export async function shareOrDownload(blob, filename, text, preferDownload = fal
   return 'downloaded';
 }
 
-/** Data della serata in italiano, es. "sabato 10 ottobre 2026". */
+/** Data della serata nella lingua scelta, es. "sabato 10 ottobre 2026" / "Saturday 10 October 2026". */
 export function nightDate(ts) {
-  const d = new Date(Number(ts) || Date.now());
-  return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return fmtDate(new Date(Number(ts) || Date.now()), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }

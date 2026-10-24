@@ -15,6 +15,11 @@ import { isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './nati
 import { mountUpdatePanel, autoCheck } from './updates.js';
 import { links, bindLinks, refreshLinks } from './links.js';
 import { APP_VERSION } from './version.js';
+import { initSpatialNav, isTvDevice } from './spatialnav.js';
+// Su un televisore (Android TV) le frecce del telecomando spostano il fuoco.
+if (isTvDevice()) initSpatialNav();
+import { loanAlerts, alertsSig } from './collection.js';
+import { bindDataCenter, openExport, openImport, openPrivacy, openDiagnostics } from './datacenter.js';
 
 ErrLog.install();
 applyTheme();
@@ -67,6 +72,10 @@ document.addEventListener('click', (e) => {
   const o = e.target.closest('[data-open]');
   if (!o) return;
   if (o.dataset.open === 'settings') openSettings();
+  else if (o.dataset.open === 'export') openExport();
+  else if (o.dataset.open === 'import') openImport();
+  else if (o.dataset.open === 'privacy') openPrivacy();
+  else if (o.dataset.open === 'diag') openDiagnostics();
   else if (o.dataset.open === 'updates') openUpdates(true);
 });
 
@@ -481,7 +490,7 @@ function armadiList() {
   for (const a of ls.json('gnr_armadi', []) || []) if (a && CODE6.test(a.id) && !map.has(a.id)) map.set(a.id, { id: a.id, name: a.name, at: 0 });
   return [...map.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
-const armUrl = (id) => `armadio.html?a=${id}`;
+const armUrl = (id) => `armadio.html?a=${id}`; // i18n-ok
 
 function paintArmadi() {
   const list = armadiList();
@@ -491,7 +500,7 @@ function paintArmadi() {
   const box = $('#hubArmadi');
   box.innerHTML = `
     <div class="sec-row"><h1 class="page-title" id="armTitle">📦 ${esc(t('home.arm.title'))}</h1><button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="armNew">➕ <span>${esc(t('home.arm.new'))}</span></button></div>
-    ${list.length ? `<ul class="rows">${list.map((a) => `<li><a class="row hub-item" href="${armUrl(a.id)}"><span class="tile-ico tile-ico--violet" aria-hidden="true">📦</span><span class="mini-text"><b>${esc(a.name)}</b><small>${esc(a.own ? t('home.arm.own') : a.key ? t('home.arm.editor') : t('home.arm.viewer'))} · ${esc(t('home.arm.code', { code: a.id }))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
+    ${list.length ? `<ul class="rows">${list.map((a) => `<li><a class="row hub-item" href="${armUrl(a.id)}"><span class="tile-ico tile-ico--violet" aria-hidden="true">📦</span><span class="mini-text"><b>${esc(a.name)}</b><small>${esc(a.own ? t('home.arm.own') : a.key ? t('home.arm.editor') : t('home.arm.viewer'))} · ${esc(t('home.arm.code', { code: a.id }))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>` // i18n-ok
       : `<p class="empty">${esc(t('home.arm.none'))}</p>`}
     <details class="hub-details"><summary>${esc(t('home.arm.haveCode'))}</summary>
       <div class="hub-code-row"><input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-label="${esc(t('home.arm.codeAria'))}"><button type="button" class="btn-sec" id="armCodeGo">${esc(t('common.open'))}</button></div>
@@ -514,6 +523,49 @@ function paintArmadi() {
     } catch (ex) { err.textContent = explainError(ex); }
   });
 }
+// ---------------------------------------------------------------------------
+// Prestiti scaduti e in scadenza (dagli armadi che questo dispositivo può modificare)
+// ---------------------------------------------------------------------------
+
+const LOAN_SNOOZE = 'gnr_loan_snooze';
+async function checkLoans() {
+  const box = $('#loanAlert');
+  if (!box) return;
+  const arms = armadiList().filter((a) => a.own || a.key || ls.get(`gnr_akey_${a.id}`));
+  const overdue = []; const soon = [];
+  for (const a of arms.slice(0, 8)) {
+    let loans = null;
+    // Si legge una volta sola all'apertura (niente ascolti fissi): chi non può leggere i prestiti non vede niente.
+    try { loans = (await get(armadioRef(a.id, 'loans'))).val(); } catch { continue; }
+    const r = loanAlerts(loans);
+    overdue.push(...r.overdue.map((l) => ({ ...l, aid: a.id, arm: a.name })));
+    soon.push(...r.soon.map((l) => ({ ...l, aid: a.id, arm: a.name })));
+  }
+  const all = [...overdue, ...soon];
+  const sig = alertsSig(all);
+  const sn = ls.json(LOAN_SNOOZE, null);
+  // Rimandato a domani: torna prima solo se c'è un prestito nuovo da ricordare.
+  if (!all.length || (sn && sn.sig === sig && Date.now() < sn.until)) { box.hidden = true; box.innerHTML = ''; return; }
+  const row = (l, late) => `<li><a class="row hub-item" href="armadio.html?a=${esc(l.aid)}&loan=${esc(l.id)}"><span aria-hidden="true">${late ? '⏰' : '📅'}</span><span class="mini-text"><b>${esc(l.name || '?')}</b><small>${esc(late ? t('loan.lateBy', { name: l.to, n: l.days }) : l.days ? t('loan.dueIn', { name: l.to, n: l.days }) : t('loan.dueToday', { name: l.to }))}${arms.length > 1 ? ` · ${esc(l.arm || '')}` : ''}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`; // i18n-ok
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="tile-head"><span class="tile-ico tile-ico--pink" aria-hidden="true">🤝</span><div><h2>${esc(overdue.length ? t('loan.titleLate', { n: overdue.length }) : t('loan.titleSoon', { n: soon.length }))}</h2>
+      <p class="tile-sub">${esc(t('loan.sub'))}</p></div></div>
+    <ul class="rows">${overdue.slice(0, 5).map((l) => row(l, true)).join('')}${soon.slice(0, Math.max(0, 5 - overdue.length)).map((l) => row(l, false)).join('')}</ul>
+    <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="loanSnooze">${esc(t('loan.snooze'))}</button>`;
+  $('#loanSnooze').addEventListener('click', () => {
+    const d = new Date(); d.setHours(24, 0, 0, 0);
+    ls.set(LOAN_SNOOZE, JSON.stringify({ sig, until: d.getTime() }));
+    box.hidden = true;
+  });
+}
+
+// I tuoi dati: esportazione, importazione, privacy e diagnostica (datacenter.js)
+bindDataCenter({
+  Sheet, head, uid: () => H.uid, ready: () => H.ready || Promise.resolve(), armadiList: () => armadiList(),
+  rememberArm: (id, name) => rememberArm(id, name), repaint: () => { paintAll(); checkLoans().catch(() => {}); }
+});
+
 function rememberArm(id, name) {
   const list = (ls.json('gnr_armadi', []) || []).filter((a) => a?.id !== id);
   ls.set('gnr_armadi', JSON.stringify([{ id, name }, ...list].slice(0, 12)));
@@ -534,7 +586,7 @@ function openNewArmadio() {
       await H.ready;
       let id = null;
       for (let i = 0; i < 12 && !id; i++) { const c = randomCode(6); if (!(await get(armadioRef(c, 'info'))).exists()) id = c; }
-      if (!id) throw new Error('nessun codice libero');
+      if (!id) throw new Error(t('common.noFreeCode'));
       await set(armadioRef(id, 'info'), { name, ownerUid: H.uid, createdAt: Date.now() });
       const key = randomCode(8);
       await set(dbRef(`armadioKeys/${id}`), key);
@@ -787,6 +839,7 @@ async function boot() {
   } catch (err) { console.warn('Profilo non caricato', err); state = cached; }
   paintAll();
   paintBack();
+  checkLoans().catch(() => {});
   if (legacy.length === 6) { try { await adoptMember(legacy); paintAll(); } catch (err) { toast(explainError(err), 'warn'); } }
   if (hashLink) askLink(hashLink);
   else if (!state) showIntro();

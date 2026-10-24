@@ -3,7 +3,7 @@
 import { $, esc, qrSVG, toast, applyTheme, registerSW, ErrLog } from './util.js';
 import { isApp, isAndroid, apkUrl } from './native.js';
 import { mountUpdatePanel, releaseSource, MIN_ANDROID } from './updates.js';
-import { t } from './i18n.js';
+import { t, langToggleHTML } from './i18n.js';
 
 ErrLog.install();
 applyTheme();
@@ -17,7 +17,7 @@ app.innerHTML = `
     <header class="ph-top">
       <a class="btn-sec btn-sec--sm ph-back" href="index.html" aria-label="${esc(t('dl.home'))}">←</a>
       <span class="brand-row"><span class="brand brand--sm">GameNight <span class="logo-tag logo-tag--xs">Show</span></span></span>
-      <span aria-hidden="true"></span>
+      ${langToggleHTML()}
     </header>
     <section class="card dl-hero">
       <p class="dl-ico" aria-hidden="true">📲</p>

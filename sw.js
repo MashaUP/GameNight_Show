@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '1.5.0';
+const VERSION = '1.10.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261023a';
+const BUILD = '20261024a';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -17,6 +17,26 @@ const SHELL = [
   "js/i18n.js",
   "js/lang/it.js",
   "js/lang/en.js",
+  "js/lang/it-report.js",
+  "js/lang/it-selftest.js",
+  "js/lang/it-voice.js",
+  "js/lang/it-prep.js",
+  "js/lang/it-tv.js",
+  "js/lang/it-phone.js",
+  "js/lang/it-arm.js",
+  "js/lang/it-feat.js",
+  "js/lang/it-misc.js",
+  "js/lang/it-tvx.js",
+  "js/lang/en-report.js",
+  "js/lang/en-selftest.js",
+  "js/lang/en-voice.js",
+  "js/lang/en-prep.js",
+  "js/lang/en-tv.js",
+  "js/lang/en-phone.js",
+  "js/lang/en-arm.js",
+  "js/lang/en-feat.js",
+  "js/lang/en-misc.js",
+  "js/lang/en-tvx.js",
   "ludoteca.html",
   "armadio.html",
   "js/armadio.js",
@@ -43,6 +63,7 @@ const SHELL = [
   "js/library.js",
   "js/music.js",
   "js/report.js",
+  "js/pdfdoc.js",
   "js/sfx.js",
   "js/safe.js",
   "js/tour.js",
@@ -57,6 +78,17 @@ const SHELL = [
   "js/share.js",
   "js/sounds.js",
   "js/stats.js",
+  "js/nightclock.js",
+  "js/sharedtimer.js",
+  "js/ambient.js",
+  "js/favs.js",
+  "js/bgg.js",
+  "js/manuals.js",
+  "js/portability.js",
+  "js/datacenter.js",
+  "js/customsfx.js",
+  "js/atmosound.js",
+  "js/spatialnav.js",
   "js/util.js",
   "js/version.js",
   "js/stale.js",

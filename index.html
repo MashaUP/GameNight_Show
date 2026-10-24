@@ -61,6 +61,7 @@
         </header>
 
         <div id="backBox" class="back-box" hidden></div>
+        <section class="tile loan-alert" id="loanAlert" hidden aria-live="polite"></section>
 
         <div class="grid grid--top">
           <section class="tile tile--join" aria-labelledby="joinTitle">
@@ -153,6 +154,13 @@
             <div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">💬</span><div><h2 id="linksTitle" data-i18n="links.title">Community e supporto</h2><p class="tile-sub" data-i18n="links.sub">Codice, community, guida e segnalazioni.</p></div></div>
             <ul class="link-list" data-link-list data-link-exclude="kofi"></ul>
             <p class="muted small links-status" id="linksStatus"></p>
+          </section>
+          <section class="tile tile--data" aria-labelledby="dataTitle">
+            <div class="tile-head"><span class="tile-ico tile-ico--teal" aria-hidden="true">🧰</span><div><h2 id="dataTitle" data-i18n="dc.tile.title">I tuoi dati e la privacy</h2><p class="tile-sub" data-i18n="dc.tile.sub">Esporta, importa, controlla cosa è salvato e dove.</p></div></div>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="export"><span aria-hidden="true">📤</span> <span data-i18n="dc.exp.title">Esporta i tuoi dati</span></button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="import"><span aria-hidden="true">📥</span> <span data-i18n="dc.imp.title">Importa da un file</span></button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="privacy"><span aria-hidden="true">🔐</span> <span data-i18n="dc.priv.title">Centro privacy</span></button>
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--block" data-open="diag"><span aria-hidden="true">🩺</span> <span data-i18n="dc.diag.title">Centro diagnostico</span></button>
           </section>
           <section class="tile">
             <div class="tile-head"><span class="tile-ico tile-ico--sky" aria-hidden="true">⚙️</span><div><h2 data-i18n="home.nav.settings">Impostazioni</h2><p class="tile-sub" data-i18n="home.altro.settingsSub">Lingua, tema, accessibilità, aiuto.</p></div></div>

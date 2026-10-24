@@ -1,5 +1,6 @@
 // Pre-partita: giochi sul tavolo stasera, desideri, arrivi, "porto io" e scaletta della serata.
 // Funzioni pure, usate sia dalla TV sia dai telefoni.
+import { locale } from './i18n.js';
 
 /** La prossima serata del gruppo è oggi? (da 6 ore prima a 12 ore dopo l'orario fissato) */
 export function nextIsTonight(next, now = Date.now()) {
@@ -94,4 +95,4 @@ export function planTimes(list, start) {
   return list.map((p) => { const out = { ...p, start: t }; t += (p.minutes + 5) * 60000; return out; });
 }
 
-export const hhmm = (ms) => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+export const hhmm = (ms) => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });

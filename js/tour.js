@@ -1,6 +1,7 @@
 // Tutorial guidato: evidenzia un elemento alla volta con una nuvoletta di spiegazione.
 // Ogni giro compare una volta sola (si rivede dagli Strumenti).
 import { esc } from './util.js';
+import { t } from './i18n.js';
 
 const KEY = 'gnr_tour_';
 let current = null;
@@ -53,13 +54,13 @@ export function runTour(id, steps, { force = false } = {}) {
   const paint = () => {
     const s = list[i];
     tip.innerHTML = `
-      <p class="tour-step">${i + 1} di ${list.length}</p>
+      <p class="tour-step">${esc(t('tour.step', { n: i + 1, total: list.length }))}</p>
       <h3 id="tourTitle">${esc(s.title)}</h3>
       <p>${esc(s.text)}</p>
       <div class="tour-actions">
-        <button type="button" class="link-btn" data-tour="skip">${i === list.length - 1 ? '' : 'Salta il tutorial'}</button>
-        <span>${i ? '<button type="button" class="btn-sec btn-sec--sm" data-tour="prev">Indietro</button>' : ''}
-        <button type="button" class="btn btn--sm" data-tour="next">${i === list.length - 1 ? 'Ho capito' : 'Avanti'}</button></span>
+        <button type="button" class="link-btn" data-tour="skip">${i === list.length - 1 ? '' : esc(t('tour.skip'))}</button>
+        <span>${i ? `<button type="button" class="btn-sec btn-sec--sm" data-tour="prev">${esc(t('tour.prev'))}</button>` : ''}
+        <button type="button" class="btn btn--sm" data-tour="next">${i === list.length - 1 ? esc(t('tour.done')) : esc(t('tour.next'))}</button></span>
       </div>`;
     place();
     requestAnimationFrame(place);

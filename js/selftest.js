@@ -10,6 +10,10 @@ import {
 } from './fb.js';
 import { $, esc, randomCode, applyTheme, ICONS, normalizeCode, isImageSource, downloadFile } from './util.js';
 import { APP_VERSION } from './version.js';
+import { t, fmtDate, langToggleHTML } from './i18n.js';
+
+// Pulsante della lingua accanto a "Home"
+document.querySelector('.st-back')?.insertAdjacentHTML('afterend', langToggleHTML('ph-home st-lang'));
 import { firebaseConfig } from './config.js';
 import { newToken, toCSV, readImportFile, planImport, pubGame } from './collection.js';
 import { routeFromQR } from './native.js';
@@ -51,7 +55,7 @@ function paintCounts() {
     const ok = results.filter((r) => r.status === 'ok').length;
     const ko = results.filter((r) => r.status === 'fail').length;
     const sk = results.filter((r) => r.status === 'skip').length;
-    summary.innerHTML = `<h2>Verifica in corso…</h2><p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p>`;
+    summary.innerHTML = `<h2>${t('selftest.running')}</h2><p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p>`;
   }
 }
 function row(area, title) {
@@ -86,7 +90,8 @@ async function mustDeny(op, problem) {
   fail(problem);
   return false;
 }
-const OLD_RULES = 'le regole sono vecchie: ricopia database.rules.json in Firebase e premi Pubblica.';
+/** Problema delle regole, con il consiglio di ricopiarle. */
+const old = (msg) => `${msg}: ${t('selftest.oldRules')}`;
 
 /** Codice nuovo, controllando che non sia già usato (così non si toccano mai dati veri). */
 async function freshCode(len, refOf) {
@@ -94,7 +99,7 @@ async function freshCode(len, refOf) {
     const c = randomCode(len);
     if (!(await get(refOf(c)).catch(() => null))?.exists()) return c;
   }
-  throw new Error('nessun codice libero');
+  throw new Error(t('selftest.noFreeCode'));
 }
 
 let failures = 0;
@@ -103,7 +108,7 @@ async function step(area, title, how, fn) {
   const rec = { area, title, how, status: 'ok', detail: '' };
   results.push(rec);
   try {
-    rec.detail = (await fn()) || 'Funziona.';
+    rec.detail = (await fn()) || t('selftest.works');
     r.ok(rec.detail);
     return true;
   } catch (e) {
@@ -117,112 +122,112 @@ async function step(area, title, how, fn) {
 }
 
 async function run() {
-  $('#info').textContent = `Versione dell'app ${APP_VERSION}. Progetto Firebase: ${firebaseConfig?.projectId || '—'}. Database: ${firebaseConfig?.databaseURL || '—'}.`;
-  if (!(await step('Base', 'Configurazione in js/config.js', 'Controllo che ci siano i dati del progetto Firebase.', async () => {
-    if (!isConfigured) fail('Mancano i dati di Firebase: compila js/config.js (README, passo 2.5).');
-    return 'Dati presenti, compreso databaseURL.';
+  $('#info').textContent = t('selftest.info', { v: String(APP_VERSION), project: firebaseConfig?.projectId || '—', db: firebaseConfig?.databaseURL || '—' });
+  if (!(await step(t('selftest.area.base'), t('selftest.config.title'), t('selftest.config.how'), async () => {
+    if (!isConfigured) fail(t('selftest.config.fail'));
+    return t('selftest.config.ok');
   }))) return done();
 
   let uid;
-  if (!(await step('Base', 'Accesso anonimo', 'Accedo come la TV, senza registrazione.', async () => { uid = await connect(); return 'Funziona: ogni dispositivo viene riconosciuto senza registrazione.'; }))) return done();
+  if (!(await step(t('selftest.area.base'), t('selftest.anon.title'), t('selftest.anon.how'), async () => { uid = await connect(); return t('selftest.anon.ok'); }))) return done();
 
   // Dati di prova (codici nuovi) da cancellare alla fine
   const made = { rooms: [], groups: [], armadi: [], people: [], members: [] };
   let A = null; let B = null;
-  await step('Base', 'Due telefoni di prova', 'Creo due utenti anonimi separati: A entra nella stanza, B resta fuori.', async () => {
+  await step(t('selftest.area.base'), t('selftest.phones.title'), t('selftest.phones.how'), async () => {
     A = await guestUser('verifica-telefono-a');
     B = await guestUser('verifica-telefono-b');
-    return 'Pronti: due “telefoni” con identità diverse.';
+    return t('selftest.phones.ok');
   });
 
   const code = await freshCode(4, (c) => roomRef(c, 'meta')).catch(() => null);
-  const roomOk = code && await step('Stanza', 'Creazione della stanza', 'La TV crea una stanza di prova con un codice libero.', async () => {
+  const roomOk = code && await step(t('selftest.area.room'), t('selftest.room.title'), t('selftest.room.how'), async () => {
     await set(roomRef(code, 'meta'), { hostUid: uid, maxPlayers: 4, createdAt: serverTimestamp(), test: true, soundboard: true, groupName: 'Verifica' });
     made.rooms.push(code);
     await set(roomRef(code, 'state'), { phase: 'lobby', at: serverTimestamp() });
-    return `Stanza ${code} creata (verrà cancellata alla fine).`;
+    return t('selftest.room.ok', { code });
   });
   const P = (n) => ({ name: n, style: 'adventurer', seed: 'verifica', color: '#FF5A4E' });
 
   if (roomOk && A && B) {
-    await step('Regia', 'Codice regia segreto', 'Scrivo il codice regia e provo a rileggerlo.', async () => {
+    await step(t('selftest.area.host'), t('selftest.secret.title'), t('selftest.secret.how'), async () => {
       await set(secretRef(code), randomCode(8));
-      try { await get(secretRef(code)); } catch (e) { if (denied(e)) return 'Si può scrivere ma non leggere: corretto.'; throw e; }
-      fail(`Il codice regia si può leggere: ${OLD_RULES}`);
+      try { await get(secretRef(code)); } catch (e) { if (denied(e)) return t('selftest.secret.ok'); throw e; }
+      fail(old(t('selftest.secret.deny')));
     });
-    await step('Partecipanti', 'Un telefono entra nella stanza', 'Il telefono A scrive il suo giocatore.', async () => {
+    await step(t('selftest.area.players'), t('selftest.join.title'), t('selftest.join.how'), async () => {
       await G.set(A, `rooms/${code}/players/${A.uid}`, P('Verifica A'));
-      return 'Il telefono entra con nome e personaggio.';
+      return t('selftest.join.ok');
     });
-    await step('Regia', 'Solo la TV guida la serata', 'Il telefono A prova a cambiare la fase della serata.', async () => {
-      await mustDeny(() => G.set(A, `rooms/${code}/state`, { phase: 'awards' }), `Un telefono può cambiare la fase della serata: ${OLD_RULES}`);
-      return 'Un telefono non può cambiare schermata alla TV: corretto.';
+    await step(t('selftest.area.host'), t('selftest.phase.title'), t('selftest.phase.how'), async () => {
+      await mustDeny(() => G.set(A, `rooms/${code}/state`, { phase: 'awards' }), old(t('selftest.phase.deny')));
+      return t('selftest.phase.ok');
     });
-    await step('Partecipanti', 'Stanza chiusa e rientro dopo una disconnessione', 'La TV chiude la stanza: A (già dentro) riscrive il suo giocatore, B (nuovo) prova a entrare.', async () => {
+    await step(t('selftest.area.players'), t('selftest.locked.title'), t('selftest.locked.how'), async () => {
       await update(roomRef(code, 'meta'), { locked: true });
       await G.set(A, `rooms/${code}/players/${A.uid}`, P('Verifica A'));
-      await mustDeny(() => G.set(B, `rooms/${code}/players/${B.uid}`, P('Verifica B')), `Con la stanza chiusa entra anche chi non c'era: ${OLD_RULES}`);
+      await mustDeny(() => G.set(B, `rooms/${code}/players/${B.uid}`, P('Verifica B')), old(t('selftest.locked.deny')));
       await update(roomRef(code, 'meta'), { locked: null });
-      return 'Chi era dentro rientra, chi non c’era resta fuori: corretto.';
+      return t('selftest.locked.ok');
     });
-    await step('Partecipanti', 'Telefono rimosso dalla TV', 'La TV rimuove B; B prova a rientrare.', async () => {
+    await step(t('selftest.area.players'), t('selftest.banned.title'), t('selftest.banned.how'), async () => {
       await update(roomRef(code, 'meta'), { [`banned/${B.uid}`]: 'Verifica B' });
-      await mustDeny(() => G.set(B, `rooms/${code}/players/${B.uid}`, P('Verifica B')), `Un telefono rimosso può rientrare: ${OLD_RULES}`);
+      await mustDeny(() => G.set(B, `rooms/${code}/players/${B.uid}`, P('Verifica B')), old(t('selftest.banned.deny')));
       await update(roomRef(code, 'meta'), { [`banned/${B.uid}`]: null });
-      return 'Chi è stato rimosso non rientra finché la TV non lo riammette.';
+      return t('selftest.banned.ok');
     });
-    await step('Votazioni', 'Votare mentre la votazione è aperta', 'La TV apre la votazione di un gioco; A vota.', async () => {
-      await set(roomRef(code, 'games/g1'), { name: 'Gioco di prova', status: 'voting', order: 1 });
+    await step(t('selftest.area.votes'), t('selftest.vote.title'), t('selftest.vote.how'), async () => {
+      await set(roomRef(code, 'games/g1'), { name: 'Gioco di prova', status: 'voting', order: 1 }); // i18n-ok
       await set(roomRef(code, 'state'), { phase: 'voting', gameId: 'g1', at: serverTimestamp() });
       await G.set(A, `rooms/${code}/votes/g1/${A.uid}`, { overall: 7, coinv: 3, sempl: 4, rigioc: 5, guess: 6.5, at: dbNow() });
-      return 'Il voto arriva.';
+      return t('selftest.vote.ok');
     });
-    await step('Votazioni', 'Si vota solo per sé', 'A prova a scrivere un voto a nome della TV.', async () => {
-      await mustDeny(() => G.set(A, `rooms/${code}/votes/g1/${uid}`, { overall: 1, at: dbNow() }), `Un telefono può votare per un altro: ${OLD_RULES}`);
-      return 'Ognuno vota solo per sé: corretto.';
+    await step(t('selftest.area.votes'), t('selftest.voteSelf.title'), t('selftest.voteSelf.how'), async () => {
+      await mustDeny(() => G.set(A, `rooms/${code}/votes/g1/${uid}`, { overall: 1, at: dbNow() }), old(t('selftest.voteSelf.deny')));
+      return t('selftest.voteSelf.ok');
     });
-    await step('Votazioni', 'Voti bloccati dopo il reveal', 'La TV svela i voti; A prova a cambiare il suo voto.', async () => {
+    await step(t('selftest.area.votes'), t('selftest.voteLock.title'), t('selftest.voteLock.how'), async () => {
       await update(roomRef(code, 'state'), { phase: 'reveal' });
       await update(roomRef(code, 'games/g1'), { status: 'revealed' });
-      await mustDeny(() => G.set(A, `rooms/${code}/votes/g1/${A.uid}`, { overall: 1, at: dbNow() }), `Dopo il reveal i voti si possono ancora cambiare: ${OLD_RULES}`);
-      return 'Dopo il reveal nessuno può cambiare il voto: corretto.';
+      await mustDeny(() => G.set(A, `rooms/${code}/votes/g1/${A.uid}`, { overall: 1, at: dbNow() }), old(t('selftest.voteLock.deny')));
+      return t('selftest.voteLock.ok');
     });
-    await step('Votazioni', 'Timer del voto', 'La TV imposta 60 secondi, poi un valore fuori scala (9999).', async () => {
+    await step(t('selftest.area.votes'), t('selftest.timer.title'), t('selftest.timer.how'), async () => {
       await update(roomRef(code, 'meta'), { voteSeconds: 60 });
-      await mustDeny(() => update(roomRef(code, 'meta'), { voteSeconds: 9999 }), `Timer fuori scala accettato: ${OLD_RULES}`);
+      await mustDeny(() => update(roomRef(code, 'meta'), { voteSeconds: 9999 }), old(t('selftest.timer.deny')));
       await update(roomRef(code, 'meta'), { voteSeconds: null });
-      return 'Il timer accetta solo valori validi (0–600 secondi).';
+      return t('selftest.timer.ok');
     });
-    await step('Partita', 'Pronostici solo nei primi 5 minuti', 'La TV fa partire una partita: A pronostica subito; poi la partita risulta iniziata da 6 minuti e A riprova.', async () => {
+    await step(t('selftest.area.match'), t('selftest.bets.title'), t('selftest.bets.how'), async () => {
       await set(roomRef(code, 'state'), { phase: 'idle', playId: 'p1', playStart: Date.now(), at: serverTimestamp() });
       await G.set(A, `rooms/${code}/bets/p1/${A.uid}`, A.uid);
       await update(roomRef(code, 'state'), { playStart: Date.now() - 6 * 60000 });
-      await mustDeny(() => G.set(A, `rooms/${code}/bets/p1/${A.uid}`, A.uid), `Pronostico accettato dopo 5 minuti: ${OLD_RULES}`);
-      return 'Pronostico accettato all’inizio, rifiutato dopo 5 minuti.';
+      await mustDeny(() => G.set(A, `rooms/${code}/bets/p1/${A.uid}`, A.uid), old(t('selftest.bets.deny')));
+      return t('selftest.bets.ok');
     });
-    await step('Partita', 'Segnapunti', 'A scrive i suoi punti della partita in corso.', async () => {
+    await step(t('selftest.area.match'), t('selftest.scores.title'), t('selftest.scores.how'), async () => {
       await G.set(A, `rooms/${code}/scores/p1/${A.uid}`, 42);
-      return 'Punti salvati.';
+      return t('selftest.scores.ok');
     });
-    await step('Partita', 'Quiz: una risposta sola', 'La TV apre una domanda; A risponde due volte.', async () => {
+    await step(t('selftest.area.match'), t('selftest.quiz.title'), t('selftest.quiz.how'), async () => {
       await set(roomRef(code, 'quiz'), { id: 'q1', open: true, at: serverTimestamp() });
       await G.set(A, `rooms/${code}/quizAns/q1/${A.uid}`, 2);
-      await mustDeny(() => G.set(A, `rooms/${code}/quizAns/q1/${A.uid}`, 1), `Si può cambiare la risposta del quiz: ${OLD_RULES}`);
-      return 'La prima risposta vale, la seconda viene rifiutata.';
+      await mustDeny(() => G.set(A, `rooms/${code}/quizAns/q1/${A.uid}`, 1), old(t('selftest.quiz.deny')));
+      return t('selftest.quiz.ok');
     });
-    await step('Soundboard', 'Effetto dal telefono e anti-spam', 'A manda un effetto alla TV; subito dopo ne manda un altro.', async () => {
+    await step(t('selftest.area.sfx'), t('selftest.sfx.title'), t('selftest.sfx.how'), async () => {
       const send = () => G.update(A, `rooms/${code}`, { [`sfx/${randomCode(8)}`]: { k: 'applausi', by: A.uid, at: dbNow() }, [`rate/${A.uid}/sfx`]: dbNow() });
       await send();
-      await mustDeny(send, `Effetti a raffica accettati: ${OLD_RULES}`);
-      return 'Il primo effetto arriva; il secondo entro 3 secondi viene rifiutato dal database.';
+      await mustDeny(send, old(t('selftest.sfx.deny')));
+      return t('selftest.sfx.ok');
     });
-    await step('Prossimo gioco', 'Votazione dei giochi con più voti a testa', 'La TV concede 2 voti a testa: A ne usa 2, poi prova 3 e due volte lo stesso gioco.', async () => {
+    await step(t('selftest.area.next'), t('selftest.poll.title'), t('selftest.poll.how'), async () => {
       await set(roomRef(code, 'state'), { phase: 'poll', at: serverTimestamp() });
       await set(roomRef(code, 'poll'), { open: true, options: ['L1', 'L2', 'L3'], max: 2, at: serverTimestamp() });
       await G.set(A, `rooms/${code}/poll/votes/${A.uid}`, { a: 'L1', b: 'L2' });
-      await mustDeny(() => G.set(A, `rooms/${code}/poll/votes/${A.uid}`, { a: 'L1', b: 'L2', c: 'L3' }), `Più voti di quelli concessi: ${OLD_RULES}`);
-      await mustDeny(() => G.set(A, `rooms/${code}/poll/votes/${A.uid}`, { a: 'L1', b: 'L1' }), `Due voti allo stesso gioco: ${OLD_RULES}`);
-      return '2 voti accettati; il terzo e i doppioni vengono rifiutati dal database.';
+      await mustDeny(() => G.set(A, `rooms/${code}/poll/votes/${A.uid}`, { a: 'L1', b: 'L2', c: 'L3' }), old(t('selftest.poll.deny')));
+      await mustDeny(() => G.set(A, `rooms/${code}/poll/votes/${A.uid}`, { a: 'L1', b: 'L1' }), old(t('selftest.poll.deny2')));
+      return t('selftest.poll.ok');
     });
   }
 
@@ -230,82 +235,82 @@ async function run() {
   const aid = await freshCode(6, (c) => armadioRef(c, 'info')).catch(() => null);
   let armOk = false;
   if (aid) {
-    armOk = await step('Armadio', 'Armadio dei giochi', 'La TV crea un armadio di prova (senza gruppo) e aggiunge due giochi, uno con la stellina “Stasera”.', async () => {
-      await set(armadioRef(aid, 'info'), { name: 'Armadio di prova', ownerUid: uid, createdAt: serverTimestamp() });
+    armOk = await step(t('selftest.area.arm'), t('selftest.arm.title'), t('selftest.arm.how'), async () => {
+      await set(armadioRef(aid, 'info'), { name: 'Armadio di prova', ownerUid: uid, createdAt: serverTimestamp() }); // i18n-ok
       made.armadi.push(aid);
-      await set(armadioRef(aid, 'library/t1'), { name: 'Gioco di prova', sel: true });
-      await set(armadioRef(aid, 'library/t2'), { name: 'Secondo gioco' });
-      return 'Armadio creato con 2 giochi.';
+      await set(armadioRef(aid, 'library/t1'), { name: 'Gioco di prova', sel: true }); // i18n-ok
+      await set(armadioRef(aid, 'library/t2'), { name: 'Secondo gioco' }); // i18n-ok
+      return t('selftest.arm.ok');
     });
   }
   if (armOk && B) {
-    await step('Armadio', 'Permessi dell’armadio', 'B (estraneo) legge i giochi, prova ad aggiungerne uno, poi usa la chiave dell’armadio e riprova.', async () => {
+    await step(t('selftest.area.arm'), t('selftest.armPerm.title'), t('selftest.armPerm.how'), async () => {
       const lib = await G.get(B, `armadi/${aid}/library`);
-      if (!lib?.t1) fail('Un altro dispositivo non riesce a leggere l’armadio.');
-      await mustDeny(() => G.set(B, `armadi/${aid}/library/x1`, { name: 'Intruso' }), `Un estraneo aggiunge giochi all’armadio: ${OLD_RULES}`);
+      if (!lib?.t1) fail(t('selftest.armPerm.fail'));
+      await mustDeny(() => G.set(B, `armadi/${aid}/library/x1`, { name: 'Intruso' }), old(t('selftest.armPerm.deny')));
       const key = randomCode(8);
       await set(pathRef(`armadioKeys/${aid}`), key);
       await G.set(B, `armadioKeyClaims/${aid}/${B.uid}`, key);
       await G.set(B, `armadi/${aid}/admins/${B.uid}`, true);
-      await G.set(B, `armadi/${aid}/library/x1`, { name: 'Con la chiave' });
-      return 'Tutti lo consultano; lo modifica solo chi ha la chiave.';
+      await G.set(B, `armadi/${aid}/library/x1`, { name: 'Con la chiave' }); // i18n-ok
+      return t('selftest.armPerm.ok');
     });
   }
   if (armOk && code && A) {
-    await step('Armadio', 'Giochi importati nella stanza', 'La stanza si collega all’armadio; la TV copia la stellina nella serata; A legge i giochi e prova a cambiare le stelline.', async () => {
-      await update(roomRef(code, 'meta'), { armadioId: aid, armadioName: 'Armadio di prova' });
+    await step(t('selftest.area.arm'), t('selftest.armRoom.title'), t('selftest.armRoom.how'), async () => {
+      await update(roomRef(code, 'meta'), { armadioId: aid, armadioName: 'Armadio di prova' }); // i18n-ok
       await set(roomRef(code, 'pick'), { t1: true });
       const meta = await G.get(A, `rooms/${code}/meta`);
       const lib = await G.get(A, `armadi/${meta.armadioId}/library`);
       const pick = await G.get(A, `rooms/${code}/pick`);
-      if (!lib?.t1 || !pick?.t1) fail('Il telefono non vede i giochi dell’armadio della stanza.');
-      await mustDeny(() => G.set(A, `rooms/${code}/pick/t2`, true), `Un telefono cambia le stelline della serata: ${OLD_RULES}`);
+      if (!lib?.t1 || !pick?.t1) fail(t('selftest.armRoom.fail'));
+      await mustDeny(() => G.set(A, `rooms/${code}/pick/t2`, true), old(t('selftest.armRoom.deny')));
       const sel = (await get(armadioRef(aid, 'library/t2/sel'))).val();
-      if (sel) fail('La scelta della serata ha modificato l’armadio.');
-      return 'I telefoni vedono i giochi dell’armadio; le scelte della serata stanno nella stanza e non cambiano la collezione.';
+      if (sel) fail(t('selftest.armRoom.fail2'));
+      return t('selftest.armRoom.ok');
     });
   }
   // Armadio organizzato (1.2): rinomina, foto leggere, prestiti, cronologia, cestino, link pubblico, inviti
   let pubTok = '';
   if (armOk) {
-    await step('Armadio 1.2', 'Rinomina e foto leggere', 'Il proprietario rinomina l’armadio e salva una foto a parte con la miniatura; un collaboratore prova a rinominarlo.', async () => {
-      await update(armadioRef(aid, 'info'), { name: 'Armadio di prova 2', desc: 'Verifica', emoji: '🎲', updatedAt: Date.now() });
+    await step(t('selftest.area.arm12'), t('selftest.rename.title'), t('selftest.rename.how'), async () => {
+      await update(armadioRef(aid, 'info'), { name: 'Armadio di prova 2', desc: 'Verifica', emoji: '🎲', updatedAt: Date.now() }); // i18n-ok
       await update(armadioRef(aid), { 'images/t1': 'data:image/jpeg;base64,AAAA', 'library/t1/thumb': 'data:image/jpeg;base64,AA', 'library/t1/loc': { room: 'Soggiorno', shelf: '2' } });
-      if ((await get(armadioRef(aid, 'info/name'))).val() !== 'Armadio di prova 2') fail('La rinomina non è stata salvata.');
-      if (B) await mustDeny(() => G.update(B, `armadi/${aid}/info`, { name: 'Rubato' }), `Un collaboratore rinomina l’armadio: ${OLD_RULES}`);
-      return 'Rinomina solo del proprietario; foto grande separata dall’elenco.';
+      if ((await get(armadioRef(aid, 'info/name'))).val() !== 'Armadio di prova 2') fail(t('selftest.rename.fail')); // i18n-ok
+      if (B) await mustDeny(() => G.update(B, `armadi/${aid}/info`, { name: 'Rubato' }), old(t('selftest.rename.deny')));
+      return t('selftest.rename.ok');
     });
-    await step('Armadio 1.2', 'Prestiti, cronologia e cestino', 'Registro un prestito, una voce di cronologia, sposto un gioco nel cestino e lo ripristino; A (estraneo) prova a leggere i prestiti.', async () => {
+    await step(t('selftest.area.arm12'), t('selftest.loans.title'), t('selftest.loans.how'), async () => {
       const lr = push(armadioRef(aid, 'loans'));
-      await update(armadioRef(aid), { [`loans/${lr.key}`]: { item: 't1', name: 'Gioco di prova', to: 'Luca', start: Date.now(), due: Date.now() + 86400000 }, 'library/t1/loanId': lr.key, 'library/t1/status': 'prestato' });
+      await update(armadioRef(aid), { [`loans/${lr.key}`]: { item: 't1', name: 'Gioco di prova', to: 'Luca', start: Date.now(), due: Date.now() + 86400000 }, 'library/t1/loanId': lr.key, 'library/t1/status': 'prestato' }); // i18n-ok
       const ev = push(armadioRef(aid, 'log'));
       await set(ev, { at: Date.now(), op: 'lend', item: 't1', msg: 'a Luca' });
-      await mustDeny(() => set(ev, { at: 1, op: 'edit' }), `La cronologia si può riscrivere: ${OLD_RULES}`);
-      if (A) await mustDeny(() => G.get(A, `armadi/${aid}/loans`), `Chi ha solo il codice vede a chi sono prestati i giochi: ${OLD_RULES}`);
+      await mustDeny(() => set(ev, { at: 1, op: 'edit' }), old(t('selftest.loans.deny')));
+      if (A) await mustDeny(() => G.get(A, `armadi/${aid}/loans`), old(t('selftest.loans.deny2')));
       const t2 = (await get(armadioRef(aid, 'library/t2'))).val();
       await update(armadioRef(aid), { 'trash/t2': { game: t2, at: Date.now() }, 'library/t2': null });
       await update(armadioRef(aid), { 'library/t2': t2, 'trash/t2': null });
-      if (!(await get(armadioRef(aid, 'library/t2'))).exists()) fail('Il ripristino dal cestino non ha funzionato.');
-      return 'Prestiti privati, cronologia non modificabile, cestino con ripristino.';
+      if (!(await get(armadioRef(aid, 'library/t2'))).exists()) fail(t('selftest.loans.fail'));
+      return t('selftest.loans.ok');
     });
     if (A) {
-      await step('Armadio 1.2', 'Link pubblico in sola lettura', 'Creo un catalogo pubblico; A lo legge, prova a modificarlo e a leggere il token; poi lo disattivo.', async () => {
+      await step(t('selftest.area.arm12'), t('selftest.pub.title'), t('selftest.pub.how'), async () => {
         pubTok = newToken();
-        const g = pubGame({ name: 'Gioco di prova', loanTo: 'Luca', note: 'privata', owner: 'Andrea', loc: { room: 'Soggiorno' }, minPlayers: 2 }, { status: true, loc: false });
-        if (g.loanTo || g.note || g.owner || g.loc) fail('Il catalogo pubblico conterrebbe dati privati.');
-        await set(pathRef(`pub/${pubTok}`), { aid, name: 'Armadio di prova 2', at: Date.now(), fields: { status: true, loc: false }, games: { t1: g } });
+        const g = pubGame({ name: 'Gioco di prova', loanTo: 'Luca', note: 'privata', owner: 'Andrea', loc: { room: 'Soggiorno' }, minPlayers: 2 }, { status: true, loc: false }); // i18n-ok
+        if (g.loanTo || g.note || g.owner || g.loc) fail(t('selftest.pub.fail'));
+        await set(pathRef(`pub/${pubTok}`), { aid, name: 'Armadio di prova 2', at: Date.now(), fields: { status: true, loc: false }, games: { t1: g } }); // i18n-ok
         await set(armadioRef(aid, 'share'), { token: pubTok });
         const seen = await G.get(A, `pub/${pubTok}`);
-        if (seen?.games?.t1?.name !== 'Gioco di prova') fail('Chi ha il link non vede il catalogo.');
-        await mustDeny(() => G.set(A, `pub/${pubTok}/games/x`, { name: 'Spam' }), `Chi ha il link modifica il catalogo: ${OLD_RULES}`);
-        await mustDeny(() => G.get(A, `armadi/${aid}/share`), `Chi ha solo il codice legge il token del link: ${OLD_RULES}`);
-        await mustDeny(() => G.get(A, 'pub'), `Si può elencare tutti i cataloghi pubblici: ${OLD_RULES}`);
+        if (seen?.games?.t1?.name !== 'Gioco di prova') fail(t('selftest.pub.fail2')); // i18n-ok
+        await mustDeny(() => G.set(A, `pub/${pubTok}/games/x`, { name: 'Spam' }), old(t('selftest.pub.deny')));
+        await mustDeny(() => G.get(A, `armadi/${aid}/share`), old(t('selftest.pub.deny2')));
+        await mustDeny(() => G.get(A, 'pub'), old(t('selftest.pub.deny3')));
         await remove(pathRef(`pub/${pubTok}`)); await remove(armadioRef(aid, 'share'));
-        if (await G.get(A, `pub/${pubTok}`)) fail('Il link disattivato funziona ancora.');
+        if (await G.get(A, `pub/${pubTok}`)) fail(t('selftest.pub.fail3'));
         pubTok = '';
-        return 'Il catalogo si legge solo con il link, non si modifica, si disattiva subito.';
+        return t('selftest.pub.ok');
       });
-      await step('Armadio 1.2', 'Invito collaboratore e revoca', 'Creo un invito; A lo usa e modifica un gioco; B prova a riusarlo; revoco A e A prova a rientrare.', async () => {
+      await step(t('selftest.area.arm12'), t('selftest.invite.title'), t('selftest.invite.how'), async () => {
         const inv = randomCode(10);
         await set(armadioRef(aid, `invites/${inv}`), { exp: Date.now() + 3600000, role: 'editor', by: 'Verifica' });
         await G.set(A, `armadioInviteClaims/${aid}/${A.uid}`, inv);
@@ -314,90 +319,90 @@ async function run() {
         await G.update(A, `armadi/${aid}/library/t2`, { duration: 20 });
         if (B) {
           await G.set(B, `armadioInviteClaims/${aid}/${B.uid}`, inv);
-          await mustDeny(() => G.set(B, `armadi/${aid}/invites/${inv}/used`, B.uid), `Un invito si usa due volte: ${OLD_RULES}`);
+          await mustDeny(() => G.set(B, `armadi/${aid}/invites/${inv}/used`, B.uid), old(t('selftest.invite.deny')));
         }
         await update(armadioRef(aid), { [`admins/${A.uid}`]: null, [`invites/${inv}`]: null });
-        await mustDeny(() => G.set(A, `armadi/${aid}/admins/${A.uid}`, true), `Un collaboratore revocato rientra da solo: ${OLD_RULES}`);
-        await mustDeny(() => G.update(A, `armadi/${aid}/library/t2`, { duration: 30 }), `Un collaboratore revocato modifica ancora: ${OLD_RULES}`);
+        await mustDeny(() => G.set(A, `armadi/${aid}/admins/${A.uid}`, true), old(t('selftest.invite.deny2')));
+        await mustDeny(() => G.update(A, `armadi/${aid}/library/t2`, { duration: 30 }), old(t('selftest.invite.deny3')));
         await G.remove(A, `armadioInviteClaims/${aid}/${A.uid}`).catch(() => {});
         if (B) await G.remove(B, `armadioInviteClaims/${aid}/${B.uid}`).catch(() => {});
-        return 'L’invito vale per una persona; dopo la revoca non si rientra.';
+        return t('selftest.invite.ok');
       });
     }
   }
-  await step('Armadio 1.2', 'Esporta e importa (in memoria)', 'Esporto due giochi in CSV, rileggo il file e calcolo l’anteprima dell’importazione, senza scrivere niente.', async () => {
+  await step(t('selftest.area.arm12'), t('selftest.csv.title'), t('selftest.csv.how'), async () => {
     const lib = { a1: { name: 'Azul', minPlayers: 2, maxPlayers: 4, loc: { room: 'Soggiorno' }, tags: ['astratto'] }, a2: { name: 'Dixit; ed. “Big”', duration: 30 } };
     const csv = toCSV(lib);
     const back = readImportFile('prova.csv', csv);
     const plan = planImport(back.rows, {}, 'add');
-    if (plan.add.length !== 2 || plan.add[1].game.name !== lib.a2.name || plan.add[0].game.loc?.room !== 'Soggiorno') fail('Il CSV esportato non si reimporta uguale.');
+    if (plan.add.length !== 2 || plan.add[1].game.name !== lib.a2.name || plan.add[0].game.loc?.room !== 'Soggiorno') fail(t('selftest.csv.fail'));
     const again = planImport(back.rows, lib, 'add');
-    if (again.add.length || again.same.length !== 2) fail('L’anteprima non riconosce i giochi già presenti.');
+    if (again.add.length || again.same.length !== 2) fail(t('selftest.csv.fail2'));
     const r = routeFromQR('https://example.github.io/GameNight_Show/armadio.html?a=ABC123&g=-Nx1');
-    if (r !== 'armadio.html?a=ABC123&g=-Nx1') fail(`Il QR delle etichette non si apre dall’app (${r}).`);
-    return 'CSV con accenti e punto e virgola reimportato uguale; i doppioni vengono riconosciuti; le etichette QR si aprono anche dall’app.';
+    if (r !== 'armadio.html?a=ABC123&g=-Nx1') fail(t('selftest.csv.fail3', { route: String(r) })); // i18n-ok
+    return t('selftest.csv.ok');
   });
   const gid = await freshCode(6, (c) => groupRef(c, 'info')).catch(() => null);
   const mid = await freshCode(6, (c) => memberRef(c)).catch(() => null);
   if (gid && mid) {
-    await step('Gruppo', 'Gruppo e profilo di gruppo', 'Creo un gruppo di prova e un profilo nel gruppo.', async () => {
+    await step(t('selftest.area.group'), t('selftest.group.title'), t('selftest.group.how'), async () => {
       await set(groupRef(gid, 'info'), { name: 'Verifica', ownerUid: uid, createdAt: serverTimestamp() });
       made.groups.push(gid);
       await set(memberRef(mid), { name: 'Verifica', groupId: gid, style: 'adventurer', seed: 'test', color: '#FF5A4E' });
       made.members.push(mid);
-      return 'Gruppo e profilo creati.';
+      return t('selftest.group.ok');
     });
     if (code) {
-      await step('Chiusura', 'Serata salvata una volta sola', 'Salvo due volte il riassunto della serata nel gruppo (come un doppio tocco o una riconnessione).', async () => {
+      await step(t('selftest.area.end'), t('selftest.night.title'), t('selftest.night.how'), async () => {
         // Come una serata vera: la stanza appartiene al gruppo, e la TV che la guida salva il riassunto.
         await update(roomRef(code, 'meta'), { groupId: gid });
-        const night = { at: Date.now(), groupName: 'Verifica', games: { g1: { name: 'Gioco di prova', n: 1, sum: 7, order: 1 } } };
+        const night = { at: Date.now(), groupName: 'Verifica', games: { g1: { name: 'Gioco di prova', n: 1, sum: 7, order: 1 } } }; // i18n-ok
         await set(groupRef(gid, `nights/${code}`), night);
         await set(groupRef(gid, `nights/${code}`), night);
         const all = (await get(groupRef(gid, 'nights'))).val() || {};
-        if (Object.keys(all).length !== 1) fail('La serata risulta salvata due volte.');
-        return 'Una sola serata nel gruppo: il salvataggio è sempre nello stesso posto.';
+        if (Object.keys(all).length !== 1) fail(t('selftest.night.fail'));
+        return t('selftest.night.ok');
       });
     }
   }
   if (code && A) {
-    await step('Chiusura', 'Fine serata e resoconto', 'La TV chiude la serata; A prova a riaprirla e poi legge i dati per il resoconto.', async () => {
+    await step(t('selftest.area.end'), t('selftest.end.title'), t('selftest.end.how'), async () => {
       await set(roomRef(code, 'state'), { phase: 'awards', done: true, at: serverTimestamp() });
-      await mustDeny(() => G.set(A, `rooms/${code}/state`, { phase: 'idle' }), `Un telefono riapre la serata: ${OLD_RULES}`);
+      await mustDeny(() => G.set(A, `rooms/${code}/state`, { phase: 'idle' }), old(t('selftest.end.deny')));
       const games = await G.get(A, `rooms/${code}/games`);
       const votes = await G.get(A, `rooms/${code}/votes`);
-      if (!games?.g1 || !votes?.g1) fail('Il resoconto non riesce a leggere giochi e voti.');
-      return 'Serata chiusa dalla TV; i telefoni leggono giochi e voti per il resoconto.';
+      if (!games?.g1 || !votes?.g1) fail(t('selftest.end.fail'));
+      return t('selftest.end.ok');
     });
   }
   const pid = await freshCode(6, (c) => pathRef(`people/${c}/info`)).catch(() => null);
   if (pid && B) {
-    await step('Profilo', 'Profilo personale su più dispositivi', 'Creo un profilo personale; B prova a leggerlo, poi usa la chiave del profilo e riprova.', async () => {
+    await step(t('selftest.area.profile'), t('selftest.person.title'), t('selftest.person.how'), async () => {
       const info = { name: 'Verifica', style: 'adventurer', seed: 'test', color: '#FF5A4E', ownerUid: uid, updatedAt: Date.now() };
       try {
         await update(pathRef(''), { [`people/${pid}/info`]: info, [`people/${pid}/uids/${uid}`]: Date.now() });
-      } catch (e) { if (denied(e)) fail(`Il database rifiuta i profili personali: ${OLD_RULES}`); throw e; }
+      } catch (e) { if (denied(e)) fail(old(t('selftest.person.deny'))); throw e; }
       made.people.push(pid);
-      await mustDeny(() => G.get(B, `people/${pid}`), `Un altro dispositivo legge il profilo senza chiave: ${OLD_RULES}`);
+      await mustDeny(() => G.get(B, `people/${pid}`), old(t('selftest.person.deny2')));
       const key = randomCode(8);
       await set(pathRef(`personKeys/${pid}`), key);
       await G.set(B, `personKeyClaims/${pid}/${B.uid}`, key);
       await G.set(B, `people/${pid}/uids/${B.uid}`, Date.now());
       const v = await G.get(B, `people/${pid}/info`);
-      if (v?.name !== 'Verifica') fail('Con la chiave il secondo dispositivo non vede il profilo.');
+      if (v?.name !== 'Verifica') fail(t('selftest.person.fail'));
       await G.remove(B, `people/${pid}/uids/${B.uid}`);
-      return 'Senza chiave nessuno lo legge; con la chiave il secondo dispositivo lo usa.';
+      return t('selftest.person.ok');
     });
   }
 
   // Cose che richiedono una persona davanti al dispositivo: mai segnate come riuscite.
-  await step('Da provare a mano', 'Audio della soundboard sulla TV', 'Serve ascoltare: dal telefono, durante una serata, tocca 🔊 Suoni › Applausi.', async () => manual('Da provare a mano: la TV deve suonare. Se compare “Tocca qui per attivare l’audio”, tocca la TV una volta.'));
-  await step('Da provare a mano', 'Telefono che si spegne o perde la rete', 'Serve un telefono vero: spegni lo schermo durante una serata.', async () => manual('Da provare a mano: entro 15 secondi la TV lo segna come scollegato e non lo aspetta per il voto; riaccendendo, rientra al suo posto.'));
-  await step('Da provare a mano', 'Fotocamera, QR e rotazione delle foto', 'Serve una fotocamera: inquadra il QR della TV dall’app, aggiungi un gioco con la foto e ruotala.', async () => manual('Da provare a mano sul telefono (la rotazione è provata in automatico nei test del progetto).'));
-  await step('Da provare a mano', 'Tasto Indietro dell’app Android', 'Serve l’app installata: apri un pannello e premi Indietro.', async () => manual('Da provare a mano nell’app: prima si chiude il pannello, poi si torna alla schermata precedente, dalla home l’app va in secondo piano.'));
-  await step('Da provare a mano', 'Figurine, video e premiazione', 'Sono solo grafica (nessun dato nuovo): usa “Prova con giocatori finti” sulla TV.', async () => manual('Da provare con la serata di prova: premiazione, figurine e video si generano dai dati già verificati qui sopra.'));
+  await step(t('selftest.area.manual'), t('selftest.audio.title'), t('selftest.audio.how'), async () => manual(t('selftest.audio.msg')));
+  await step(t('selftest.area.manual'), t('selftest.offline.title'), t('selftest.offline.how'), async () => manual(t('selftest.offline.msg')));
+  await step(t('selftest.area.manual'), t('selftest.camera.title'), t('selftest.camera.how'), async () => manual(t('selftest.camera.msg')));
+  await step(t('selftest.area.manual'), t('selftest.back.title'), t('selftest.back.how'), async () => manual(t('selftest.back.msg')));
+  await step(t('selftest.area.manual'), t('selftest.fx.title'), t('selftest.fx.how'), async () => manual(t('selftest.fx.msg')));
 
-  await step('Base', 'Pulizia dei dati di prova', 'Cancello solo quello che ho creato io (codici controllati all’inizio), poi rileggo per controllare.', async () => {
+  await step(t('selftest.area.base'), t('selftest.clean.title'), t('selftest.clean.how'), async () => {
     const ops = { del: (p) => remove(pathRef(p)), get: async (p) => (await get(pathRef(p))).val() };
     const gOps = (g) => ({ del: (p) => G.remove(g, p), get: (p) => G.get(g, p) });
     /** Cancella un nodo; se le regole permettono di cancellare solo i figli, scende di livello. */
@@ -436,8 +441,8 @@ async function run() {
     for (const g of made.groups) await check(`groups/${g}`);
     for (const a of made.armadi) await check(`armadi/${a}`);
     for (const m of made.members) await check(`members/${m}`);
-    if (left.length) fail(`Non sono riuscito a cancellare: ${left.join(', ')}. Non è grave (sono dati di prova con codici nuovi), ma segnalo il problema.`);
-    return 'Dati di prova cancellati e ricontrollati. Resta solo il codice regia della stanza di prova, che per sicurezza il database non fa cancellare a nessuno.';
+    if (left.length) fail(t('selftest.clean.fail', { paths: left.join(', ') }));
+    return t('selftest.clean.ok');
   });
   done();
 }
@@ -447,23 +452,23 @@ async function checkOwnArmadio() {
   const id = normalizeCode($('#stArm').value, 6);
   if (id.length !== 6) { $('#stArm').focus(); return; }
   $('#stArmGo').disabled = true;
-  await step('Il tuo armadio', `Armadio ${id} (solo lettura)`, 'Leggo i giochi del tuo armadio senza modificare niente.', async () => {
+  await step(t('selftest.own.area'), t('selftest.own.title', { id }), t('selftest.own.how'), async () => {
     await connect();
     const info = (await get(armadioRef(id, 'info'))).val();
-    if (!info) fail('Nessun armadio con questo codice.');
+    if (!info) fail(t('selftest.own.none'));
     const lib = (await get(armadioRef(id, 'library'))).val() || {};
     const items = Object.values(lib).filter((it) => it?.name);
-    if (!items.length) return `“${info.name}”: l’armadio è vuoto. Aggiungi i giochi dalla home › I tuoi armadi.`;
+    if (!items.length) return t('selftest.own.empty', { name: info.name });
     const noImg = items.filter((it) => !it.image).length;
     const badImg = items.filter((it) => it.image && !isImageSource(it.image)).length;
     const sel = items.filter((it) => it.sel === true).length;
     const noPl = items.filter((it) => !it.minPlayers && !it.maxPlayers).length;
     const notes = [
-      `${items.length} giochi`,
-      `${sel} con la stellina “Stasera”`,
-      noImg ? `${noImg} senza foto` : 'tutti con la foto',
-      badImg ? `⚠️ ${badImg} con una foto non valida` : '',
-      noPl ? `${noPl} senza numero di giocatori (la TV li propone sempre)` : ''
+      t('selftest.own.games', { n: items.length }),
+      t('selftest.own.starred', { n: sel }),
+      noImg ? t('selftest.own.noImg', { n: noImg }) : t('selftest.own.allImg'),
+      badImg ? t('selftest.own.badImg', { n: badImg }) : '',
+      noPl ? t('selftest.own.noPlayers', { n: noPl }) : ''
     ].filter(Boolean);
     if (badImg) fail(`“${info.name}”: ${notes.join(', ')}.`);
     return `“${info.name}”: ${notes.join(', ')}.`;
@@ -478,22 +483,24 @@ function done() {
   const sk = results.filter((r) => r.status === 'skip').length;
   summary.className = `card ph-card st-summary ${ko ? 'summary-fail' : 'summary-ok'}`;
   summary.innerHTML = ko
-    ? `<h2>Ci sono ${ko} ${ko === 1 ? 'problema' : 'problemi'} da sistemare</h2><p>Leggi i messaggi in rosso: di solito basta ricopiare le regole o attivare l'accesso anonimo (README, passo 2).</p><p class="muted small">${ok} verifiche riuscite, ${sk} da provare a mano.</p>`
-    : `<h2>Tutto a posto!</h2><p>${ok} verifiche riuscite su Firebase vero. ${sk} cose si provano a mano (sono indicate con ✋).</p>`;
-  summary.insertAdjacentHTML('beforeend', `<p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p><a class="link-btn" href="#matrix">Vai alla matrice delle verifiche</a>`);
+    ? `<h2>${t('selftest.sum.failTitle', { n: ko })}</h2><p>${t('selftest.sum.failHint')}</p><p class="muted small">${t('selftest.sum.failCount', { ok, sk })}</p>`
+    : `<h2>${t('selftest.sum.okTitle')}</h2><p>${t('selftest.sum.okText', { ok, sk })}</p>`;
+  summary.insertAdjacentHTML('beforeend', `<p class="st-live"><span>✅ ${ok}</span><span>❌ ${ko}</span><span>✋ ${sk}</span></p><a class="link-btn" href="#matrix">${t('selftest.sum.toMatrix')}</a>`);
   paintCounts();
   const m = $('#matrix');
   m.hidden = false;
-  const label = { ok: '✅ Verificata', fail: '❌ Problema', skip: '✋ Da provare a mano' };
+  const cols = [t('selftest.col.fn'), t('selftest.col.status'), t('selftest.col.how'), t('selftest.col.result')];
+  const label = { ok: t('selftest.status.ok'), fail: t('selftest.status.fail'), skip: t('selftest.status.skip') };
   m.innerHTML = `
-    <div class="hub-sec-head"><h2>Matrice delle verifiche</h2><button type="button" class="btn-sec btn-sec--sm" id="stDl">⬇️ <span>Scarica</span></button></div>
+    <div class="hub-sec-head"><h2>${t('selftest.matrix.title')}</h2><button type="button" class="btn-sec btn-sec--sm" id="stDl">⬇️ <span>${t('selftest.matrix.dl')}</span></button></div>
     <div class="st-table-wrap"><table class="st-table">
-      <thead><tr><th>Funzione</th><th>Stato</th><th>Come è stata provata</th><th>Risultato</th></tr></thead>
+      <thead><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr></thead>
       <tbody>${results.map((r) => `<tr class="st-${r.status}"><td><small>${esc(r.area)}</small><br><b>${esc(r.title)}</b></td><td>${label[r.status]}</td><td>${esc(r.how)}</td><td>${esc(r.detail)}</td></tr>`).join('')}</tbody>
     </table></div>`;
   $('#stDl', m).addEventListener('click', () => {
-    const lines = [`# Tavolo di verifica GameNight Show ${APP_VERSION}`, `Data: ${new Date().toLocaleString('it-IT')}`, `Progetto: ${firebaseConfig?.projectId || '—'}`, '',
-      '| Funzione | Stato | Come è stata provata | Risultato |', '|---|---|---|---|',
+    const when = fmtDate(new Date(), { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+    const lines = [`# ${t('selftest.md.title', { v: String(APP_VERSION) })}`, t('selftest.md.date', { d: when }), t('selftest.md.project', { p: firebaseConfig?.projectId || '—' }), '',
+      `| ${cols.join(' | ')} |`, '|---|---|---|---|',
       ...results.map((r) => `| ${r.area} › ${r.title} | ${label[r.status]} | ${r.how.replace(/\|/g, '/')} | ${String(r.detail).replace(/\|/g, '/')} |`)];
     downloadFile(`verifica_gamenight_${new Date().toISOString().slice(0, 10)}.md`, lines.join('\n'), 'text/markdown');
   });

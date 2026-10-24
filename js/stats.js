@@ -125,10 +125,10 @@ function bestBy(rows, getValue, minN = 1) {
 // Titoli dei premi: chiave → testo nella lingua scelta. Le serate salvate fino alla 1.3 contengono
 // i titoli in italiano: awardTitle li riconosce e li traduce (gli altri testi restano come sono).
 const AWARD_KEYS = ['coinv', 'sempl', 'rigioc', 'div', 'mvp', 'wins', 'seer', 'generous', 'critic', 'rebel', 'oracle', 'twins'];
-const AWARD_IT = {
-  'Il più coinvolgente': 'coinv', 'Il più semplice': 'sempl', 'Il più richiesto': 'rigioc', 'Il più divisivo': 'div',
-  'MVP della serata': 'mvp', 'Il più vincente': 'wins', 'Il veggente': 'seer', 'Il più generoso': 'generous',
-  'Il critico': 'critic', 'Il bastian contrario': 'rebel', 'L’oracolo': 'oracle', 'Anime gemelle': 'twins'
+const AWARD_IT = { // i18n-ok: titoli salvati in italiano fino alla 1.3 (dati), riconosciuti e tradotti
+  'Il più coinvolgente': 'coinv', 'Il più semplice': 'sempl', 'Il più richiesto': 'rigioc', 'Il più divisivo': 'div', // i18n-ok
+  'MVP della serata': 'mvp', 'Il più vincente': 'wins', 'Il veggente': 'seer', 'Il più generoso': 'generous', // i18n-ok
+  'Il critico': 'critic', 'Il bastian contrario': 'rebel', 'L’oracolo': 'oracle', 'Anime gemelle': 'twins' // i18n-ok
 };
 /** Titolo di un premio: da chiave ("mvp") o da un titolo salvato in italiano. */
 export function awardTitle(x) {
@@ -576,7 +576,7 @@ export function trophies(nights, exclude = null) {
     const top = Math.max(0, ...mv.map(([, m]) => Number(m?.votes) || 0));
     if (top > 0) mv.filter(([, m]) => Number(m?.votes) === top).forEach(([k]) => { get(k).crown = true; });
     for (const [k, t] of Object.entries(last.titles || {})) {
-      const title = toArray(t).find((x) => x !== 'mvp' && x !== 'MVP della serata');
+      const title = toArray(t).find((x) => x !== 'mvp' && x !== 'MVP della serata'); // i18n-ok: dato salvato
       if (title) get(k).title = title;
     }
   }
@@ -642,10 +642,17 @@ export function durationOf(item) {
 }
 
 /**
- * Punteggio 1-99 per ogni gioco dell’armadio, pensato per chi è presente adesso.
+ * Il Consigliere: punteggio 1-99 per ogni gioco dell’armadio, pensato per chi è presente adesso.
  * present: [{ key, name }] (chiavi persona), maxMinutes: null = senza limiti.
+ * Filtri facoltativi (1.8): weightMax / weightMin (difficoltà 1-5), mode (tipologia).
+ * Segnali facoltativi: favs (Set di id preferiti di chi usa il dispositivo), onTable (Set di id già
+ * scelti per stasera). Sono solo spinte: non escludono mai gli altri giochi.
+ * Niente dati inventati: un gioco senza durata o difficoltà non viene escluso dai filtri,
+ * ma il motivo lo dice ("durata non indicata").
+ * Restituisce anche favUnavailable: preferiti che adesso non si possono giocare (con il motivo),
+ * da mostrare a parte e mai come "giocabili subito".
  */
-export function recommend({ library, nights, present, playedTonight = new Set(), maxMinutes = null }) {
+export function recommend({ library, nights, present, playedTonight = new Set(), maxMinutes = null, weightMax = null, weightMin = null, mode = null, favs = null, onTable = null }) {
   const n = present.length;
   const played = lastPlayed(nights);
   const tastes = {};
@@ -655,14 +662,23 @@ export function recommend({ library, nights, present, playedTonight = new Set(),
     }
   }
   const out = [];
+  const favUnavailable = [];
   for (const [id, it] of Object.entries(library || {})) {
-    if (!it?.name || !isAvailable(it)) continue;
+    if (!it?.name) continue;
+    if (!isAvailable(it)) {
+      if (favs?.has(id)) favUnavailable.push({ id, item: it, why: it.status === 'prestato' || it.loanId ? 'loan' : 'status' });
+      continue;
+    }
     const gk = dbKey(it.name);
     if (playedTonight.has(gk)) continue;
     const min = Number(it.minPlayers) || 0, max = Number(it.maxPlayers) || 0;
     if ((min && n < min) || (max && n > max)) continue;
     const dur = durationOf(it);
     if (maxMinutes && dur && dur > maxMinutes) continue;
+    const w = Number(it.weight) || 0;
+    if (weightMax && w && w > weightMax) continue;
+    if (weightMin && w && w < weightMin) continue;
+    if (mode && it.mode && it.mode !== mode) continue;
     const reasons = [];
     const tg = tastes[gk] || {};
     const likes = present.map((p) => (tg[p.key] ? mean(tg[p.key]) : null));
@@ -687,15 +703,22 @@ export function recommend({ library, nights, present, playedTonight = new Set(),
     if (haters.length) { score -= 15 * haters.length; reasons.push(t('rec.haters', { names: fmtList(haters.map((h) => h.name)), n: haters.length })); }
     const ago = played[gk];
     if (ago >= 3) { score += Math.min(10, ago * 2); reasons.push(t('rec.ago', { n: ago })); }
+    if (favs?.has(id)) { score += 6; reasons.push(t('fav.reason')); }
+    if (onTable?.has(id)) { score += 4; reasons.push(t('rec.onTable')); }
     if (dur) reasons.push(t('rec.dur', { n: dur }));
+    else if (maxMinutes) reasons.push(t('rec.durUnknown'));
+    if ((weightMax || weightMin) && !w) reasons.push(t('rec.weightUnknown'));
+    if (mode && !it.mode) reasons.push(t('rec.modeUnknown'));
     score = Math.max(1, Math.min(99, Math.round(score)));
-    out.push({ id, item: it, score, kind, ago, dusty: ago >= 3 && score >= 60, reasons });
+    out.push({ id, item: it, score, kind, ago, dusty: ago >= 3 && score >= 60, reasons, fav: Boolean(favs?.has(id)) });
   }
   out.sort((a, b) => b.score - a.score);
   return {
     top: out.filter((r) => r.kind === 'top').slice(0, 5),
     tryNew: out.filter((r) => r.kind === 'new').slice(0, 4),
     dusty: out.filter((r) => r.dusty).slice(0, 3),
+    favs: out.filter((r) => r.fav).slice(0, 6),
+    favUnavailable,
     all: out
   };
 }
@@ -816,7 +839,7 @@ export function groupLevel(nights) {
 
 // Stato e modalità: i codici (posseduto, cooperativo…) restano nel database, le etichette sono nella lingua scelta.
 const labels = (prefix, codes) => Object.defineProperties({}, Object.fromEntries(codes.map((c) => [c, { enumerable: true, get: () => t(`${prefix}.${c.replace(/\s+/g, '_')}`) }])));
-export const GAME_STATUS = labels('status', ['posseduto', 'prestato', 'non disponibile', 'venduto']);
+export const GAME_STATUS = labels('status', ['posseduto', 'prestato', 'non disponibile', 'venduto']); // i18n-ok: codici
 export const GAME_MODES = labels('mode', ['competitivo', 'cooperativo', 'squadre', 'misto']);
 
 export function isAvailable(item) {
@@ -925,7 +948,7 @@ export function parseQuery(q, people = [], tags = []) {
   else if (/un'?ora|an hour|one hour/.test(t) && !f.maxMin) f.maxMin = 60;
   for (const p of people) {
     const n = String(p.name).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(?:che|a cui)\\s+${n}\\s+non\\s+(?:odia|detesta|sopporta|piace)`).test(t)
+    if (new RegExp(`(?:che|a cui)\\s+${n}\\s+non\\s+(?:odia|detesta|sopporta|piace)`).test(t) // i18n-ok: ricerca in italiano e inglese
       || new RegExp(`${n}\\s+(?:doesn'?t|does not)\\s+(?:hate|dislike|mind)`).test(t)) f.notHatedBy = p.key;
   }
   const st = t.match(/da almeno\s+(\d+|un|una|due|tre|quattro|sei)\s+(giorn|settiman|mes|ann)/) || t.match(/(?:in|for) (?:at least )?(\d+|a|an|one|two|three|four|six)\s+(day|week|month|year)/);
@@ -1013,6 +1036,13 @@ export function wrapped(nights, year) {
   const top = (arr, f, min = 1) => { const v = arr.filter((x) => f(x) >= min).sort((a, b) => f(b) - f(a)); return v[0] || null; };
   const bestMonth = Object.entries(months).sort((a, b) => b[1] - a[1])[0];
   const loved = gl.filter((g) => g.n >= 3).sort((a, b) => b.sum / b.n - a.sum / a.n)[0] || null;
+  // Giochi mai intavolati negli anni precedenti (solo se c'è uno storico precedente con cui confrontare).
+  const before = new Set();
+  let hasBefore = false;
+  for (const n of nightsByDate(nights).filter((x) => new Date(Number(x.at)).getFullYear() < year).map(nightHighlights)) {
+    hasBefore = true;
+    for (const g of n.gamesSorted) before.add(g.key || dbKey(g.name));
+  }
   const raters = pl.filter((p) => p.n >= 5);
   return {
     year,
@@ -1033,7 +1063,10 @@ export function wrapped(nights, year) {
     critic: raters.length >= 2 ? [...raters].sort((a, b) => a.sum / a.n - b.sum / b.n)[0] : null,
     generous: raters.length >= 2 ? [...raters].sort((a, b) => b.sum / b.n - a.sum / a.n)[0] : null,
     bestMonth: bestMonth ? { name: fmtDate(new Date(2000, Number(bestMonth[0]), 15), { month: 'long' }), nights: bestMonth[1] } : null,
-    first: list[list.length - 1].at
+    first: list[list.length - 1].at,
+    topGames: [...gl].sort((a, b) => b.matches - a.matches || (b.n ? b.sum / b.n : 0) - (a.n ? a.sum / a.n : 0)).slice(0, 3).map((g) => ({ name: g.name, matches: g.matches, avg: g.n ? g.sum / g.n : null })),
+    newGames: hasBefore ? Object.keys(games).filter((k) => !before.has(k)).length : null,
+    inProgress: year === new Date().getFullYear()
   };
 }
 

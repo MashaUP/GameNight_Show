@@ -12,6 +12,8 @@ import { seasonTables, seasonOf, championPoints, topRivalries, playerCard, perso
 import { cardHTML, bindTilt } from './cards.js';
 import { makeRecapVideo, videoSupported } from './recap-video.js';
 import { isSafeMode } from './safe.js';
+import { timerDisplayHTML, timerControlsHTML, bindTimerControls, controlsSig, SharedTimer } from './sharedtimer.js';
+import { t as tr, fmtNum, fmtDate, fmtList } from './i18n.js';
 
 let C = null;
 /** host.js passa qui lo stato della serata e le sue funzioni. */
@@ -66,7 +68,7 @@ export function spinWheel(wheel, i, n) {
 }
 
 // ---------------------------------------------------------------------------
-// Pannello "Tavolo": chi inizia, squadre, clessidra
+// Pannello "Tavolo": chi inizia, squadre, timer condiviso (sharedtimer.js)
 // ---------------------------------------------------------------------------
 
 export const TablePanel = {
@@ -80,11 +82,11 @@ export const TablePanel = {
     el.className = 'overlay overlay--table';
     el.innerHTML = `
       <div class="card panel panel--wide table-panel" role="dialog" aria-modal="true" aria-labelledby="tbTitle">
-        <div class="panel-head"><h2 id="tbTitle">🎲 Strumenti da tavolo</h2><button type="button" class="icon-btn" id="tbClose" aria-label="Chiudi">${ICONS.x}</button></div>
-        <nav class="at-tabs tb-tabs" aria-label="Strumenti">
-          <button type="button" data-tb="starter">Chi inizia?</button>
-          <button type="button" data-tb="teams">Squadre</button>
-          <button type="button" data-tb="sand">Clessidra</button>
+        <div class="panel-head"><h2 id="tbTitle">${esc(tr('tvx.table.title'))}</h2><button type="button" class="icon-btn" id="tbClose" aria-label="${esc(tr('common.close'))}">${ICONS.x}</button></div>
+        <nav class="at-tabs tb-tabs" aria-label="${esc(tr('tvx.table.tools'))}">
+          <button type="button" data-tb="starter">${esc(tr('tvx.table.starter'))}</button>
+          <button type="button" data-tb="teams">${esc(tr('tvx.table.teams'))}</button>
+          <button type="button" data-tb="timer">⏱️ ${esc(tr('timer.tab'))}</button>
         </nav>
         <div class="tb-body" id="tbBody"></div>
       </div>`;
@@ -98,10 +100,9 @@ export const TablePanel = {
       const nt = e.target.closest('[data-teams]');
       if (nt) { this.makeTeams(Number(nt.dataset.teams)); return; }
       if (e.target.closest('#tbClearTeams')) { C.update(room('table'), { teams: null }).catch(fail); return; }
-      const s = e.target.closest('[data-sand]');
-      if (s) { Sand.start(Number(s.dataset.sand)); return; }
-      if (e.target.closest('#tbSandStop')) { Sand.stop(); return; }
     });
+    // Comandi del timer condiviso (sharedtimer.js): ridisegna solo la parte dei comandi.
+    bindTimerControls(el, (kind) => { if (kind) this.timerKind = kind; this.paintTimer(true); });
     this.paint();
   },
   close() { this.el?.remove(); this.el = null; },
@@ -118,36 +119,46 @@ export const TablePanel = {
       const items = ps.map((p, i) => ({ label: p.name, color: safeColor(p.color) || PALETTE[i % PALETTE.length], avatar: avatarHTML(p, '2.6rem') }));
       this.items = ps;
       const st = tb.starter && S().players[tb.starter.uid];
-      body.innerHTML = ps.length < 2 ? '<p class="muted">Servono almeno 2 giocatori.</p>' : `
+      body.innerHTML = ps.length < 2 ? `<p class="muted">${esc(tr('tvx.table.need2'))}</p>` : `
         <div class="tb-wheel">${wheelHTML(items, 'starterWheel')}
           <div class="tb-side">
-            <p class="tb-lead">Chi fa la prima mossa? La ruota lo decide, e il nome compare anche sui telefoni.</p>
-            <button type="button" class="btn btn-big" id="tbSpin">Gira la ruota</button>
-            <p class="tb-result" id="tbResult" aria-live="polite">${st ? `Ultimo estratto: <b>${esc(st.name)}</b>` : ''}</p>
+            <p class="tb-lead">${esc(tr('tvx.table.starterLead'))}</p>
+            <button type="button" class="btn btn-big" id="tbSpin">${esc(tr('tvx.table.spin'))}</button>
+            <p class="tb-result" id="tbResult" aria-live="polite">${st ? tr('tvx.table.last', { name: esc(st.name) }) : ''}</p>
           </div>
         </div>`;
     } else if (this.tab === 'teams') {
       const teams = Array.isArray(tb.teams) ? tb.teams : null;
       body.innerHTML = `
         <div class="tb-teams-head">
-          <p class="tb-lead">Squadre equilibrate: chi vince di più nello storico del gruppo viene diviso dagli altri forti.</p>
-          <div class="rg-row">${[2, 3, 4].filter((n) => n <= Math.max(2, ps.length)).map((n) => `<button type="button" class="btn-sec" data-teams="${n}">${n} squadre</button>`).join('')}
-          ${teams ? '<button type="button" class="link-btn" id="tbClearTeams">Togli le squadre</button>' : ''}</div>
+          <p class="tb-lead">${esc(tr('tvx.table.teamsLead'))}</p>
+          <div class="rg-row">${[2, 3, 4].filter((n) => n <= Math.max(2, ps.length)).map((n) => `<button type="button" class="btn-sec" data-teams="${n}">${esc(tr('tvx.table.nTeams', { n }))}</button>`).join('')}
+          ${teams ? `<button type="button" class="link-btn" id="tbClearTeams">${esc(tr('tvx.table.clearTeams'))}</button>` : ''}</div>
         </div>
-        <div class="tb-teams" id="tbTeams">${teams ? teams.map((t, i) => this.teamHTML(t, i)).join('') : '<p class="muted">Scegli quante squadre: si possono rimescolare quante volte volete.</p>'}</div>`;
+        <div class="tb-teams" id="tbTeams">${teams ? teams.map((t, i) => this.teamHTML(t, i)).join('') : `<p class="muted">${esc(tr('tvx.table.teamsEmpty'))}</p>`}</div>`;
     } else {
       body.innerHTML = `
-        <div class="tb-sand">
-          <div class="hourglass" id="tbGlass" aria-hidden="true"><i class="hg-top"></i><i class="hg-bot"></i><i class="hg-stream"></i></div>
+        <div class="tb-timer">
+          ${timerDisplayHTML('panel')}
           <div class="tb-side">
-            <b class="sand-num" id="tbSandNum">—</b>
-            <div class="rg-row">${[30, 60, 90, 120, 180].map((s) => `<button type="button" class="btn-sec" data-sand="${s}">${s < 60 ? `${s} s` : `${s / 60} min`}</button>`).join('')}</div>
-            <button type="button" class="link-btn" id="tbSandStop">Ferma</button>
-            <p class="muted small">Per i giochi a tempo (Just One, Codenames, Pictionary…): la clessidra gira anche sui telefoni.</p>
+            <p class="muted small">${esc(tr('timer.lead'))}</p>
+            <div id="tbTimerCtrl"></div>
           </div>
         </div>`;
-      Sand.paint();
+      this.paintTimer(true);
+      SharedTimer.sync();
     }
+  },
+
+  /** Comandi del timer: ridisegnati solo quando cambia lo stato (non a ogni secondo). */
+  paintTimer(force = false) {
+    const box = this.el && $('#tbTimerCtrl', this.el);
+    if (!box) return;
+    const sig = `${controlsSig()}|${this.timerKind || 'turn'}`;
+    if (!force && sig === this.timerSig) return;
+    if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && !force) return;
+    this.timerSig = sig;
+    box.innerHTML = timerControlsHTML(this.timerKind || (S().timer?.kind) || 'turn');
   },
 
   teamHTML(team, i) {
@@ -166,82 +177,31 @@ export const TablePanel = {
     await spinWheel($('#starterWheel', this.el), i, ps.length);
     this.spinning = false;
     const p = ps[i];
-    if (res) res.innerHTML = `Inizia <b>${esc(p.name)}</b>!`;
+    if (res) res.innerHTML = tr('tvx.table.starts', { name: esc(p.name) });
     fanfare();
     const r = $('#starterWheel', this.el)?.getBoundingClientRect();
     if (r) confettiBurst(70, { x: r.left + r.width / 2, y: r.top + 40 });
     C.update(room('table'), { starter: { uid: p.uid, name: p.name, at: C.serverTimestamp() } }).catch(fail);
-    C.logEvent(`Inizia ${p.name}`, '🎲');
+    C.logEvent(tr('tvx.table.startsLog', { name: p.name }), '🎲');
   },
 
   makeTeams(n) {
     const ps = this.players();
-    if (ps.length < 2) { toast('Servono almeno 2 giocatori.', 'warn'); return; }
+    if (ps.length < 2) { toast(tr('tvx.table.need2'), 'warn'); return; }
     const skill = skillMap(Object.fromEntries(ps.map((p) => [p.uid, p])), S().nights, C.winsTonight(), personKey);
     const teams = balancedTeams(ps.map((p) => p.uid), n, skill);
     C.update(room('table'), { teams, teamsAt: C.serverTimestamp() }).catch(fail);
     pop();
-    C.logEvent(`${teams.length} squadre: ${teams.map((t, i) => `${TEAM_STYLE[i].name} (${t.map((u) => C.playerOrGhost(u).name).join(', ')})`).join(' · ')}`, '🤝');
+    C.logEvent(tr('tvx.table.teamsLog', { n: teams.length, list: teams.map((t, i) => `${TEAM_STYLE[i].name} (${t.map((u) => C.playerOrGhost(u).name).join(', ')})`).join(' · ') }), '🤝');
   },
 
   update() {
     if (!this.el) return;
+    if (this.tab === 'timer') { this.paintTimer(); return; }
     const sig = JSON.stringify([S().table?.teams, Object.keys(S().players || {}), this.tab === 'starter' ? activePlayers(S().players).map((p) => [p.uid, p.name, p.color]) : 0]);
     if (sig === this.sig || this.spinning) return;
     this.sig = sig;
     this.paint();
-  }
-};
-
-/** Clessidra condivisa: state in rooms/{code}/table/sand = { secs, at }. */
-export const Sand = {
-  chip: null,
-  last: null,
-  state() {
-    const s = S().table?.sand;
-    if (!s || !Number(s.secs) || !Number.isFinite(Number(s.at))) return null;
-    const left = Math.max(0, Number(s.at) + Number(s.secs) * 1000 - C.serverNow());
-    return { secs: Number(s.secs), left, sec: Math.ceil(left / 1000), frac: left / (Number(s.secs) * 1000), over: left <= 0 };
-  },
-  start(secs) {
-    C.update(room('table'), { sand: { secs, at: C.serverTimestamp() } }).catch(fail);
-    this.last = null;
-  },
-  stop() { C.update(room('table'), { sand: null }).catch(fail); },
-  sync() {
-    const st = this.state();
-    if (st && !this.timer) this.timer = setInterval(() => this.paint(), 200);
-    if (!st && this.timer) { clearInterval(this.timer); this.timer = null; }
-    this.paint();
-  },
-  paint() {
-    const st = this.state();
-    const show = st && (!st.over || st.left > -8000) && !(TablePanel.isOpen() && TablePanel.tab === 'sand');
-    if (show && !this.chip) {
-      this.chip = document.createElement('button');
-      this.chip.type = 'button';
-      this.chip.className = 'sand-chip';
-      this.chip.addEventListener('click', () => TablePanel.open('sand'));
-      document.body.appendChild(this.chip);
-    }
-    if (!show && this.chip) { this.chip.remove(); this.chip = null; }
-    if (this.chip && st) {
-      this.chip.style.setProperty('--tc', timerColor(st.frac));
-      this.chip.classList.toggle('is-over', st.over);
-      this.chip.innerHTML = `⏳ <b>${st.over ? 'Tempo!' : `${st.sec} s`}</b>`;
-    }
-    const num = $('#tbSandNum');
-    const glass = $('#tbGlass');
-    if (num) num.textContent = st ? (st.over ? 'Tempo!' : `${st.sec}`) : '—';
-    if (glass) {
-      glass.style.setProperty('--f', st ? st.frac.toFixed(3) : '1');
-      glass.style.setProperty('--tc', st ? timerColor(st.frac) : '#FFD34D');
-      glass.classList.toggle('is-running', Boolean(st && !st.over));
-      glass.classList.toggle('is-over', Boolean(st?.over));
-    }
-    if (st && !st.over && st.sec !== this.last && this.last !== null && st.sec <= 5) clockTick(st.sec <= 3);
-    if (st && st.over && this.last !== null && this.last > 0) { timeUp(); C.logEvent('Clessidra finita', '⏳'); }
-    this.last = st ? st.sec : null;
   }
 };
 
@@ -257,18 +217,18 @@ export const GameWheel = {
     const n = activePlayers(S().players).length;
     const played = C.playedTonight();
     let items = C.poolItems().filter((it) => !played.has(nameKey(it.name)) && C.libOk(it, n));
-    if (items.length < 2) { toast('Servono almeno 2 giochi nell’armadio adatti a stasera e non ancora giocati.', 'warn'); return; }
+    if (items.length < 2) { toast(tr('tvx.wheel.need2'), 'warn'); return; }
     if (items.length > 12) items = items.sort(() => Math.random() - 0.5).slice(0, 12);
     this.items = items;
     const el = document.createElement('div');
     el.className = 'overlay overlay--table';
     el.innerHTML = `
       <div class="card panel panel--wide table-panel" role="dialog" aria-modal="true" aria-labelledby="gwTitle">
-        <div class="panel-head"><h2 id="gwTitle">🎡 La ruota dei giochi</h2><button type="button" class="icon-btn" id="gwClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="gwTitle">${esc(tr('tvx.wheel.title'))}</h2><button type="button" class="icon-btn" id="gwClose" aria-label="${esc(tr('common.close'))}">${ICONS.x}</button></div>
         <div class="tb-wheel">${wheelHTML(items.map((it, i) => ({ label: it.name, color: PALETTE[i % PALETTE.length] })), 'gameWheel')}
           <div class="tb-side">
-            <p class="tb-lead">${items.length} giochi adatti a ${n} ${n === 1 ? 'giocatore' : 'giocatori'} e non ancora giocati stasera. Decide la fortuna!</p>
-            <button type="button" class="btn btn-big" id="gwSpin">Gira!</button>
+            <p class="tb-lead">${esc(tr('tvx.wheel.lead', { games: items.length, n }))}</p>
+            <button type="button" class="btn btn-big" id="gwSpin">${esc(tr('tvx.wheel.spin'))}</button>
             <p class="tb-result" id="gwResult" aria-live="polite"></p>
           </div>
         </div>
@@ -289,13 +249,13 @@ export const GameWheel = {
     drumroll(1.2);
     await spinWheel($('#gameWheel', this.el), i, this.items.length);
     const it = this.items[i];
-    $('#gwResult', this.el).innerHTML = `Si gioca a <b>${esc(it.name)}</b>!`;
+    $('#gwResult', this.el).innerHTML = tr('tvx.wheel.result', { name: esc(it.name) });
     fanfare();
     const r = $('#gameWheel', this.el)?.getBoundingClientRect();
     if (r) confettiBurst(90, { x: r.left + r.width / 2, y: r.top + 40 });
     C.chooseGame(it.id);
-    C.logEvent(`La ruota ha scelto ${it.name}`, '🎡');
-    setTimeout(() => { this.spinning = false; this.close(); toast(`La ruota ha scelto: ${it.name}`); }, prefersReducedMotion() ? 600 : 2600);
+    C.logEvent(tr('tvx.wheel.log', { name: it.name }), '🎡');
+    setTimeout(() => { this.spinning = false; this.close(); toast(tr('tvx.wheel.toast', { name: it.name })); }, prefersReducedMotion() ? 600 : 2600);
   }
 };
 
@@ -315,8 +275,8 @@ export function liveScoresHTML() {
   const list = liveScores();
   if (!list.length) return '';
   const top = list[0].v;
-  return `<div class="live-scores" id="liveScores" aria-live="polite"><span class="ls-title">🧮 Segnapunti</span>
-    <ol>${list.map((r) => `<li class="${r.v === top ? 'is-lead' : ''}" style="--pc:${safeColor(r.p.color)}"><button type="button" data-score-edit="${esc(r.uid)}" title="Correggi il punteggio di ${esc(r.p.name)}">${avatarHTML(r.p, '2rem')}<span>${esc(r.p.name)}</span><b>${r.v}</b></button></li>`).join('')}</ol></div>`;
+  return `<div class="live-scores" id="liveScores" aria-live="polite"><span class="ls-title">${esc(tr('tvx.score.title'))}</span>
+    <ol>${list.map((r) => `<li class="${r.v === top ? 'is-lead' : ''}" style="--pc:${safeColor(r.p.color)}"><button type="button" data-score-edit="${esc(r.uid)}" title="${esc(tr('tvx.score.fix', { name: r.p.name }))}">${avatarHTML(r.p, '2rem')}<span>${esc(r.p.name)}</span><b>${r.v}</b></button></li>`).join('')}</ol></div>`;
 }
 
 /** Vincitori dal segnapunti (chi ha il punteggio più alto; a pari merito tutti). */
@@ -331,10 +291,10 @@ export function editScore(uid) {
   const st = S().state || {};
   const cur = S().scores?.[st.playId]?.[uid];
   const p = C.playerOrGhost(uid);
-  const v = prompt(`Punteggio di ${p.name}:`, cur ?? '');
+  const v = prompt(tr('tvx.score.prompt', { name: p.name }), cur ?? '');
   if (v === null) return;
   const n = Math.round(Number(String(v).replace(',', '.')));
-  if (!Number.isFinite(n)) { toast('Scrivi un numero.', 'warn'); return; }
+  if (!Number.isFinite(n)) { toast(tr('tvx.score.nan'), 'warn'); return; }
   C.set(room(`scores/${st.playId}/${uid}`), n).catch(fail);
 }
 
@@ -346,6 +306,9 @@ const OPT_COLORS = ['#FF5A4E', '#4D96FF', '#FFC93C', '#8AC926'];
 const OPT_SHAPES = ['▲', '◆', '●', '■'];
 const QUIZ_SECS = 20;
 
+/** "Vince Anna!" / "Vince Anna e Luca!" (più vincitori a pari punti). */
+const winnersLine = (names) => tr('tvx.quiz.wins', { n: names.length, names: fmtList(names) });
+
 export const Quiz = {
   el: null,
   isOpen() { return Boolean(this.el); },
@@ -354,7 +317,7 @@ export const Quiz = {
     const board = C.board();
     const names = Object.fromEntries(Object.entries(S().players || {}).map(([u, p]) => [u, p.name]));
     this.round = buildQuizRound({ nights: S().nights, library: S().library, board, names }, count);
-    if (!this.round.length) { toast('Non ho domande pronte.', 'warn'); return; }
+    if (!this.round.length) { toast(tr('tvx.quiz.none'), 'warn'); return; }
     this.idx = -1;
     this.qid = null;
     const el = document.createElement('div');
@@ -370,15 +333,15 @@ export const Quiz = {
     });
     C.set(room('quizScore'), null).catch(() => {});
     C.set(room('quizAns'), null).catch(() => {});
-    C.logEvent('Quiz del gruppo', '🧠');
+    C.logEvent(tr('tvx.quiz.name'), '🧠');
     this.intro();
   },
 
   intro() {
     $('#qzStage', this.el).innerHTML = `
-      <div class="qz-intro"><span class="qz-kicker">🧠 Quiz del gruppo</span><h1 class="qz-big">${this.round.length} domande</h1>
-      <p class="qz-sub">Rispondete dal telefono: una risposta sola, ${QUIZ_SECS} secondi a domanda. Un punto per ogni risposta giusta.</p>
-      <div class="qz-actions"><button type="button" class="btn-sec" id="qzClose">Chiudi</button><button type="button" class="btn btn-big" id="qzNext">Prima domanda</button></div></div>`;
+      <div class="qz-intro"><span class="qz-kicker">${esc(tr('tvx.quiz.kicker'))}</span><h1 class="qz-big">${esc(tr('tvx.quiz.count', { n: this.round.length }))}</h1>
+      <p class="qz-sub">${esc(tr('tvx.quiz.rules', { secs: QUIZ_SECS }))}</p>
+      <div class="qz-actions"><button type="button" class="btn-sec" id="qzClose">${esc(tr('common.close'))}</button><button type="button" class="btn btn-big" id="qzNext">${esc(tr('tvx.quiz.first'))}</button></div></div>`;
     $('#qzNext', this.el).focus();
   },
 
@@ -404,11 +367,11 @@ export const Quiz = {
     const q = this.round[this.idx];
     $('#qzStage', this.el).innerHTML = `
       <div class="qz-q">
-        <div class="qz-top"><span class="qz-kicker">${q.kind === 'trivia' ? '🎲 Curiosità ludica' : q.kind === 'tonight' ? '🌙 Stasera' : '👥 Il gruppo'} · ${this.idx + 1} / ${this.round.length}</span>
+        <div class="qz-top"><span class="qz-kicker">${esc(tr(q.kind === 'trivia' ? 'tvx.quiz.kind.trivia' : q.kind === 'tonight' ? 'tvx.quiz.kind.tonight' : 'tvx.quiz.kind.group'))} · ${this.idx + 1} / ${this.round.length}</span>
           <div class="vtimer qz-timer" id="qzTimer"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="vt-track" cx="60" cy="60" r="52"/><circle class="vt-arc" id="qzArc" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="0"/></svg><b id="qzNum">${QUIZ_SECS}</b></div></div>
         <h1 class="qz-question">${esc(q.q)}</h1>
         <div class="qz-opts">${q.options.map((o, i) => `<div class="qz-opt" data-opt="${i}" style="--oc:${OPT_COLORS[i]}"><span class="qz-shape" aria-hidden="true">${OPT_SHAPES[i]}</span><b>${esc(o)}</b><span class="qz-who" id="qzWho${i}"></span></div>`).join('')}</div>
-        <div class="qz-foot"><span id="qzCount" class="qz-count"></span><span class="qz-actions"><button type="button" class="btn-sec" id="qzClose">Chiudi il quiz</button><button type="button" class="btn" id="qzReveal">Svela</button></span></div>
+        <div class="qz-foot"><span id="qzCount" class="qz-count"></span><span class="qz-actions"><button type="button" class="btn-sec" id="qzClose">${esc(tr('tvx.quiz.closeQuiz'))}</button><button type="button" class="btn" id="qzReveal">${esc(tr('tvx.quiz.reveal'))}</button></span></div>
       </div>`;
     this.paintAnswers();
   },
@@ -421,7 +384,7 @@ export const Quiz = {
     const ps = activePlayers(S().players);
     const n = ps.filter((p) => typeof ans[p.uid] === 'number').length;
     const c = $('#qzCount', this.el);
-    if (c) c.innerHTML = `${ps.filter((p) => typeof ans[p.uid] === 'number').map((p) => avatarHTML(p, '2.2rem')).join('')}<span>${n} / ${ps.length} hanno risposto</span>`;
+    if (c) c.innerHTML = `${ps.filter((p) => typeof ans[p.uid] === 'number').map((p) => avatarHTML(p, '2.2rem')).join('')}<span>${esc(tr('tvx.quiz.answered', { n, total: ps.length }))}</span>`;
     if (!this.revealed && ps.length && n >= ps.length) setTimeout(() => this.reveal(), 700);
   },
 
@@ -429,6 +392,8 @@ export const Quiz = {
     if (!this.el || this.revealed) return;
     const at = Number(S().quiz?.at);
     if (!Number.isFinite(at)) return;
+    // Serata in pausa: il tempo del quiz è fermo (alla ripresa la TV sposta quiz.at in avanti).
+    if (S().state?.paused) { const n = $('#qzNum', this.el); if (n) n.textContent = '❚❚'; this.lastSec = undefined; return; }
     const left = Math.max(0, at + QUIZ_SECS * 1000 - C.serverNow());
     const frac = left / (QUIZ_SECS * 1000);
     const sec = Math.ceil(left / 1000);
@@ -467,8 +432,8 @@ export const Quiz = {
       if (w) w.innerHTML = who.map((p) => avatarHTML(p, '1.9rem')).join('');
     });
     const foot = $('.qz-actions', this.el);
-    if (foot) foot.innerHTML = `<button type="button" class="btn-sec" id="qzClose">Chiudi il quiz</button><button type="button" class="btn btn-big" id="qzNext">${this.idx + 1 >= this.round.length ? 'Classifica finale' : 'Prossima domanda'}</button>`;
-    $('#qzCount', this.el).innerHTML = right.length ? `✅ <b>${esc(right.map((u) => C.playerOrGhost(u).name).join(', '))}</b>` : 'Nessuno ha indovinato!';
+    if (foot) foot.innerHTML = `<button type="button" class="btn-sec" id="qzClose">${esc(tr('tvx.quiz.closeQuiz'))}</button><button type="button" class="btn btn-big" id="qzNext">${esc(tr(this.idx + 1 >= this.round.length ? 'tvx.quiz.final' : 'tvx.quiz.next'))}</button>`;
+    $('#qzCount', this.el).innerHTML = right.length ? `✅ <b>${esc(right.map((u) => C.playerOrGhost(u).name).join(', '))}</b>` : esc(tr('tvx.quiz.nobody'));
     $('#qzNext', this.el)?.focus();
   },
 
@@ -479,9 +444,9 @@ export const Quiz = {
     const top = rows[0]?.v || 0;
     C.update(room('quiz'), { open: false, done: true, id: `end${Date.now().toString(36)}` }).catch(() => {});
     $('#qzStage', this.el).innerHTML = `
-      <div class="qz-intro"><span class="qz-kicker">🧠 Quiz del gruppo</span><h1 class="qz-big">${top ? `Vince ${esc(rows.filter((r) => r.v === top).map((r) => r.p.name).join(' e '))}!` : 'Nessun punto!'}</h1>
+      <div class="qz-intro"><span class="qz-kicker">${esc(tr('tvx.quiz.kicker'))}</span><h1 class="qz-big">${top ? esc(winnersLine(rows.filter((r) => r.v === top).map((r) => r.p.name))) : esc(tr('tvx.quiz.noPoints'))}</h1>
         <ol class="qz-rank">${rows.map((r, i) => `<li style="--i:${i}" class="${r.v === top && top ? 'is-top' : ''}">${avatarHTML(r.p, '3rem')}<span>${esc(r.p.name)}</span><b>${r.v}</b></li>`).join('')}</ol>
-        <div class="qz-actions"><button type="button" class="btn btn-big" id="qzClose">Torna alla serata</button></div></div>`;
+        <div class="qz-actions"><button type="button" class="btn btn-big" id="qzClose">${esc(tr('tvx.quiz.back'))}</button></div></div>`;
     if (top) { victory(); confettiBurst(140); }
   },
 
@@ -512,19 +477,15 @@ export const Quiz = {
 // Allarme intrusi
 // ---------------------------------------------------------------------------
 
-const KNOCK_TEXT = {
-  locked: 'ha provato a entrare nella stanza chiusa',
-  banned: 'espulso, ha provato a rientrare',
-  regia: 'ha provato un codice regia sbagliato',
-  full: 'ha provato a entrare nella stanza piena'
-};
+// Tipi di tentativo (codici scritti dai telefoni in rooms/<codice>/knock): testo in tvx.knock.<tipo>.
+const KNOCK_KINDS = new Set(['locked', 'banned', 'regia', 'full']);
 
 export const Knocks = {
   seen: {},
   list() {
-    return Object.entries(S().knock || {}).map(([uid, k]) => ({ uid, ...k })).filter((k) => KNOCK_TEXT[k.kind]).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+    return Object.entries(S().knock || {}).map(([uid, k]) => ({ uid, ...k })).filter((k) => KNOCK_KINDS.has(k.kind)).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
   },
-  text(k) { return `${k.name ? `“${k.name}”` : 'Un dispositivo'} ${KNOCK_TEXT[k.kind]}${k.n > 1 ? ` (${k.n} volte)` : ''}`; },
+  text(k) { return `${k.name ? `“${k.name}”` : tr('tvx.knock.device')} ${tr(`tvx.knock.${k.kind}`)}${k.n > 1 ? ` ${tr('tvx.knock.times', { n: Number(k.n) })}` : ''}`; },
   sync() {
     for (const k of this.list()) {
       const sig = `${k.at}|${k.n}`;
@@ -539,7 +500,7 @@ export const Knocks = {
     this.started = true;
   },
   alarm(k) {
-    C.logEvent(`Allarme: ${this.text(k)}`, '🚨');
+    C.logEvent(tr('tvx.knock.log', { text: this.text(k) }), '🚨');
     let el = $('#knockAlarm');
     if (!el) {
       el = document.createElement('div');
@@ -549,7 +510,7 @@ export const Knocks = {
       document.body.appendChild(el);
       el.addEventListener('click', (e) => { if (e.target.closest('[data-knock-ok]')) el.remove(); });
     }
-    el.innerHTML = `<span class="ka-ico" aria-hidden="true">🚨</span><span><b>Allarme intrusi</b><br>${esc(this.text(k))}</span><button type="button" class="btn-sec btn-sec--sm" data-knock-ok>Ok</button>`;
+    el.innerHTML = `<span class="ka-ico" aria-hidden="true">🚨</span><span><b>${esc(tr('tvx.knock.title'))}</b><br>${esc(this.text(k))}</span><button type="button" class="btn-sec btn-sec--sm" data-knock-ok>Ok</button>`;
     el.classList.remove('is-on'); void el.offsetWidth; el.classList.add('is-on');
     ding();
     clearTimeout(this.hide);
@@ -557,7 +518,7 @@ export const Knocks = {
   },
   html() {
     const l = this.list();
-    return l.length ? `<ul class="trash-list knock-list">${l.slice(0, 8).map((k) => `<li><span>🚨 ${esc(this.text(k))}<small> · ${new Date(Number(k.at)).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</small></span></li>`).join('')}</ul><button type="button" class="link-btn" id="tlKnockClear">Pulisci l’elenco</button>` : '<p class="muted small">Nessun tentativo sospetto stasera.</p>';
+    return l.length ? `<ul class="trash-list knock-list">${l.slice(0, 8).map((k) => `<li><span>🚨 ${esc(this.text(k))}<small> · ${fmtDate(Number(k.at), { hour: '2-digit', minute: '2-digit' })}</small></span></li>`).join('')}</ul><button type="button" class="link-btn" id="tlKnockClear">${esc(tr('tvx.knock.clear'))}</button>` : `<p class="muted small">${esc(tr('tvx.knock.none'))}</p>`;
   }
 };
 
@@ -571,7 +532,7 @@ export async function changeRegiaCode() {
   await C.set(C.secretRef(S().code), code);
   await C.update(room(''), { cohosts: null, takeover: null });
   try { localStorage.setItem(C.regiaKey(S().code), code); } catch { /* niente */ }
-  C.logEvent('Codice regia cambiato: la regia dai telefoni va riattivata', '🔑');
+  C.logEvent(tr('tvx.regia.log'), '🔑');
   return code;
 }
 
@@ -597,7 +558,7 @@ export async function cleanupOldRooms(gid, days) {
       n++;
     } catch { /* niente: non autorizzati */ }
   }
-  if (n) C.logEvent(`${n} ${n === 1 ? 'stanza vecchia cancellata' : 'stanze vecchie cancellate'} (più di ${days} giorni)`, '🧹');
+  if (n) C.logEvent(tr('tvx.rooms.log', { n, days }), '🧹');
   return n;
 }
 
@@ -624,26 +585,26 @@ export function seasonTabHTML() {
   const rows = (cur?.rows || []).map((r, i) => `
     <li class="season-row ${r.rank === 1 ? 'is-lead' : ''}" style="--i:${i}">
       <span class="brank">${r.rank}</span>${avatarHTML(personAvatar(r.key, r.name), '3rem')}
-      <span class="sr-name"><b>${esc(r.name)}</b><small>${r.nights} ${r.nights === 1 ? 'serata' : 'serate'} · ${r.nightWins} da campione · ${r.wins} ${r.wins === 1 ? 'vittoria' : 'vittorie'} · ${r.mvp} MVP</small></span>
-      <span class="sr-pts">${r.points}<small>pt</small></span>
+      <span class="sr-name"><b>${esc(r.name)}</b><small>${esc([tr('tvx.season.nights', { n: r.nights }), tr('tvx.season.champ', { n: r.nightWins }), tr('tvx.season.wins', { n: r.wins }), tr('tvx.season.mvp', { n: r.mvp })].join(' · '))}</small></span>
+      <span class="sr-pts">${r.points}<small>${esc(tr('tvx.season.pt'))}</small></span>
     </li>`).join('');
   return `
     <div class="season-box">
       <div class="season-main card">
-        <h2>${cur ? `Stagione ${esc(cur.name)}` : `Stagione ${esc(seasonOf(Date.now()).name)}`}</h2>
-        <p class="muted">Punti dei campioni di ogni serata: vittoria 3, voto MVP 1, pronostico azzeccato 1, media indovinata 1. A fine stagione chi è primo vince il trofeo.</p>
-        ${rows ? `<ol class="season-list">${rows}</ol>` : '<p class="empty-title">La stagione comincia con la prossima serata salvata.</p>'}
+        <h2>${esc(tr('tvx.season.title', { name: cur ? cur.name : seasonOf(Date.now()).name }))}</h2>
+        <p class="muted">${esc(tr('tvx.season.rules'))}</p>
+        ${rows ? `<ol class="season-list">${rows}</ol>` : `<p class="empty-title">${esc(tr('tvx.season.empty'))}</p>`}
       </div>
       <aside class="season-side card">
-        <h2>🏆 Albo d’oro</h2>
-        ${past.length ? `<ul class="hall">${past.map((s) => `<li><span class="hall-season">${esc(s.name)}</span><b>${esc(s.champion.map((c) => c.name).join(' e '))}</b><small>${s.champion[0].points} pt · ${s.nights} ${s.nights === 1 ? 'serata' : 'serate'}</small></li>`).join('')}</ul>` : '<p class="muted">Il primo trofeo si assegna alla fine di questa stagione.</p>'}
+        <h2>${esc(tr('tvx.season.hall'))}</h2>
+        ${past.length ? `<ul class="hall">${past.map((s) => `<li><span class="hall-season">${esc(s.name)}</span><b>${esc(fmtList(s.champion.map((c) => c.name)))}</b><small>${esc(`${tr('tvx.season.pts', { n: s.champion[0].points })} · ${tr('tvx.season.nights', { n: s.nights })}`)}</small></li>`).join('')}</ul>` : `<p class="muted">${esc(tr('tvx.season.hallEmpty'))}</p>`}
       </aside>
     </div>`;
 }
 
 export function rivalsTabHTML() {
   const list = topRivalries(nightsWithTonight(), 8);
-  if (!list.length) return '<div class="empty-board"><p class="empty-title">Ancora nessuna rivalità</p><p class="muted">Servono partite con un vincitore segnato giocate insieme.</p></div>';
+  if (!list.length) return `<div class="empty-board"><p class="empty-title">${esc(tr('tvx.rivals.emptyTitle'))}</p><p class="muted">${esc(tr('tvx.rivals.emptyText'))}</p></div>`;
   return `<div class="rivals">${list.map((r, i) => {
     const pa = personAvatar(r.a, r.aName);
     const pb = personAvatar(r.b, r.bName);
@@ -651,7 +612,7 @@ export function rivalsTabHTML() {
     return `
       <article class="rival card" style="--i:${i}; --ca:${safeColor(pa.color)}; --cb:${safeColor(pb.color)}">
         <div class="rv-side">${avatarHTML(pa, '4rem')}<b>${esc(r.aName)}</b></div>
-        <div class="rv-mid"><span class="rv-score">${r.aw}<i>–</i>${r.bw}</span><span class="rv-bar"><i style="width:${(r.aw / tot) * 100}%"></i></span><small>${r.games} ${r.games === 1 ? 'partita' : 'partite'} insieme · ${r.aw === r.bw ? 'parità perfetta' : `${esc(r.aw > r.bw ? r.aName : r.bName)} avanti`}</small></div>
+        <div class="rv-mid"><span class="rv-score">${r.aw}<i>–</i>${r.bw}</span><span class="rv-bar"><i style="width:${(r.aw / tot) * 100}%"></i></span><small>${esc(`${tr('tvx.rivals.games', { n: r.games })} · ${r.aw === r.bw ? tr('tvx.rivals.tie') : tr('tvx.rivals.ahead', { name: r.aw > r.bw ? r.aName : r.bName })}`)}</small></div>
         <div class="rv-side">${avatarHTML(pb, '4rem')}<b>${esc(r.bName)}</b></div>
       </article>`;
   }).join('')}</div>`;
@@ -661,7 +622,7 @@ export function rivalsTabHTML() {
 export function rivalryLine(uids) {
   const keys = new Map(uids.map((u) => [personKey(S().players[u] || {}), S().players[u]?.name]).filter(([k, n]) => k && n));
   const r = topRivalries(S().nights || {}, 40).find((x) => keys.has(x.a) && keys.has(x.b));
-  return r ? `⚔️ Sfida nella sfida: ${r.aName} ${r.aw}–${r.bw} ${r.bName}` : '';
+  return r ? tr('tvx.rivals.line', { a: r.aName, aw: String(r.aw), bw: String(r.bw), b: r.bName }) : '';
 }
 
 export function cardsTabHTML() {
@@ -670,8 +631,8 @@ export function cardsTabHTML() {
   for (const n of nightsByDate(nights)) for (const [k, pp] of Object.entries(n.people || {})) people[k] ||= pp.name;
   const cards = Object.entries(people).map(([k, name]) => ({ c: playerCard(nights, k, S().library), p: personAvatar(k, name) }))
     .sort((a, b) => b.c.level - a.c.level || b.c.xp - a.c.xp);
-  if (!cards.length) return '<div class="empty-board"><p class="empty-title">Ancora nessuna figurina</p><p class="muted">Ogni giocatore ottiene la sua carta dopo la prima serata salvata.</p></div>';
-  return `<p class="muted cards-lead">Una figurina per ogni giocatore: la rarità cresce con il livello (Comune, Rara, Epica, Leggendaria). Sul telefono, in “Il mio profilo”, si condivide come immagine.</p>
+  if (!cards.length) return `<div class="empty-board"><p class="empty-title">${esc(tr('tvx.cards.emptyTitle'))}</p><p class="muted">${esc(tr('tvx.cards.emptyText'))}</p></div>`;
+  return `<p class="muted cards-lead">${esc(tr('tvx.cards.lead'))}</p>
     <div class="gcards" id="gcards">${cards.map(({ c, p }) => cardHTML(c, p)).join('')}</div>`;
 }
 
@@ -688,11 +649,11 @@ export function seasonStageHTML() {
   const before = seasonTables(Object.fromEntries(Object.entries(S().nights || {}).filter(([k]) => k !== S().code))).find((s) => s.id === nowSeason.id);
   const prevRank = Object.fromEntries((before?.rows || []).map((r) => [r.key, r.rank]));
   const tonight = nightsWithTonight()[S().code]?.people || {};
-  return `<div class="season-stage"><h2 class="prize-title">Classifica della stagione ${esc(withT.name)}</h2><ol class="season-list season-list--stage">${withT.rows.slice(0, 8).map((r, i) => {
+  return `<div class="season-stage"><h2 class="prize-title">${esc(tr('tvx.stage.title', { name: withT.name }))}</h2><ol class="season-list season-list--stage">${withT.rows.slice(0, 8).map((r, i) => {
     const gain = championPoints(tonight[r.key]);
     const was = prevRank[r.key];
     const move = was ? was - r.rank : null;
-    return `<li class="season-row ${r.rank === 1 ? 'is-lead' : ''}" style="--i:${i}"><span class="brank">${r.rank}</span>${avatarHTML(personAvatar(r.key, r.name), '3rem')}<span class="sr-name"><b>${esc(r.name)}</b><small>${r.nights} ${r.nights === 1 ? 'serata' : 'serate'}</small></span>${gain ? `<span class="sr-gain">+${gain} stasera</span>` : ''}${move ? `<span class="sr-move ${move > 0 ? 'is-up' : 'is-down'}">${move > 0 ? `▲ ${move}` : `▼ ${-move}`}</span>` : was ? '' : '<span class="sr-move is-new">nuovo</span>'}<span class="sr-pts">${r.points}<small>pt</small></span></li>`;
+    return `<li class="season-row ${r.rank === 1 ? 'is-lead' : ''}" style="--i:${i}"><span class="brank">${r.rank}</span>${avatarHTML(personAvatar(r.key, r.name), '3rem')}<span class="sr-name"><b>${esc(r.name)}</b><small>${esc(tr('tvx.season.nights', { n: r.nights }))}</small></span>${gain ? `<span class="sr-gain">${esc(tr('tvx.stage.gain', { n: gain }))}</span>` : ''}${move ? `<span class="sr-move ${move > 0 ? 'is-up' : 'is-down'}">${move > 0 ? `▲ ${move}` : `▼ ${-move}`}</span>` : was ? '' : `<span class="sr-move is-new">${esc(tr('tvx.stage.new'))}</span>`}<span class="sr-pts">${r.points}<small>${esc(tr('tvx.season.pt'))}</small></span></li>`;
   }).join('')}</ol></div>`;
 }
 
@@ -709,10 +670,10 @@ export const VideoPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="vdTitle">
-        <div class="panel-head"><h2 id="vdTitle">🎬 Video della serata</h2><button type="button" class="icon-btn" id="vdClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="vdTitle">${esc(tr('tvx.video.title'))}</h2><button type="button" class="icon-btn" id="vdClose" aria-label="${esc(tr('common.close'))}">${ICONS.x}</button></div>
         <div id="vdBody">${videoSupported() ? `
-          <p class="muted">Una storia verticale di circa 20 secondi con giochi, campioni, premi e foto: perfetta per il gruppo WhatsApp. La TV la registra adesso: lascia questa finestra aperta.</p>
-          <button type="button" class="btn btn-big" id="vdGo">Crea il video</button>` : '<p>Questo browser non sa registrare video: usa Chrome, Edge o Firefox su computer.</p>'}</div>
+          <p class="muted">${esc(tr('tvx.video.lead'))}</p>
+          <button type="button" class="btn btn-big" id="vdGo">${esc(tr('tvx.video.make'))}</button>` : `<p>${esc(tr('tvx.video.unsupported'))}</p>`}</div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -726,17 +687,17 @@ export const VideoPanel = {
     if (this.busy) return;
     this.busy = true;
     const body = $('#vdBody', this.el);
-    body.innerHTML = '<p>Registrazione in corso…</p><div class="vd-bar"><i id="vdProg"></i></div><p class="muted small" id="vdPct">0%</p>';
+    body.innerHTML = `<p>${esc(tr('tvx.video.recording'))}</p><div class="vd-bar"><i id="vdProg"></i></div><p class="muted small" id="vdPct">0%</p>`;
     try {
       const res = await makeRecapVideo(data, (f) => { const b = $('#vdProg'); if (b) b.style.width = `${Math.round(f * 100)}%`; const p = $('#vdPct'); if (p) p.textContent = `${Math.round(f * 100)}%`; });
       this.blob = res.blob;
       this.url = URL.createObjectURL(res.blob);
       body.innerHTML = `<video class="vd-preview" src="${this.url}" controls autoplay muted loop playsinline></video>
-        <p class="muted small">${res.seconds} secondi · ${(res.blob.size / 1048576).toFixed(1)} MB · formato ${esc(res.type.replace('video/', '').toUpperCase())}</p>
-        <button type="button" class="btn btn-big" id="vdSave">${ICONS.download}<span>Scarica il video</span></button>`;
-      C.logEvent('Video della serata creato', '🎬');
+        <p class="muted small">${esc(tr('tvx.video.info', { secs: res.seconds, mb: fmtNum(res.blob.size / 1048576, 1), format: res.type.replace('video/', '').toUpperCase() }))}</p>
+        <button type="button" class="btn btn-big" id="vdSave">${ICONS.download}<span>${esc(tr('tvx.video.save'))}</span></button>`;
+      C.logEvent(tr('tvx.video.log'), '🎬');
     } catch (err) {
-      body.innerHTML = `<p class="form-error">${esc(err.message || 'Non sono riuscito a registrare il video.')}</p>`;
+      body.innerHTML = `<p class="form-error">${esc(err.message || tr('tvx.video.fail'))}</p>`;
     }
     this.busy = false;
   },
@@ -773,12 +734,12 @@ export function downloadICS(next, group, url = '') {
 export async function importGamesCSV(file) {
   if (!S().meta?.armadioId && !S().meta?.groupId) return null;
   const { items, source } = gamesFromCSV(await file.text());
-  if (!items.length) throw new Error('Nel file non ho trovato giochi: serve una colonna con il nome (objectname per BoardGameGeek, oppure "nome").');
+  if (!items.length) throw new Error(tr('tvx.csv.none'));
   const lib = S().library || {};
   const byName = new Map(Object.entries(lib).map(([id, it]) => [nameKey(it.name), id]));
   const fresh = items.filter((it) => !byName.has(nameKey(it.name)));
   const known = items.filter((it) => byName.has(nameKey(it.name)));
-  if (!confirm(`${source === 'bgg' ? 'Collezione di BoardGameGeek' : 'File CSV'}: ${items.length} giochi.\n\n• ${fresh.length} nuovi da aggiungere all’armadio\n• ${known.length} già presenti (completo solo i dati mancanti: giocatori, durata, anno)\n\nProcedo?`)) return null;
+  if (!confirm(tr('tvx.csv.confirm', { src: tr(source === 'bgg' ? 'tvx.csv.bgg' : 'tvx.csv.file'), n: items.length, fresh: fresh.length, known: known.length }))) return null;
   const patch = {};
   for (const it of fresh) {
     const id = C.push(C.libraryRef(S().meta)).key;
@@ -790,7 +751,7 @@ export async function importGamesCSV(file) {
     for (const k of ['minPlayers', 'maxPlayers', 'duration', 'year', 'weight']) if (it[k] !== undefined && (cur[k] === undefined || cur[k] === null)) patch[`${id}/${k}`] = it[k];
   }
   if (Object.keys(patch).length) await C.update(C.libraryRef(S().meta), patch);
-  C.logEvent(`Armadio: importati ${fresh.length} giochi da ${source === 'bgg' ? 'BoardGameGeek' : 'CSV'}`, '📥');
+  C.logEvent(tr('tvx.csv.log', { n: fresh.length, src: source === 'bgg' ? 'BoardGameGeek' : 'CSV' }), '📥');
   return { added: fresh.length, updated: known.length };
 }
 

@@ -164,7 +164,7 @@ async function fetchJSON(url, ms = 9000) {
   try {
     const res = await fetch(url, { cache: 'no-store', signal: ctl?.signal, headers: url.startsWith('https://api.github.com/') ? { Accept: 'application/vnd.github+json' } : undefined });
     if (!res.ok) { const e = new Error(`HTTP ${res.status}`); e.kind = res.status === 404 ? 'missing' : (res.status === 403 || res.status === 429 ? 'limit' : 'http'); throw e; }
-    try { return await res.json(); } catch { const e = new Error('dati non validi'); e.kind = 'invalid'; throw e; }
+    try { return await res.json(); } catch { const e = new Error('dati non validi'); e.kind = 'invalid'; throw e; } // i18n-ok
   } catch (err) {
     if (!err.kind) err.kind = (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'offline' : 'network';
     throw err;
@@ -174,7 +174,7 @@ async function fetchJSON(url, ms = 9000) {
 /** Versione del sito pubblicato (version.json). */
 export async function getWebVersion() {
   const v = parseWebVersion(await fetchJSON(`${versionUrl()}?t=${Date.now()}`));
-  if (!v) { const e = new Error('version.json non valido'); e.kind = 'invalid'; throw e; }
+  if (!v) { const e = new Error('version.json non valido'); e.kind = 'invalid'; throw e; } // i18n-ok
   return v;
 }
 

@@ -2,7 +2,7 @@
 // Tre porte, ognuna con il suo database in memoria:
 //   8765  sito, senza regole (tutto permesso)
 //   8766  come l'app Android: js/site.js con indirizzi pubblici d'esempio
-//   8767  sito con le regole vere di database.rules.json (simulate con targaryen)
+//   8767  sito con le regole vere di firebase/database.rules.json (simulate con targaryen)
 // Uso: node tests/e2e/server.mjs  (dalla radice del progetto o da qualunque cartella)
 import http from 'node:http';
 import fs from 'node:fs';
@@ -29,7 +29,7 @@ const sv = (v, now) => Array.isArray(v) ? v.map((x) => sv(x, now))
 function makeDb({ rules = false } = {}) {
   let tree = {}, version = 0;
   const seen = {}, ondisc = {};
-  const RULES = rules ? JSON.parse(fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8')) : null;
+  const RULES = rules ? JSON.parse(fs.readFileSync(path.join(ROOT, 'firebase', 'database.rules.json'), 'utf8')) : null;
   const targaryen = rules ? require('targaryen') : null;
   const tdb = (uid) => { const d = targaryen.database(RULES, tree).with({ debug: false }); return uid ? d.as({ uid }) : d; };
   const setAt = (p, v) => {

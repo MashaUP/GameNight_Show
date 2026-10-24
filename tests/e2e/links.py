@@ -168,7 +168,7 @@ async def main():
         # "Cerca aggiornamento" ricontrolla anche i link, subito
         NEW2 = 'https://discord.gg/AncoraNuovo'
         remote['body'] = cfg(discord={'url': NEW2}, updated='2099-01-02')
-        await pg.click('.tabbar [data-nav="altro"]'); await pg.click('[data-view="altro"] [data-open="updates"]')
+        await pg.click('.tabbar [data-nav="altro"]'); await pg.click('[data-view="altro"] [data-open="updates"] >> visible=true')
         await pg.wait_for_selector(f'.link-icons a[href="{NEW2}"]', state='attached', timeout=8000)
         ok(remote['hits'] > hits, '"Cerca aggiornamento" aggiorna anche i link')
         # server giù o file rotto: si tiene l'ultima copia buona

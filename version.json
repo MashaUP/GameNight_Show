@@ -1,17 +1,19 @@
 {
-  "version": "1.5.0",
-  "date": "2026-10-23",
+  "version": "1.10.0",
+  "date": "2026-10-24",
   "minAndroid": "7.0",
   "notes": [
-    "Nuovo logo e nuova home: barra laterale sul computer, barra in basso sul telefono, tema Show predefinito.",
-    "GameNight Show parla anche inglese (Impostazioni › Lingua): home, impostazioni e schermate principali del telefono.",
-    "Community e supporto: GitHub, Discord, guida e segnalazioni a un tocco. I link si aggiornano da soli, senza nuove versioni.",
-    "“Cerca aggiornamento” sempre in home e nelle impostazioni; più sicurezza per i profili di gruppo."
+    "Tutta l’app in italiano e inglese, con lo stesso stile su ogni schermata.",
+    "Pausa della serata e timer condiviso (turno, round, intervallo) su TV e telefoni; schermo ambiente tra una partita e l’altra.",
+    "Armadio: BoardGameGeek, manuali, preferiti, Consigliere, catalogo pubblico con i campi scelti, avvisi dei prestiti, ritaglio delle foto.",
+    "I tuoi dati: esportazione e importazione guidata, privacy e diagnostica; soundboard personalizzata, atmosfere con suono, “Il vostro anno”.",
+    "App Android: PDF veri della serata, del resoconto e delle etichette; si installa anche su Android TV."
   ],
   "notesEn": [
-    "New logo and new home: sidebar on computers, bottom bar on phones, Show theme by default.",
-    "GameNight Show now speaks English (Settings › Language): home, settings and the main phone screens.",
-    "Community and support: GitHub, Discord, guide and bug reports one tap away. Links update themselves, no new version needed.",
-    "“Check for updates” always on the home page and in settings; better protection for group profiles."
+    "The whole app in Italian and English, with the same look on every screen.",
+    "Night pause and a shared timer (turn, round, break) on the TV and phones; ambient screen between games.",
+    "Shelf: BoardGameGeek, rulebooks, favourites, the Advisor, a public catalogue with the fields you choose, loan reminders, photo cropping.",
+    "Your data: guided export and import, privacy and diagnostics; custom soundboard, atmospheres with sound, “Your year”.",
+    "Android app: real PDFs of the night, the report and the labels; it also installs on Android TV."
   ]
 }

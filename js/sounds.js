@@ -2,6 +2,7 @@
 // Mixer: effetti e musica hanno volumi separati; "Silenzioso" spegne tutto.
 import { SFX_META } from './sfx.js';
 import { isSafeMode } from './safe.js';
+import { t } from './i18n.js';
 const KEY = 'gnr_sounds';
 const VOL_KEY = { fx: 'gnr_vol_fx', music: 'gnr_vol_music' };
 const VOL_DEFAULT = { fx: 0.8, music: 0.45 };
@@ -102,12 +103,17 @@ export function audioBlocked() {
 }
 /** Perché un effetto non si sente: '' se si sente. */
 export function audioStatus() {
-  if (isSafeMode()) return 'Safe Mode attiva';
-  if (isMuted()) return 'TV in silenzioso';
-  if (!soundsOn()) return 'effetti spenti negli Strumenti';
-  if (!(window.AudioContext || window.webkitAudioContext)) return 'questo dispositivo non ha l’audio';
-  if (!ctx || ctx.state !== 'running') return 'audio da attivare';
+  if (isSafeMode()) return t('snd.safe');
+  if (isMuted()) return t('snd.muted');
+  if (!soundsOn()) return t('snd.off');
+  if (!(window.AudioContext || window.webkitAudioContext)) return t('snd.noAudio');
+  if (!ctx || ctx.state !== 'running') return t('snd.unlock');
   return '';
+}
+/** L'audio c'è ma va attivato con un tocco (i browser non suonano prima di un gesto). */
+export function audioNeedsUnlock() {
+  if (isSafeMode() || isMuted() || !soundsOn() || !(window.AudioContext || window.webkitAudioContext)) return false;
+  return !ctx || ctx.state !== 'running';
 }
 
 function noiseBuffer(a) {

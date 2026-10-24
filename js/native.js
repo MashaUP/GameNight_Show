@@ -42,14 +42,14 @@ export function nativeCall(plugin, method, opts = {}) {
   if (typeof cap?.nativePromise === 'function') return cap.nativePromise(plugin, method, opts);
   const p = cap?.Plugins?.[plugin];
   if (p && typeof p[method] === 'function') return p[method](opts);
-  return Promise.reject(new Error(`${plugin}.${method} non disponibile`));
+  return Promise.reject(new Error(`${plugin}.${method} non disponibile`)); // i18n-ok
 }
 
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
-    r.onerror = () => reject(r.error || new Error('lettura non riuscita'));
+    r.onerror = () => reject(r.error || new Error('lettura non riuscita')); // i18n-ok
     r.readAsDataURL(blob);
   });
 }
@@ -85,6 +85,23 @@ export async function nativeFile(blob, filename, { mode = 'save', title = '', te
     } catch { /* cartella non scrivibile su questo telefono: si passa a "Condividi" */ }
   }
   return { result: await shareFile(data, name, title, text), where: '' };
+}
+
+/**
+ * Apre un file con l'app giusta del telefono (lettore PDF, galleria…): lo scrive nella cache
+ * dell'app e lo passa ad Android. Se manca il componente per aprirlo, apre "Condividi".
+ */
+export async function nativeOpen(blob, filename, mimeType = blob?.type || 'application/octet-stream') {
+  const name = safeName(filename);
+  const data = await blobToBase64(blob);
+  const { uri } = await nativeCall('Filesystem', 'writeFile', { path: `aperti/${name}`, data, directory: 'CACHE', recursive: true });
+  try {
+    if (!window.Capacitor?.isPluginAvailable?.('FileOpener')) throw new Error('no-opener');
+    await nativeCall('FileOpener', 'openFile', { path: uri, mimeType });
+    return 'opened';
+  } catch {
+    return shareFile(data, name, 'GameNight Show', '');
+  }
 }
 
 // ---------------------------------------------------------------------------

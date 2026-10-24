@@ -3,6 +3,8 @@
 import { $, esc, toast, buzz, cleanName, nameKey, gameImageHTML } from './util.js';
 import { personKey } from './stats.js';
 import { tableGames, wishCounts, gameMinutes } from './prep.js';
+import { t } from './i18n.js';
+import { Favs } from './favs.js';
 
 let C = null;
 export function bindPhonePrep(ctx) { C = ctx; }
@@ -14,35 +16,38 @@ const MAX_WISH = 3;
 export function myTonight(lid) { return Boolean(P().tonight?.[lid]?.[P().uid]); }
 export function myWish(lid) { return Boolean(P().wish?.[P().uid]?.[lid]); }
 export function onTable() {
-  const t = tableGames(P().tonight, P().next, P().library);
+  const tb = tableGames(P().tonight, P().next, P().library);
   // Giochi con la stellina "Stasera" scelti dalla TV per questa serata.
-  for (const id of Object.keys(P().pick || {})) if (P().library?.[id]?.name && !t[id]) t[id] = [];
-  return t;
+  for (const id of Object.keys(P().pick || {})) if (P().library?.[id]?.name && !tb[id]) tb[id] = [];
+  return tb;
 }
 
 export async function markTonight(lid, on = true) {
   const m = me();
   if (!m) return;
-  try { await C.Net.track('Giochi', C.set(room(`tonight/${lid}/${P().uid}`), on ? cleanName(m.name, 16) : null)); } catch (err) { toast(C.explainError(err), 'error'); }
+  try { await C.Net.track(t('prep.net.games'), C.set(room(`tonight/${lid}/${P().uid}`), on ? cleanName(m.name, 16) : null)); } catch (err) { toast(C.explainError(err), 'error'); }
 }
 
 async function toggleWish(lid) {
   const on = !myWish(lid);
   const count = Object.values(P().wish?.[P().uid] || {}).filter(Boolean).length;
-  if (on && count >= MAX_WISH) { toast(`Al massimo ${MAX_WISH} stelline: togline una prima.`, 'warn'); return; }
+  if (on && count >= MAX_WISH) { toast(t('prep.wish.max', { n: MAX_WISH }), 'warn'); return; }
   buzz(on ? [10, 30, 10] : 8);
-  try { await C.Net.track('Desideri', C.set(room(`wish/${P().uid}/${lid}`), on || null)); } catch (err) { toast(C.explainError(err), 'error'); }
+  try { await C.Net.track(t('prep.net.wish'), C.set(room(`wish/${P().uid}/${lid}`), on || null)); } catch (err) { toast(C.explainError(err), 'error'); }
 }
 
 /** Riga dell’armadio con "portato stasera" e stellina. */
 export function gameRowHTML(it, extra = '') {
-  const t = myTonight(it.id);
+  const aid = P().meta?.armadioId;
+  const fav = aid ? Favs.has(aid, it.id) : false;
+  const mine = myTonight(it.id);
   const w = myWish(it.id);
   const others = (onTable()[it.id] || []).filter((n) => n !== me()?.name);
-  return `<li class="tn-row ${t ? 'is-on' : ''}">${gameImageHTML(it, 'game-img--mini')}
-    <span class="lib-mini-text"><span>${esc(it.name)}</span>${extra || others.length ? `<small>${esc([extra, others.length ? `portato da ${others.join(', ')}` : ''].filter(Boolean).join(' · '))}</small>` : ''}</span>
-    <button type="button" class="tn-btn" data-tonight="${esc(it.id)}" aria-pressed="${t}" title="L'ho portato stasera">🎲<span>${t ? 'Portato' : 'Porto'}</span></button>
-    <button type="button" class="wish-btn" data-wish="${esc(it.id)}" aria-pressed="${w}" aria-label="Voglio giocarci">${w ? '★' : '☆'}</button></li>`;
+  return `<li class="tn-row ${mine ? 'is-on' : ''}">${gameImageHTML(it, 'game-img--mini')}
+    <span class="lib-mini-text"><span>${esc(it.name)}</span>${extra || others.length ? `<small>${esc([extra, others.length ? t('prep.plan.broughtBy', { names: others.join(', ') }) : ''].filter(Boolean).join(' · '))}</small>` : ''}</span>
+    <button type="button" class="tn-btn" data-tonight="${esc(it.id)}" aria-pressed="${mine}" title="${t('prep.tn.title')}">🎲<span>${t(mine ? 'prep.tn.brought' : 'prep.tn.bring')}</span></button>
+    <button type="button" class="wish-btn" data-wish="${esc(it.id)}" aria-pressed="${w}" aria-label="${t('prep.tn.wish')}">${w ? '★' : '☆'}</button>
+    ${aid ? `<button type="button" class="am-fav am-fav--inline ${fav ? 'is-on' : ''}" data-pfav="${esc(it.id)}" aria-pressed="${fav}" aria-label="${esc(t(fav ? 'fav.remove' : 'fav.add'))}">${fav ? '♥' : '♡'}</button>` : ''}</li>`;
 }
 
 export function tonightSummaryHTML() {
@@ -51,16 +56,19 @@ export function tonightSummaryHTML() {
   const ids = Object.keys(table);
   const w = wishCounts(P().wish);
   const mine = Object.values(P().wish?.[P().uid] || {}).filter(Boolean).length;
-  return `<p class="tn-sum">🎲 Sul tavolo: <b>${ids.length ? esc(ids.map((id) => lib[id]?.name).filter(Boolean).join(', ')) : 'ancora niente'}</b></p>
-    <p class="muted small">Le tue stelline: ${mine} / ${MAX_WISH}${Object.keys(w).length ? ` · più desiderato: ${esc(lib[Object.entries(w).sort((a, b) => b[1] - a[1])[0][0]]?.name || '')}` : ''}</p>`;
+  return `<p class="tn-sum">${t('prep.sum.table', { games: ids.length ? esc(ids.map((id) => lib[id]?.name).filter(Boolean).join(', ')) : t('prep.sum.nothing') })}</p>
+    <p class="muted small">${t('prep.sum.stars', { n: mine, max: MAX_WISH })}${Object.keys(w).length ? ` · ${t('prep.sum.top', { name: esc(lib[Object.entries(w).sort((a, b) => b[1] - a[1])[0][0]]?.name || '') })}` : ''}</p>`;
 }
 
 document.addEventListener('click', (e) => {
   if (!C) return;
-  const t = e.target.closest('[data-tonight]');
-  if (t) { const on = !myTonight(t.dataset.tonight); buzz(on ? 14 : 8); markTonight(t.dataset.tonight, on); return; }
+  const tn = e.target.closest('[data-tonight]');
+  if (tn) { const on = !myTonight(tn.dataset.tonight); buzz(on ? 14 : 8); markTonight(tn.dataset.tonight, on); return; }
   const w = e.target.closest('[data-wish]');
-  if (w) toggleWish(w.dataset.wish);
+  if (w) { toggleWish(w.dataset.wish); return; }
+  const f = e.target.closest('[data-pfav]');
+  const aid = P().meta?.armadioId;
+  if (f && aid) Favs.toggle(aid, f.dataset.pfav).then((on) => { toast(t(on ? 'fav.added' : 'fav.removed')); C.render?.(); }).catch((err) => toast(C.explainError(err), 'error'));
 });
 
 // ---------------------------------------------------------------------------
@@ -76,27 +84,27 @@ export const Scanner = {
     el.className = 'overlay overlay--sheet';
     el.innerHTML = `
       <div class="card sheet scan-sheet" role="dialog" aria-modal="true" aria-labelledby="scTitle">
-        <h2 id="scTitle">📷 Codice a barre</h2>
+        <h2 id="scTitle">${t('prep.scan.title')}</h2>
         <div id="scBody">
-          ${this.supported() ? '<div class="scan-view"><video id="scVideo" playsinline muted></video><i class="scan-line" aria-hidden="true"></i></div><p class="muted small" id="scHint">Inquadra il codice a barre sul retro della scatola.</p>'
-            : '<p class="muted small">Questo browser non sa leggere i codici a barre con la fotocamera (succede su iPhone e su alcuni browser): scrivi i numeri sotto il codice.</p>'}
-          <div class="profile-code-row"><label class="sr-only" for="scManual">Numeri del codice a barre</label>
-            <input class="input" id="scManual" inputmode="numeric" maxlength="14" placeholder="Es. 3760175513909" autocomplete="off">
-            <button type="button" class="btn-sec" id="scGo">Cerca</button></div>
+          ${this.supported() ? `<div class="scan-view"><video id="scVideo" playsinline muted></video><i class="scan-line" aria-hidden="true"></i></div><p class="muted small" id="scHint">${t('prep.scan.hint')}</p>`
+            : `<p class="muted small">${t('prep.scan.unsupported')}</p>`}
+          <div class="profile-code-row"><label class="sr-only" for="scManual">${t('prep.scan.manual')}</label>
+            <input class="input" id="scManual" inputmode="numeric" maxlength="14" placeholder="${t('prep.scan.manualPh')}" autocomplete="off">
+            <button type="button" class="btn-sec" id="scGo">${t('prep.scan.search')}</button></div>
         </div>
-        <button type="button" class="link-btn" id="scClose">Chiudi</button>
+        <button type="button" class="link-btn" id="scClose">${t('common.close')}</button>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
     el.addEventListener('click', (e) => {
       if (e.target === el || e.target.closest('#scClose')) { this.close(); return; }
-      if (e.target.closest('#scGo')) { const v = String($('#scManual', el).value).replace(/\D/g, ''); if (v.length >= 8) this.found(v); else toast('Il codice ha da 8 a 14 cifre.', 'warn'); return; }
+      if (e.target.closest('#scGo')) { const v = String($('#scManual', el).value).replace(/\D/g, ''); if (v.length >= 8) this.found(v); else toast(t('prep.scan.digits'), 'warn'); return; }
       const a = e.target.closest('[data-assign]');
       if (a) { this.assign(a.dataset.assign); return; }
       if (e.target.closest('#scNew')) this.createNew();
     });
     $('#scManual', el).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
-    if (this.supported()) this.start().catch(() => { const h = $('#scHint', el); if (h) h.textContent = 'Fotocamera non disponibile: scrivi i numeri del codice.'; });
+    if (this.supported()) this.start().catch(() => { const h = $('#scHint', el); if (h) h.textContent = t('prep.scan.noCamera'); });
   },
   async start() {
     this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
@@ -128,15 +136,15 @@ export const Scanner = {
     const hit = Object.entries(lib).find(([, it]) => it?.ean === code);
     if (hit) {
       markTonight(hit[0], true);
-      toast(`${hit[1].name}: sul tavolo! 🎲`);
+      toast(t('prep.scan.onTable', { name: hit[1].name }));
       this.close();
       return;
     }
     const items = Object.entries(lib).filter(([, it]) => it?.name && !it.ean).map(([id, it]) => ({ id, ...it })).sort((a, b) => a.name.localeCompare(b.name));
     $('#scBody', this.el).innerHTML = `
-      <p>Codice <b>${esc(code)}</b>: è la prima volta che lo vedo. Che gioco è? Da ora in poi lo riconosco da solo.</p>
-      ${items.length ? `<input class="input" type="search" id="scFind" placeholder="Cerca nell’armadio"><ul class="lib-mini scan-list">${items.map((it) => `<li data-name="${esc(nameKey(it.name))}"><button type="button" class="scan-pick" data-assign="${esc(it.id)}">${gameImageHTML(it, 'game-img--mini')}<span>${esc(it.name)}</span></button></li>`).join('')}</ul>` : ''}
-      <div class="profile-code-row"><label class="sr-only" for="scName">Nome del gioco nuovo</label><input class="input" id="scName" maxlength="40" placeholder="Oppure scrivi il nome di un gioco nuovo"><button type="button" class="btn-sec" id="scNew">Aggiungi</button></div>`;
+      <p>${t('prep.scan.unknown', { code: esc(code) })}</p>
+      ${items.length ? `<input class="input" type="search" id="scFind" placeholder="${t('prep.scan.find')}"><ul class="lib-mini scan-list">${items.map((it) => `<li data-name="${esc(nameKey(it.name))}"><button type="button" class="scan-pick" data-assign="${esc(it.id)}">${gameImageHTML(it, 'game-img--mini')}<span>${esc(it.name)}</span></button></li>`).join('')}</ul>` : ''}
+      <div class="profile-code-row"><label class="sr-only" for="scName">${t('prep.scan.newName')}</label><input class="input" id="scName" maxlength="40" placeholder="${t('prep.scan.newPh')}"><button type="button" class="btn-sec" id="scNew">${t('prep.scan.add')}</button></div>`;
     $('#scFind', this.el)?.addEventListener('input', (e) => {
       const q = nameKey(e.target.value);
       this.el.querySelectorAll('.scan-list li').forEach((li) => { li.hidden = q && !li.dataset.name.includes(q); });
@@ -146,20 +154,20 @@ export const Scanner = {
     try {
       await C.update(C.libraryRef(P().meta, lid), { ean: this.code });
       await markTonight(lid, true);
-      toast(`${P().library?.[lid]?.name || 'Gioco'} collegato al codice e messo sul tavolo 🎲`);
+      toast(t('prep.scan.linked', { name: P().library?.[lid]?.name || t('prep.scan.game') }));
       this.close();
     } catch (err) { toast(C.explainError(err), 'error'); }
   },
   async createNew() {
     const name = cleanName($('#scName', this.el)?.value || '');
-    if (!name) { toast('Scrivi il nome del gioco.', 'warn'); return; }
+    if (!name) { toast(t('prep.scan.nameNeeded'), 'warn'); return; }
     const existing = Object.entries(P().library || {}).find(([, it]) => nameKey(it?.name) === nameKey(name));
     if (existing) { this.assign(existing[0]); return; }
     try {
       const r = C.push(C.libraryRef(P().meta));
       await C.set(r, { name, ean: this.code, addedBy: me()?.name || '', addedAt: C.serverTimestamp() });
       await markTonight(r.key, true);
-      toast(`${name} aggiunto all’armadio e messo sul tavolo 🎲`);
+      toast(t('prep.scan.created', { name }));
       this.close();
     } catch (err) { toast(C.explainError(err), 'error'); }
   },
@@ -177,12 +185,12 @@ export function rulesCardHTML() {
   const k = P().knows?.[lid]?.[P().uid];
   const setup = String(it.setup || '').split(/\n|;/).map((s) => s.trim()).filter(Boolean);
   return `<section class="card ph-card rules-card">
-    <h2>📖 Si gioca a ${esc(it.name)}</h2>
-    <p class="vlabel-sm">Lo conosci già?</p>
-    <div class="rules-know"><button type="button" class="btn-sec" data-know="1" aria-pressed="${k === true}">✅ Sì, lo so</button><button type="button" class="btn-sec" data-know="0" aria-pressed="${k === false}">🆕 Spiegatemelo</button></div>
+    <h2>${t('prep.rules.title', { name: esc(it.name) })}</h2>
+    <p class="vlabel-sm">${t('prep.rules.ask')}</p>
+    <div class="rules-know"><button type="button" class="btn-sec" data-know="1" aria-pressed="${k === true}">${t('prep.rules.yes')}</button><button type="button" class="btn-sec" data-know="0" aria-pressed="${k === false}">${t('prep.rules.no')}</button></div>
     ${it.rules ? `<p class="rules-text">${esc(it.rules)}</p>` : ''}
-    ${setup.length ? `<details><summary>Preparazione</summary><ul>${setup.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>` : ''}
-    ${/^https:\/\/[^\s"<>]+$/.test(it.video || '') ? `<a class="btn-sec btn-sec--sm" href="${esc(it.video)}" target="_blank" rel="noopener noreferrer">▶️ Video delle regole</a>` : ''}
+    ${setup.length ? `<details><summary>${t('prep.rules.setup')}</summary><ul>${setup.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>` : ''}
+    ${/^https:\/\/[^\s"<>]+$/.test(it.video || '') ? `<a class="btn-sec btn-sec--sm" href="${esc(it.video)}" target="_blank" rel="noopener noreferrer">${t('prep.rules.video')}</a>` : ''}
   </section>`;
 }
 
@@ -193,7 +201,7 @@ document.addEventListener('click', (e) => {
   const lid = P().rules?.lid;
   if (!lid) return;
   buzz(10);
-  C.Net.track('Regole', C.set(room(`knows/${lid}/${P().uid}`), b.dataset.know === '1')).catch((err) => toast(C.explainError(err), 'error'));
+  C.Net.track(t('prep.net.rules'), C.set(room(`knows/${lid}/${P().uid}`), b.dataset.know === '1')).catch((err) => toast(C.explainError(err), 'error'));
 });
 
 export function planCardHTML() {
@@ -201,7 +209,7 @@ export function planCardHTML() {
   const items = (Array.isArray(P().plan?.items) ? P().plan.items : []).filter((id) => lib[id]);
   if (!items.length) return '';
   const played = new Set(Object.values(P().games || {}).filter((g) => g?.status === 'revealed').map((g) => nameKey(g.name)));
-  return `<section class="card ph-card plan-card"><h2>🗓️ La scaletta di stasera</h2><ol>${items.map((id) => {
+  return `<section class="card ph-card plan-card"><h2>${t('prep.plan.tonight')}</h2><ol>${items.map((id) => {
     const done = played.has(nameKey(lib[id].name));
     return `<li class="${done ? 'is-done' : ''}">${done ? '✓ ' : ''}<b>${esc(lib[id].name)}</b> <small>${gameMinutes(lib[id])} min</small></li>`;
   }).join('')}</ol></section>`;
@@ -217,11 +225,11 @@ export function bringHTML(next, key) {
   if (mine !== 'si' && mine !== 'forse') return '';
   const b = next.bring?.[key] || {};
   const lib = Object.entries(P().library || {}).filter(([, it]) => it?.name).sort((a, b2) => a[1].name.localeCompare(b2[1].name));
-  return `<details class="bring" ${b.food || Object.keys(b.games || {}).length ? '' : 'open'}><summary>🎒 Porto io</summary>
-    <p class="muted small">Scegli i giochi che porti (la sera stessa sono già "sul tavolo") e, se vuoi, cosa porti da mangiare o da bere.</p>
+  return `<details class="bring" ${b.food || Object.keys(b.games || {}).length ? '' : 'open'}><summary>${t('prep.bring.title')}</summary>
+    <p class="muted small">${t('prep.bring.text')}</p>
     <div class="bring-games">${lib.map(([id, it]) => `<button type="button" class="lib-chip" data-bring="${esc(id)}" aria-pressed="${Boolean(b.games?.[id])}">${esc(it.name)}</button>`).join('')}</div>
-    <label class="sr-only" for="bringFood">Cibo o bevande</label><input class="input" id="bringFood" maxlength="60" placeholder="Es. pizza, patatine, birre" value="${esc(b.food || '')}">
-    <button type="button" class="btn-sec btn-sec--sm" id="bringSave">Salva</button></details>`;
+    <label class="sr-only" for="bringFood">${t('prep.bring.food')}</label><input class="input" id="bringFood" maxlength="60" placeholder="${t('prep.bring.foodPh')}" value="${esc(b.food || '')}">
+    <button type="button" class="btn-sec btn-sec--sm" id="bringSave">${t('common.save')}</button></details>`;
 }
 
 document.addEventListener('click', async (e) => {
@@ -235,7 +243,7 @@ document.addEventListener('click', async (e) => {
   const games = Object.fromEntries([...document.querySelectorAll('[data-bring][aria-pressed="true"]')].map((x) => [x.dataset.bring, true]));
   const food = cleanName($('#bringFood')?.value || '', 60);
   try {
-    await C.Net.track('Porto io', C.set(C.groupRef(gid, `next/bring/${personKey(m)}`), { name: cleanName(m.name, 16), games: Object.keys(games).length ? games : null, food: food || null }));
-    toast('Segnato: lo vedono tutti nell’invito');
+    await C.Net.track(t('prep.net.bring'), C.set(C.groupRef(gid, `next/bring/${personKey(m)}`), { name: cleanName(m.name, 16), games: Object.keys(games).length ? games : null, food: food || null }));
+    toast(t('prep.bring.saved'));
   } catch (err) { toast(C.explainError(err), 'error'); }
 });

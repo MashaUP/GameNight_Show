@@ -130,7 +130,8 @@ async def main():
         await host.click('[data-view="wrapped"]'); await asyncio.sleep(0.3)
         slides = []
         for i in range(14):
-            slides.append((await host.inner_text('.wr-k')) + ' = ' + (await host.inner_text('.wr-big')))
+            # dalla 1.10 alcune diapositive sono elenchi (giochi dell'anno) invece di un numero grande
+            slides.append((await host.inner_text('.wr-k')) + ' = ' + (await host.evaluate("(document.querySelector('.wr-big')||document.querySelector('.wr-list'))?.innerText.replace(/\\n/g,' / ')")))
             if i == 2: await shot(host, '13_wrapped_slide')
             await host.keyboard.press('ArrowRight'); await asyncio.sleep(0.15)
         print('wrapped:', slides)

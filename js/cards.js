@@ -2,6 +2,7 @@
 // in HTML (TV e telefono) e come immagine PNG da condividere.
 import { esc, fmt, safeColor } from './util.js';
 import { avatarHTML, avatarUri } from './avatars.js';
+import { t } from './i18n.js';
 
 const RARITY_BG = {
   comune: ['#5B6CFF', '#7FD8FF'],
@@ -14,26 +15,26 @@ const RARITY_BG = {
 export function cardHTML(card, player, { owned = true, big = false, me = false } = {}) {
   const r = card.rarity?.key || 'comune';
   if (!owned) {
-    return `<article class="gcard gcard--missing ${big ? 'gcard--big' : ''}" aria-label="Figurina da trovare">
-      <div class="gcard-in"><span class="gcard-q" aria-hidden="true">?</span><b class="gcard-name">${esc(card.name)}</b><small>Giocaci insieme per trovarla</small></div></article>`;
+    return `<article class="gcard gcard--missing ${big ? 'gcard--big' : ''}" aria-label="${esc(t('report.card.missing'))}">
+      <div class="gcard-in"><span class="gcard-q" aria-hidden="true">?</span><b class="gcard-name">${esc(card.name)}</b><small>${esc(t('report.card.missingHint'))}</small></div></article>`;
   }
   const stars = '★'.repeat(card.rarity?.stars || 1);
   const avg = card.avgGiven === null || card.avgGiven === undefined ? '—' : fmt(card.avgGiven);
   return `
-    <article class="gcard gcard--${r} ${big ? 'gcard--big' : ''} ${me ? 'is-me' : ''}" style="--pc:${safeColor(player?.color)}" tabindex="0" aria-label="Figurina di ${esc(card.name)}, ${esc(card.rarity?.label || '')}">
+    <article class="gcard gcard--${r} ${big ? 'gcard--big' : ''} ${me ? 'is-me' : ''}" style="--pc:${safeColor(player?.color)}" tabindex="0" aria-label="${esc(t('report.card.aria', { name: card.name, rarity: card.rarity?.label || '' }))}">
       <div class="gcard-in">
         <div class="gcard-top"><span class="gcard-lv">Lv ${card.level}</span><span class="gcard-no">#${card.number}</span></div>
         <div class="gcard-art">${avatarHTML(player || { name: card.name }, big ? '9rem' : '5.6rem')}</div>
         <b class="gcard-name">${esc(card.name)}</b>
         <span class="gcard-title">${esc(card.levelName || '')}</span>
         <dl class="gcard-stats">
-          <div><dt>Serate</dt><dd>${card.nights}</dd></div>
-          <div><dt>Vittorie</dt><dd>${card.wins}</dd></div>
+          <div><dt>${esc(t('report.card.nights'))}</dt><dd>${card.nights}</dd></div>
+          <div><dt>${esc(t('report.card.wins'))}</dt><dd>${card.wins}</dd></div>
           <div><dt>MVP</dt><dd>${card.mvp}</dd></div>
-          <div><dt>Media data</dt><dd>${avg}</dd></div>
+          <div><dt>${esc(t('report.card.avgGiven'))}</dt><dd>${avg}</dd></div>
         </dl>
         ${card.fav ? `<p class="gcard-fav">❤️ ${esc(card.fav)}</p>` : ''}
-        ${card.seasonTitles?.length ? `<p class="gcard-crown" title="${esc(card.seasonTitles.join(', '))}">👑 ${card.seasonTitles.length === 1 ? `Campione ${esc(card.seasonTitles[0])}` : `${card.seasonTitles.length} stagioni vinte`}</p>` : ''}
+        ${card.seasonTitles?.length ? `<p class="gcard-crown" title="${esc(card.seasonTitles.join(', '))}">👑 ${card.seasonTitles.length === 1 ? esc(t('report.card.champion', { season: card.seasonTitles[0] })) : esc(t('report.card.seasons', { n: card.seasonTitles.length }))}</p>` : ''}
         <div class="gcard-foot"><span class="gcard-stars">${stars}</span><span>${esc(card.rarity?.label || '')}</span></div>
       </div>
       <span class="gcard-foil" aria-hidden="true"></span>
@@ -65,6 +66,14 @@ function loadImg(src) {
 }
 function rr(c, x, y, w, h, r) {
   c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+/** Imposta il font più grande (da `size` in giù, fino a `min`) con cui il testo sta in `max` pixel. */
+function shrink(c, text, max, size, weight, family, min = 18) {
+  let s = size;
+  const set = () => { c.font = `${weight ? `${weight} ` : ''}${s}px ${family}`; };
+  set();
+  while (s > min && c.measureText(text).width > max) { s -= 2; set(); }
 }
 
 /** Disegna la figurina su un canvas 900×1260 e restituisce il PNG. */
@@ -107,17 +116,16 @@ export async function renderCardImage(card, player, groupName = '') {
   let name = card.name;
   while (c.measureText(name).width > W - 200 && name.length > 2) name = name.slice(0, -1);
   c.fillText(name, W / 2, 760);
-  c.font = `46px ${DISPLAY}`; c.fillText(card.levelName || '', W / 2, 820);
+  shrink(c, card.levelName || '', W - 200, 46, '', DISPLAY); c.fillText(card.levelName || '', W / 2, 820);
   // Statistiche
-  const stats = [['Serate', card.nights], ['Vittorie', card.wins], ['MVP', card.mvp], ['Media', card.avgGiven === null || card.avgGiven === undefined ? '—' : fmt(card.avgGiven)]];
+  const stats = [[t('report.card.nights'), card.nights], [t('report.card.wins'), card.wins], ['MVP', card.mvp], [t('report.card.avg'), card.avgGiven === null || card.avgGiven === undefined ? '—' : fmt(card.avgGiven)]];
   stats.forEach(([l, v], i) => {
     const x = 120 + i * 170;
     c.fillStyle = 'rgba(255,255,255,0.75)'; rr(c, x, 860, 150, 150, 26); c.fill(); c.lineWidth = 6; c.strokeStyle = '#1F1A3D'; c.stroke();
     c.fillStyle = '#1F1A3D'; c.font = `56px ${NUM}`; c.fillText(String(v), x + 75, 950);
-    c.font = '700 28px Nunito, sans-serif'; c.fillText(l, x + 75, 990);
+    shrink(c, l, 136, 28, '700', 'Nunito, sans-serif'); c.fillText(l, x + 75, 990);
   });
-  c.font = '800 34px Nunito, sans-serif';
-  if (card.fav) c.fillText(`❤️ ${card.fav}`, W / 2, 1070);
+  if (card.fav) { shrink(c, `❤️ ${card.fav}`, W - 200, 34, '800', 'Nunito, sans-serif', 24); c.fillText(`❤️ ${card.fav}`, W / 2, 1070); }
   c.font = `44px ${DISPLAY}`;
   c.fillText(`${'★'.repeat(card.rarity?.stars || 1)}  ${card.rarity?.label || ''}`, W / 2, 1140);
   c.font = '700 26px Nunito, sans-serif'; c.fillStyle = 'rgba(31,26,61,0.75)';

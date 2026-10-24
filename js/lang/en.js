@@ -1,5 +1,16 @@
 // English texts. Keys must match js/lang/it.js exactly (tests/check.mjs verifies keys and {parameters}).
 // Plurals: { one: '…', other: '…' } (picked with the n parameter).
+import report from './en-report.js';
+import selftest from './en-selftest.js';
+import voice from './en-voice.js';
+import prep from './en-prep.js';
+import tv from './en-tv.js';
+import phone from './en-phone.js';
+import arm from './en-arm.js';
+import feat from './en-feat.js';
+import misc from './en-misc.js';
+import tvx from './en-tvx.js';
+
 export default {
   // ---------------------------------------------------------------- common
   'common.language': 'Language',
@@ -40,7 +51,7 @@ export default {
   'file.saveFailed': 'Couldn’t save the file.',
   'file.documents': 'Documents',
   'cfg.missingTitle': 'Setup missing',
-  'cfg.missingText': 'Open <code>js/config.js</code> and paste your Firebase project details. The README has a step-by-step guide.',
+  'cfg.missingText': 'Open <code>js/config.js</code> and paste your Firebase project details. There’s a step-by-step guide in <code>docs/INSTALLAZIONE.md</code>.',
 
   'lib.players': { one: '{n} player', other: '{n} players' },
   'lib.playersRange': '{min}–{max} players',
@@ -72,7 +83,7 @@ export default {
 
   'fb.err.anon': 'Anonymous sign-in isn’t enabled in Firebase. Open Authentication › Sign-in method and enable “Anonymous”.',
   'fb.err.domain': 'This address isn’t authorised in Firebase. Add it under Authentication › Settings › Authorised domains.',
-  'fb.err.permission': 'The database refused the operation. Check that you published the rules from database.rules.json.',
+  'fb.err.permission': 'The database refused the operation. Check that you published the rules from firebase/database.rules.json.',
   'fb.err.network': 'No connection. Check your Wi-Fi and try again.',
   'fb.err.other': 'Something went wrong ({code}). Reload the page and try again.',
 
@@ -89,7 +100,7 @@ export default {
   'upd.err.missing': 'There’s no APK published in the repository Releases yet.',
   'upd.err.invalid': 'The published version information isn’t valid: try again later.',
   'upd.err.http': 'The update service returned an error: try again later.',
-  'upd.err.noconfig': 'The official APK address isn’t set: the site isn’t on GitHub Pages (see the README, “Android app”).',
+  'upd.err.noconfig': 'The official APK address isn’t set: the site isn’t on GitHub Pages (see docs/ANDROID.md).',
   'upd.err.notapp': 'Download and install works from the Android app.',
   'upd.err.url': 'Unofficial APK address: download cancelled.',
   'upd.err.dlOffline': 'You’re offline: connect to the internet and try again.',
@@ -219,7 +230,7 @@ export default {
   'home.back.ended': 'ended',
   'home.me.loading': 'Loading your profile…',
   'home.me.title': 'Your profile',
-  'home.me.noFirebase': 'Profile not available: Firebase isn’t set up yet (see the README).',
+  'home.me.noFirebase': 'Profile not available: Firebase isn’t set up yet (see docs/INSTALLAZIONE.md).',
   'home.me.revoked': 'This device was unlinked from the profile by another device.',
   'home.me.missing': 'The profile saved here no longer exists.',
   'home.me.create': 'Create a profile',
@@ -376,7 +387,7 @@ export default {
   'dl.lead': 'The Android app: opens full screen, reads the TV’s QR code and uses the same profile as the website. Free, no ads.',
   'dl.inApp': 'You’re already in the app: below you can see if there’s a newer version.',
   'dl.ios': 'The Android app can’t be installed on iPhone and iPad: open the <a href="index.html">website</a> in Safari, tap <b>Share</b> and then <b>Add to Home Screen</b>.',
-  'dl.noconfig': 'Download isn’t set up on this site: the official APK address comes from the site published on GitHub Pages (README, “Android app”).',
+  'dl.noconfig': 'Download isn’t set up on this site: the official APK address comes from the site published on GitHub Pages (docs/ANDROID.md).',
   'dl.howTitle': 'How to install',
   'dl.step1': 'Tap <b>Download APK</b> and wait for the download to finish.',
   'dl.step2': 'Open the file <b>GameNight-Show.apk</b> (from your notifications or the Downloads folder).',
@@ -958,5 +969,17 @@ export default {
   'go.manual': 'If nothing happens, tap here: {name}',
   'go.missing': 'This link is not available right now.',
   'go.others': 'Here are the other official links:',
-  'go.home': 'Open GameNight Show'
+  'go.home': 'Open GameNight Show',
+
+  // Testi delle singole aree (file separati: en-<area>.js)
+  ...report,
+  ...selftest,
+  ...voice,
+  ...prep,
+  ...tv,
+  ...phone,
+  ...arm,
+  ...feat,
+  ...misc,
+  ...tvx,
 };

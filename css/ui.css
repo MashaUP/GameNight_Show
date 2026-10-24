@@ -532,3 +532,71 @@ html[data-theme="day"] .ui-body .ver-state--new { color: var(--ui-accent); }
 .go p { margin: 0; color: var(--ui-text-2); }
 .go .link-list { width: 100%; text-align: left; }
 .go-logo { border-radius: 1.4rem; }
+
+/* 1.9 · Avviso dei prestiti scaduti e in scadenza nella home */
+.loan-alert { margin: 0 0 var(--ui-s4); border: 1px solid color-mix(in srgb, var(--ui-pink) 55%, transparent); background: color-mix(in srgb, var(--ui-pink) 9%, var(--ui-surface)); }
+.loan-alert .rows { margin: var(--ui-s3) 0; }
+
+/* 1.9 · I tuoi dati, centro privacy, centro diagnostico (datacenter.js) */
+.dc-cats { display: grid; gap: var(--ui-s2); margin: var(--ui-s3) 0; }
+.dc-cat span { display: grid; gap: 0.1rem; }
+.dc-cat small { color: var(--ui-text-3); font-weight: 600; }
+.dc-steps { display: flex; gap: var(--ui-s2); list-style: none; padding: 0; margin: 0 0 var(--ui-s3); counter-reset: st; flex-wrap: wrap; }
+.dc-steps li { counter-increment: st; padding: 0.3rem 0.8rem; border-radius: 999px; border: 1px solid var(--ui-line-strong); color: var(--ui-text-3); font-weight: 700; font-size: 0.9rem; }
+.dc-steps li::before { content: counter(st) ". "; }
+.dc-steps li.is-on { background: var(--ui-primary); color: var(--ui-primary-ink); border-color: var(--ui-primary); }
+.dc-file { display: block; width: 100%; padding: var(--ui-s3); border: 2px dashed var(--ui-line-strong); border-radius: var(--ui-r); background: var(--ui-surface-2); color: var(--ui-text); }
+.dc-sec { border: 1px solid var(--ui-line); border-radius: var(--ui-r); padding: var(--ui-s3) var(--ui-s4); margin: var(--ui-s3) 0; background: var(--ui-surface); }
+.dc-sec h3 { margin: 0 0 var(--ui-s2); font-size: 1.05rem; }
+.dc-mode { display: grid; gap: var(--ui-s1); margin: var(--ui-s2) 0; }
+.dc-counts { margin: var(--ui-s2) 0 0; color: var(--ui-text-2); }
+.dc-how { padding-left: 1.2rem; display: grid; gap: var(--ui-s1); }
+.dc-actions { display: flex; flex-wrap: wrap; gap: var(--ui-s2); margin: var(--ui-s3) 0; }
+.dc-checks { list-style: none; padding: 0; margin: var(--ui-s3) 0; display: grid; gap: var(--ui-s2); }
+.dc-checks li { display: grid; grid-template-columns: 1.6rem 1fr; gap: var(--ui-s2); padding: var(--ui-s2) var(--ui-s3); border-radius: var(--ui-r-sm); background: var(--ui-surface-2); }
+.dc-checks li.is-err { outline: 1px solid var(--ui-err); }
+.dc-checks li.is-warn { outline: 1px solid var(--ui-warn); }
+.dc-sec .quick-toggle, .dc-cats .quick-toggle { align-items: flex-start; }
+.dc-sec .quick-toggle span, .dc-cats .quick-toggle span { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+
+/* ==========================================================================
+   1.6 · Sistema di design su tutte le pagine (body.ds-page: telefono, armadio,
+   ludoteca, resoconto, download, verifica). I token del vecchio tema "pop"
+   puntano a quelli nuovi, così anche i componenti specifici delle pagine
+   prendono colori, bordi sottili, angoli e ombre del sistema di design.
+   La TV (host.html) resta il palcoscenico: stessi colori e font, scenografia propria.
+   ========================================================================== */
+html[data-theme="night"] body.ds-page {
+  --cream: var(--ui-bg); --paper: var(--ui-surface); --ink: rgba(4, 1, 18, 0.55); --ink-soft: var(--ui-text-2);
+  --fg: var(--ui-text); --night-fill: var(--ui-primary); --sun: var(--ui-primary); --violet: var(--ui-accent);
+  --tomato: var(--ui-pink); --sky: var(--ui-info); --teal: var(--ui-ok); --error: var(--ui-err); --bw: 1px;
+}
+html[data-theme="day"] body.ds-page {
+  --cream: var(--ui-bg); --paper: var(--ui-surface); --ink: var(--ui-text); --ink-soft: var(--ui-text-2);
+  --sun: var(--ui-primary); --violet: var(--ui-accent); --tomato: var(--ui-pink); --error: var(--ui-err); --bw: 1px;
+}
+:root body.ds-page { font-weight: 600; }
+.ds-page h1, .ds-page h2, .ds-page h3 { color: var(--ui-text); }
+/* Superfici: bordi sottili, angoli morbidi, niente ombre piene sfalsate */
+:root .ds-page :is(.card, .panel, .ph-card, .am-card, .lib-card, .sheet, .mini-row, .rs-game, .dl-card) {
+  border: 1px solid var(--ui-line); border-radius: var(--ui-r-lg); box-shadow: var(--ui-shadow-sm);
+}
+:root .ds-page .card, :root .ds-page .sheet, :root .ds-page .panel { background: var(--ui-surface); color: var(--ui-text); background-image: none; }
+:root .ds-page .overlay { background: rgba(6, 3, 22, 0.66); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+:root .ds-page :is(.chip, .lib-chip, .rs-chip, .am-tag, .tag) { border: 1px solid var(--ui-line-strong); box-shadow: none; }
+:root .ds-page :is(select, textarea, .input) { border-radius: var(--ui-r); }
+:root .ds-page select.input, :root .ds-page textarea.input { background: rgba(8, 4, 30, 0.35); border: 1px solid var(--ui-line-strong); color: var(--ui-text); }
+html[data-theme="day"] .ds-page :is(select.input, textarea.input) { background: #FFFFFF; }
+:root .ds-page .btn-sec--sm { min-height: 2.5rem; }
+:root .ds-page .link-btn { color: var(--ui-text-2); }
+:root .ds-page .ph-top { border-bottom: 1px solid var(--ui-line); }
+:root .ds-page .tabs [aria-selected="true"], :root .ds-page .tab[aria-selected="true"] { background: var(--ui-primary); color: var(--ui-primary-ink); }
+:root .ds-page .muted { color: var(--ui-text-2); }
+:root .ds-page code { background: var(--ui-surface-2); border: 1px solid var(--ui-line); color: var(--ui-text); }
+@media print { :root body.ds-page.ds-page { background: #fff; color: #000; } }
+
+:root .ds-page .toast { bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+:root .ds-page .checks li { border-color: var(--ui-line-strong); }
+.st-head { position: relative; }
+.st-head .st-lang { position: absolute; top: 0; right: 0; }
+:root .ds-page .ph-home { background: var(--ui-surface-2); border: 1px solid var(--ui-line); box-shadow: none; font-weight: 800; font-size: 0.85rem; }

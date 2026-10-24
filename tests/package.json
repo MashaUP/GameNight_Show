@@ -4,7 +4,7 @@
   "description": "Controlli automatici di GameNight Show (file, codice, regole del database, link)",
   "scripts": {
     "lint": "cd .. && eslint -c tests/eslint.config.mjs --no-config-lookup js sw.js",
-    "test": "node check.mjs && npm run lint && node rules.test.js && node --test links.test.mjs"
+    "test": "node check.mjs && npm run lint && node rules.test.js && node --test links.test.mjs nightclock.test.mjs features.test.mjs pdf.test.mjs"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

@@ -18,9 +18,9 @@ OUT = os.path.join(HERE, 'out')
 # Ordine: prima i più veloci e quelli delle fondamenta.
 ALL = ['i18n', 'links', 'hub', 'app', 'upd13', 'selftest', 'fit', 'regress', 'xss', 'am12', 'armadio', 'arm2', 'images', 'rot',
        'tranche1', 'tranche2', 'tranche3', 'tranche5', 'tranche6', 'tranche7', 'tranche8', 'tranche9',
-       'phoneui', 'phone_en', 'endnight', 'hubjoin', 'armpick', 'pollmulti', 'sfx', 'mtour', 'dtour', 'look']
+       'phoneui', 'phone_en', 'endnight', 'hubjoin', 'armpick', 'pollmulti', 'sfx', 'mtour', 'dtour', 'look', 'night16', 'data16', 'exports16']
 # In CI (limite di 10 minuti): i flussi principali e le regole vere.
-CI = ['i18n', 'links', 'hub', 'app', 'upd13', 'regress', 'xss', 'am12', 'armadio', 'images', 'endnight', 'pollmulti', 'fit', 'look']
+CI = ['i18n', 'links', 'hub', 'app', 'upd13', 'regress', 'xss', 'am12', 'armadio', 'images', 'endnight', 'pollmulti', 'fit', 'look', 'night16', 'data16', 'exports16']
 
 BAD_SUMMARY = re.compile(r'^(ERRORI|FALLITI|BAD|ERRS|INIEZIONI TROVATE):\s*(.*)$')
 

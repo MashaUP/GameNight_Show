@@ -20,15 +20,15 @@ import {
   searchLibrary, parseQuery, gameRecord, tagsOf, isAvailable, GAME_STATUS, GAME_MODES, nightFacts,
   betResults, seersByPlayer, winsByPlayer, nightChampions
 } from './stats.js';
-import { renderShareImage, renderStoryImage, shareOrDownload, nightDate } from './share.js';
+import { renderShareImage, renderStoryImage, renderYearImage, shareOrDownload, nightDate } from './share.js';
 import {
   ding, pop, drumroll, fanfare, joinSound, soundsOn, setSounds, whistle, achievementSound, victory, sadTrombone,
-  newGameSound, endNightSound, isMuted, setMuted, getVolume, setVolume, SFX, playSfx, cymbal, audioStatus, audioBlocked, audioCtx,
+  newGameSound, endNightSound, isMuted, setMuted, getVolume, setVolume, SFX, playSfx, cymbal, audioStatus, audioNeedsUnlock, audioBlocked, audioCtx,
   clockTick, timeUp, fireworkSound, stepUp
 } from './sounds.js';
 import { fireworks, confettiBurst } from './fx.js';
 import {
-  bindTV, TablePanel, Sand, GameWheel, Quiz, Knocks, liveScoresHTML, editScore, rivalryLine, seasonTabHTML, rivalsTabHTML,
+  bindTV, TablePanel, GameWheel, Quiz, Knocks, liveScoresHTML, editScore, rivalryLine, seasonTabHTML, rivalsTabHTML,
   cardsTabHTML, bindCards, seasonStageHTML, VideoPanel, downloadICS, importGamesCSV, changeRegiaCode, cleanupOldRooms
 } from './tv-extras.js';
 import { Lite } from './lite.js';
@@ -38,18 +38,25 @@ import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armL
 import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
 import { Music, MUSIC_MODES, MOOD_LABEL } from './music.js';
+import { AtmoSound, SOUND_SCENES } from './atmosound.js';
 import { Atmo, ATMOS, atmoForGame } from './atmo.js';
 import { TRIVIA, groupFacts, tonightNews } from './facts.js';
 import { commentatorMode, setCommentatorMode, COMMENTATOR_MODES, revealComment, nightRecap, podiumLine, speak, stopSpeaking } from './commentary.js';
-import { reportHTML, printReport } from './report.js';
+import { exportReport } from './report.js';
 import { Vault, checksum, sealBackup, validateBackup, storageInfo, askPersistence } from './vault.js';
 import { isSafeMode, setSafeMode, watchErrors } from './safe.js';
 import { trophies, affinities, lastPlayed, freshnessLabel, personKey, awardTitle } from './stats.js';
-import { t as tr, has as trHas } from './i18n.js';
+import { t as tr, has as trHas, fmtDate as fmtDateL, fmtNum, fmtList, langSwitchHTML } from './i18n.js';
+import { bindSharedTimer, SharedTimer, kindLabel } from './sharedtimer.js';
+import { pausePatch, playElapsed as elapsedOf } from './nightclock.js';
+import { Ambient, bindAmbient } from './ambient.js';
+import { Favs } from './favs.js';
+import { initSpatialNav } from './spatialnav.js';
+import { CustomSounds, publicList, customIdOf, checkFile, CSFX_ICONS, CSFX_MAX } from './customsfx.js';
 
 const app = $('#app');
 const STORE_KEY = 'gnr_host_room';
-const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows'];
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer'];
 // Quanto la TV aspetta un telefono che si scollega durante la votazione.
 const GRACE_MS = 60000;
 const GROUPS_KEY = 'gnr_groups';
@@ -91,7 +98,9 @@ const S = {
 const libRef = (path = '') => libraryRef(S.meta, path);
 const hasLib = () => Boolean(S.meta?.armadioId || S.meta?.groupId);
 /** Nome da mostrare per l'armadio. */
-const armadioName = () => S.meta?.armadioName || (S.meta?.armadioId ? 'Armadio' : (S.meta?.groupName ? `Armadio di ${S.meta.groupName}` : 'Armadio'));
+const armadioName = () => S.meta?.armadioName || (S.meta?.armadioId ? tr('tv.armadio') : (S.meta?.groupName ? tr('tv.armadioOf', { name: S.meta.groupName }) : tr('tv.armadio')));
+/** Ora "22:14:31" (o "22:14") nella lingua scelta. */
+const clockL = (d, sec = true) => fmtDateL(d, sec ? { hour: 'numeric', minute: 'numeric', second: 'numeric' } : { hour: '2-digit', minute: '2-digit' });
 
 const EMPTY_DRAFT = () => ({ name: '', image: null, libraryId: null, winners: [], spectators: [], quick: false });
 
@@ -103,6 +112,16 @@ bindTV({
   winsTonight: () => winsTonight(), board: () => buildBoard(S.games, S.votes), regiaKey: (c) => regiaKey(c), poolItems: () => poolItems(),
   chooseGame: (id) => chooseGame(id)
 });
+// Timer condiviso (turni, round, intervalli): la TV lo comanda e ne tiene la coerenza con la pausa.
+bindSharedTimer({
+  role: 'tv', code: () => S.code, uid: () => S.uid, timer: () => S.timer, state: () => S.state,
+  canControl: () => Boolean(S.code && S.meta?.hostUid === S.uid), explainError,
+  openPanel: () => TablePanel.open('timer'),
+  onTick: (v) => { if (v.sound) clockTick(v.sec <= 3); },
+  onExpire: (v) => { if (v.sound) timeUp(); logEvent(tr('timer.log', { name: v.label || kindLabel(v.kind) }), '⏰'); }
+});
+// Schermata ambientale: legge lo stesso stato della serata (ambientModel) e si spegne con meta/ambient.
+bindAmbient({ model: () => ambientModel(), exit: () => setAmbient(false) });
 // Pre-partita: giochi sul tavolo, desideri, scaletta, regole.
 bindPrep({
   S, roomRef, set, update, remove, serverTimestamp, serverNow, explainError,
@@ -112,8 +131,10 @@ bindPrep({
 });
 
 document.documentElement.classList.add('tv');
+// Telecomando: le frecce spostano il fuoco tra i pulsanti (le schermate che usano le frecce le tengono per sé).
+initSpatialNav({ when: () => !tourOpen() });
 applyTheme();
-Lite.watch((fps) => toast(`La TV andava a scatti (${fps} fotogrammi al secondo): ho acceso la modalità leggera. Si cambia negli Strumenti.`, 'warn'));
+Lite.watch((fps) => toast(tr('tv.liteOn', { fps }), 'warn'));
 installImageFallback();
 ErrLog.install();
 setupGlobalKeys();
@@ -163,11 +184,11 @@ async function boot() {
   // Vecchi link "host.html?armadio=CODICE": l'armadio ha la sua pagina (1.2)
   const armLink = normalizeCode(param('armadio') || '', 6);
   if (armLink.length === 6 && !param('room')) { location.replace(`armadio.html?a=${armLink}`); return; }
-  app.innerHTML = loadingHTML('Collegamento in corso…');
+  app.innerHTML = loadingHTML(tr('tv.boot.connecting'));
   try {
     S.uid = await connect();
   } catch (err) {
-    showFatal(app, 'Impossibile collegarsi', explainError(err));
+    showFatal(app, tr('tv.boot.connectFailed'), explainError(err));
     return;
   }
 
@@ -186,7 +207,7 @@ async function boot() {
       if (meta && meta.hostUid === S.uid) { openRoom(wanted); toastResumed(wanted); return; }
       if (meta) { renderCreate({ resume: wanted, regia: hashRegia }); return; }
     } catch (err) {
-      showFatal(app, 'Impossibile leggere la stanza', explainError(err));
+      showFatal(app, tr('tv.boot.readFailed'), explainError(err));
       return;
     }
   }
@@ -199,23 +220,23 @@ async function boot() {
 /** Dopo un ricaricamento: "Serata ripresa, copia valida delle 22:14:31". */
 async function toastResumed(room) {
   const saved = await Vault.loadCurrent(room).catch(() => null);
-  if (saved?.at) toast(`Serata ripresa · ultima copia valida delle ${new Date(saved.at).toLocaleTimeString('it-IT')}${saved.fallback ? ' (la più recente era rovinata)' : ''}`);
+  if (saved?.at) toast(`${tr('tv.boot.resumed', { time: clockL(saved.at) })}${saved.fallback ? tr('tv.boot.resumedFallback') : ''}`);
 }
 
 /** Riprende la guida di una stanza: subito se è di questo dispositivo, altrimenti con il codice regia. */
 async function takeOver(codeIn, regiaIn) {
   const code = normalizeCode(codeIn);
   const regia = normalizeCode(regiaIn, 8);
-  if (code.length !== 4) throw userError('Il codice stanza ha 4 caratteri.');
+  if (code.length !== 4) throw userError(tr('tv.take.codeLen'));
   const meta = (await get(roomRef(code, 'meta'))).val();
-  if (!meta) throw userError('Nessuna stanza con questo codice.');
+  if (!meta) throw userError(tr('tv.take.noRoom'));
   if (meta.hostUid !== S.uid) {
-    if (regia.length !== 8) throw userError('Scrivi il codice regia di 8 caratteri.');
+    if (regia.length !== 8) throw userError(tr('tv.take.regiaLen'));
     try {
       await set(roomRef(code, `takeover/${S.uid}`), regia);
       await update(roomRef(code, 'meta'), { hostUid: S.uid });
     } catch {
-      throw userError('Codice regia sbagliato.');
+      throw userError(tr('tv.take.regiaWrong'));
     }
     localStorage.setItem(regiaKey(code), regia);
   }
@@ -232,13 +253,13 @@ function renderLostRegia() {
   app.innerHTML = `
     <main class="create">
       <form class="card create-card" id="lostForm" novalidate>
-        <h2>La regia è passata a un altro dispositivo</h2>
-        <p>La serata <b>${esc(S.code)}</b> ora è guidata da un altro computer o tablet. Se vuoi riprenderla da qui, usa il codice regia.</p>
-        <label class="field-label" for="lostRegia">Codice regia</label>
+        <h2>${tr('tv.lost.title')}</h2>
+        <p>${tr('tv.lost.text', { code: esc(S.code) })}</p>
+        <label class="field-label" for="lostRegia">${tr('tv.regiaCode')}</label>
         <input class="input code-input code-input--8" id="lostRegia" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" value="${esc(prettyRegia(known))}">
         <p class="form-error" id="lostErr" role="alert"></p>
-        <button class="btn btn-big btn-block" type="submit">Riprendi la regia qui</button>
-        <button class="link-btn" type="button" id="lostNew">Crea una serata nuova</button>
+        <button class="btn btn-big btn-block" type="submit">${tr('tv.lost.resume')}</button>
+        <button class="link-btn" type="button" id="lostNew">${tr('tv.lost.new')}</button>
       </form>
     </main>`;
   $('#lostForm').addEventListener('submit', async (e) => {
@@ -337,7 +358,7 @@ function watchArmadio() {
   let first = true;
   const stopInfo = onValue(armadioRef(aid, 'info'), (s) => {
     S.armMissing = !s.exists();
-    if (S.armMissing && first) toast('L’armadio di questa serata non esiste più: scegline un altro da Armadio › Cambia armadio.', 'warn');
+    if (S.armMissing && first) toast(tr('tv.arm.missing'), 'warn');
     first = false;
     const nm = s.val()?.name;
     if (nm && S.meta && S.code && nm !== S.meta.armadioName && S.meta.armadioId === aid && !S.meta.demo) {
@@ -357,12 +378,12 @@ function armReadOnly() { return Boolean(S.meta?.armadioReadOnly); }
 /** Cambia l'armadio della serata (prima di iniziare o tra un gioco e l'altro). */
 async function switchArmadio(id) {
   const info = (await get(armadioRef(id, 'info'))).val();
-  if (!info) throw userError('Nessun armadio con questo codice.');
+  if (!info) throw userError(tr('tv.arm.noArm'));
   await update(roomRef(S.code, 'meta'), { armadioId: id, armadioName: info.name, armadioReadOnly: S.meta?.demo ? true : null });
   const n = await copyPicks(S.code, id);
   rememberArmadio({ id, name: info.name });
-  logEvent(`Armadio della serata: ${info.name}`, '📦');
-  toast(`📦 Ora la serata usa “${info.name}”${n ? ` (⭐ ${n} per stasera)` : ''}`);
+  logEvent(tr('tv.arm.log', { name: info.name }), '📦');
+  toast(`${tr('tv.arm.switched', { name: info.name })}${n ? tr('tv.arm.switchedPicks', { n }) : ''}`);
 }
 
 function loadingHTML(text) {
@@ -374,90 +395,90 @@ function renderCreate(opts = {}) {
   history.replaceState(null, '', location.pathname);
   app.innerHTML = `
     <main class="create">
-      <a class="btn-sec back-btn create-back" href="index.html">← <span>Indietro</span></a>
+      <a class="btn-sec back-btn create-back" href="index.html">← <span>${tr('tv.back')}</span></a>
       <div class="create-hero">
         <h1 class="logo logo--xl">GameNight <span class="logo-tag">Show</span></h1>
-        <p class="create-lead">Votate i party game dal telefono: la TV svela i voti e fa la classifica.</p>
+        <p class="create-lead">${tr('tv.create.lead')}</p>
         <section class="card arm-card" aria-labelledby="armCardTitle">
-          <h2 id="armCardTitle">📦 Armadio dei giochi</h2>
-          <p class="muted small">I vostri giochi con la foto, indipendenti da gruppi e stanze: preparali quando vuoi, ogni serata li consulta.</p>
+          <h2 id="armCardTitle">${tr('tv.create.armTitle')}</h2>
+          <p class="muted small">${tr('tv.create.armText')}</p>
           <div class="arm-list" id="armList">
-            ${recentArmadi().map((a) => `<button type="button" class="arm-open-btn" data-armopen="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('') || '<p class="muted small">Ancora nessun armadio su questo computer.</p>'}
+            ${recentArmadi().map((a) => `<button type="button" class="arm-open-btn" data-armopen="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('') || `<p class="muted small">${tr('tv.create.noArm')}</p>`}
           </div>
           <div class="arm-actions" id="armActions">
-            <button type="button" class="btn-sec btn-sec--sm" data-armmode="new">➕ <span>Nuovo armadio</span></button>
-            <button type="button" class="btn-sec btn-sec--sm" data-armmode="code">🔑 <span>Ho un codice</span></button>
+            <button type="button" class="btn-sec btn-sec--sm" data-armmode="new">➕ <span>${tr('tv.create.armNew')}</span></button>
+            <button type="button" class="btn-sec btn-sec--sm" data-armmode="code">🔑 <span>${tr('tv.create.armCode')}</span></button>
           </div>
           <div class="arm-inline" id="armInline" hidden>
-            <label class="sr-only" for="armInlineIn">Nome o codice dell’armadio</label>
+            <label class="sr-only" for="armInlineIn">${tr('tv.create.armInline')}</label>
             <input class="input input--sm" id="armInlineIn" maxlength="40" autocomplete="off">
-            <button type="button" class="btn btn-sec--sm" id="armInlineGo">Apri</button>
+            <button type="button" class="btn btn-sec--sm" id="armInlineGo">${tr('tv.open')}</button>
           </div>
         </section>
       </div>
       <form class="card create-card" id="createForm">
-        <h2>Nuova serata</h2>
+        <h2>${tr('tv.create.title')}</h2>
         <div class="count-row">
-          <span class="field-label" id="countLabel">Giocatori</span>
+          <span class="field-label" id="countLabel">${tr('tv.players')}</span>
           <div class="stepper" role="group" aria-labelledby="countLabel">
-            <button type="button" class="step-btn" data-step="-1" aria-label="Un giocatore in meno">${ICONS.minus}</button>
+            <button type="button" class="step-btn" data-step="-1" aria-label="${tr('tv.create.oneLess')}">${ICONS.minus}</button>
             <output id="countOut" aria-live="polite">${S.setupCount}</output>
-            <button type="button" class="step-btn" data-step="1" aria-label="Un giocatore in più">${ICONS.plus}</button>
+            <button type="button" class="step-btn" data-step="1" aria-label="${tr('tv.create.oneMore')}">${ICONS.plus}</button>
           </div>
-          <span class="muted small">da ${MIN_PLAYERS} a ${MAX_PLAYERS}, si cambia anche dopo</span>
+          <span class="muted small">${tr('tv.create.range', { min: MIN_PLAYERS, max: MAX_PLAYERS })}</span>
         </div>
         <div class="group-field">
-          <label class="field-label" for="groupSel">Il vostro gruppo</label>
+          <label class="field-label" for="groupSel">${tr('tv.create.group')}</label>
           <select class="input select" id="groupSel">
             ${recentGroups().map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('')}
-            <option value="__new">Nuovo gruppo…</option>
-            <option value="__code">Ho il codice di un gruppo…</option>
+            <option value="__new">${tr('tv.create.groupNew')}</option>
+            <option value="__code">${tr('tv.create.groupHasCode')}</option>
           </select>
-          <label class="sr-only" for="groupName">Nome del nuovo gruppo</label>
-          <input class="input" id="groupName" maxlength="40" autocomplete="off" placeholder="Es. Amici del giovedì" hidden>
-          <label class="sr-only" for="groupCode">Codice del gruppo</label>
-          <input class="input code-input code-input--6" id="groupCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Codice di 6 caratteri" hidden>
-          <p class="muted small">Il gruppo conserva classifica di sempre, profili e foto.</p>
+          <label class="sr-only" for="groupName">${tr('tv.create.groupName')}</label>
+          <input class="input" id="groupName" maxlength="40" autocomplete="off" placeholder="${tr('tv.create.groupPh')}" hidden>
+          <label class="sr-only" for="groupCode">${tr('tv.create.groupCode')}</label>
+          <input class="input code-input code-input--6" id="groupCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${tr('tv.code6')}" hidden>
+          <p class="muted small">${tr('tv.create.groupHint')}</p>
         </div>
         <div class="group-field arm-field">
-          <label class="field-label" for="armSel">Giochi dall’armadio</label>
+          <label class="field-label" for="armSel">${tr('tv.create.armSel')}</label>
           <select class="input select" id="armSel">
             ${recentArmadi().map((a) => `<option value="${esc(a.id)}">📦 ${esc(a.name)}</option>`).join('')}
-            <option value="__new">Nuovo armadio…</option>
-            <option value="__code">Ho il codice di un armadio…</option>
+            <option value="__new">${tr('tv.create.armNewOpt')}</option>
+            <option value="__code">${tr('tv.create.armHasCode')}</option>
           </select>
-          <label class="sr-only" for="armName">Nome del nuovo armadio</label>
-          <input class="input" id="armName" maxlength="40" autocomplete="off" placeholder="Nome dell’armadio, es. I giochi di Andrea" hidden>
-          <label class="sr-only" for="armCode">Codice dell’armadio</label>
-          <input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Codice di 6 caratteri" hidden>
+          <label class="sr-only" for="armName">${tr('tv.create.armName')}</label>
+          <input class="input" id="armName" maxlength="40" autocomplete="off" placeholder="${tr('tv.create.armNamePh')}" hidden>
+          <label class="sr-only" for="armCode">${tr('tv.create.armCodeLabel')}</label>
+          <input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${tr('tv.code6')}" hidden>
         </div>
         <p class="form-error" id="createErr" role="alert"></p>
-        <button class="btn btn-big btn-block" type="submit" id="createBtn">Crea la stanza</button>
+        <button class="btn btn-big btn-block" type="submit" id="createBtn">${tr('tv.create.btn')}</button>
         <div class="create-links">
-          <button class="link-btn" type="button" id="toResume">Riprendi una serata già iniziata</button>
-          <button class="link-btn" type="button" id="demoBtn">🧪 Prova con giocatori finti</button>
-          <button class="link-btn" type="button" id="installTvBtn">📲 Installa GameNight su un altro dispositivo</button>
+          <button class="link-btn" type="button" id="toResume">${tr('tv.create.toResume')}</button>
+          <button class="link-btn" type="button" id="demoBtn">${tr('tv.create.demo')}</button>
+          <button class="link-btn" type="button" id="installTvBtn">${tr('tv.create.install')}</button>
         </div>
       </form>
       ${opts.recover ? recoveryHTML(opts.recover) : ''}
       <form class="card create-card" id="resumeForm" novalidate hidden>
-        <h2>Riprendi una serata</h2>
-        <p class="muted">Per continuare una serata dopo un crash, il giorno dopo, o da un altro computer.</p>
+        <h2>${tr('tv.resume.title')}</h2>
+        <p class="muted">${tr('tv.resume.text')}</p>
         <div class="recent-rooms" id="recentRooms"></div>
         <div class="resume-fields">
           <div class="field">
-            <label class="field-label" for="rsCode">Codice stanza</label>
+            <label class="field-label" for="rsCode">${tr('tv.roomCode')}</label>
             <input class="input code-input" id="rsCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" value="${esc(opts.resume || '')}">
           </div>
           <div class="field">
-            <label class="field-label" for="rsRegia">Codice regia</label>
+            <label class="field-label" for="rsRegia">${tr('tv.regiaCode')}</label>
             <input class="input code-input code-input--8" id="rsRegia" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" value="${esc(prettyRegia(opts.regia || ''))}">
           </div>
         </div>
-        <p class="muted small">Il codice regia serve solo se la serata è stata creata su un altro dispositivo: lo trovi nel pannello Giocatori della TV.</p>
+        <p class="muted small">${tr('tv.resume.hint')}</p>
         <p class="form-error" id="rsErr" role="alert"></p>
-        <button class="btn btn-big btn-block" type="submit" id="rsBtn">Riprendi la serata</button>
-        <button class="link-btn" type="button" id="toCreate">Crea invece una serata nuova</button>
+        <button class="btn btn-big btn-block" type="submit" id="rsBtn">${tr('tv.resume.btn')}</button>
+        <button class="link-btn" type="button" id="toCreate">${tr('tv.resume.toCreate')}</button>
       </form>
     </main>`;
 
@@ -466,11 +487,11 @@ function renderCreate(opts = {}) {
     $('#resumeForm').hidden = !on;
     if (!on) return;
     const box = $('#recentRooms');
-    box.innerHTML = '<p class="muted small">Cerco le serate recenti…</p>';
+    box.innerHTML = `<p class="muted small">${tr('tv.resume.searching')}</p>`;
     const rooms = await recentRooms();
-    box.innerHTML = rooms.length ? `<span class="field-label">Serate recenti</span>` + rooms.map((r) => `
+    box.innerHTML = rooms.length ? `<span class="field-label">${tr('tv.resume.recent')}</span>` + rooms.map((r) => `
       <button type="button" class="recent-room" data-room="${esc(r.code)}">
-        <b>${esc(r.group)}</b><span>${esc(r.at ? new Date(r.at).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }) : '')}</span><span class="code-chip code-chip--sm">${esc(r.code)}</span>
+        <b>${esc(r.group)}</b><span>${esc(r.at ? fmtDateL(r.at, { weekday: 'short', day: 'numeric', month: 'short' }) : '')}</span><span class="code-chip code-chip--sm">${esc(r.code)}</span>
       </button>`).join('') : '';
   };
   $('#toResume').addEventListener('click', () => showResume(true));
@@ -503,7 +524,7 @@ function renderCreate(opts = {}) {
   });
   if (opts.resume) {
     showResume(true);
-    $('#rsErr').textContent = opts.regia ? 'Codice regia ricevuto: premi "Riprendi la serata" per guidarla da qui.' : 'Questa serata è guidata da un altro dispositivo: per riprenderla da qui serve il codice regia.';
+    $('#rsErr').textContent = opts.regia ? tr('tv.resume.gotRegia') : tr('tv.resume.needRegia');
     const known = opts.regia || regiaCode(opts.resume);
     if (known) $('#rsRegia').value = prettyRegia(known);
     setTimeout(() => (opts.regia ? $('#rsBtn') : $('#rsRegia')).focus(), 50);
@@ -586,9 +607,9 @@ function renderCreate(opts = {}) {
       armMode = m.dataset.armmode;
       inl.hidden = false;
       inlIn.value = '';
-      inlIn.placeholder = armMode === 'new' ? 'Nome, es. I giochi di Andrea' : 'Codice di 6 caratteri';
+      inlIn.placeholder = armMode === 'new' ? tr('tv.create.armInlinePh') : tr('tv.code6');
       inlIn.maxLength = armMode === 'new' ? 40 : 6;
-      $('#armInlineGo').textContent = armMode === 'new' ? 'Crea' : 'Apri';
+      $('#armInlineGo').textContent = armMode === 'new' ? tr('tv.create.create') : tr('tv.open');
       inlIn.focus();
       return;
     }
@@ -599,12 +620,12 @@ function renderCreate(opts = {}) {
     const err = $('#createErr');
     try {
       if (armMode === 'new') {
-        const arm = await createArmadio(cleanName(inlIn.value) || 'I nostri giochi');
+        const arm = await createArmadio(cleanName(inlIn.value) || 'I nostri giochi'); // i18n-ok: nome predefinito salvato nel database
         rememberArmadio(arm);
         renderArmadio(arm);
       } else {
         const id = normalizeCode(inlIn.value, 6);
-        if (id.length !== 6) throw userError('Il codice dell’armadio ha 6 caratteri.');
+        if (id.length !== 6) throw userError(tr('tv.arm.codeLen'));
         await openArmadioById(id);
       }
     } catch (ex) { err.textContent = explainError(ex); }
@@ -615,13 +636,13 @@ function renderCreate(opts = {}) {
     else $('[data-armmode="new"]')?.click();
   }
   setTimeout(() => runTour('create', [
-    { sel: '.count-row', title: 'Quanti siete?', text: 'Scegli i posti della stanza: potrai cambiarli in qualsiasi momento, anche a serata iniziata.' },
-    { sel: '#groupSel', title: 'Il vostro gruppo', text: 'Il gruppo conserva da una serata all’altra classifica di sempre, profili, foto e statistiche.' },
-    { sel: '.arm-card', title: 'L’armadio dei giochi', text: 'I vostri giochi con la foto, indipendenti da gruppi e stanze. Aprilo e riempilo anche giorni prima della serata.' },
-    { sel: '#armSel', title: 'Quale armadio consultare', text: 'La stanza sceglie i giochi da questo armadio: con il codice anche un armadio di un altro computer.' },
-    { sel: '#createBtn', title: 'Crea la stanza', text: 'La TV mostra un QR: ognuno lo inquadra con il telefono ed entra con nome e personaggio.' },
-    { sel: '#demoBtn', title: 'Vuoi provare prima?', text: 'Con i giocatori finti fai una serata di prova da solo: votano da soli, e nulla viene salvato nel gruppo.' },
-    { sel: '#toResume', title: 'Serata interrotta?', text: 'Da qui riprendi una serata già iniziata, anche da un altro computer con il codice regia.' }
+    { sel: '.count-row', title: tr('tv.tour.c1.t'), text: tr('tv.tour.c1.x') },
+    { sel: '#groupSel', title: tr('tv.create.group'), text: tr('tv.tour.c2.x') },
+    { sel: '.arm-card', title: tr('tv.tour.c3.t'), text: tr('tv.tour.c3.x') },
+    { sel: '#armSel', title: tr('tv.tour.c4.t'), text: tr('tv.tour.c4.x') },
+    { sel: '#createBtn', title: tr('tv.create.btn'), text: tr('tv.tour.c5.x') },
+    { sel: '#demoBtn', title: tr('tv.tour.c6.t'), text: tr('tv.tour.c6.x') },
+    { sel: '#toResume', title: tr('tv.tour.c7.t'), text: tr('tv.tour.c7.x') }
   ]), 700);
 }
 
@@ -630,13 +651,14 @@ function renderCreate(opts = {}) {
 // ---------------------------------------------------------------------------
 
 const BOT_NAMES = ['Ada', 'Bruno', 'Carla', 'Dario', 'Elena', 'Furio', 'Gina', 'Ivo'];
-const BOT_MOTTOS = ['Stavolta vinco io', 'Gioco per divertirmi (e vincere)', null, 'Le regole le leggo dopo', null];
-const BOT_COMMENTS = ['Che risate!', 'Rigiochiamolo subito', 'Troppo lungo', 'Mi hanno tradito', null, null, null];
+// Motti e commenti dei giocatori finti: finiscono nel database come se li avessero scritti loro.
+const BOT_MOTTOS = ['Stavolta vinco io', 'Gioco per divertirmi (e vincere)', null, 'Le regole le leggo dopo', null]; // i18n-ok
+const BOT_COMMENTS = ['Che risate!', 'Rigiochiamolo subito', 'Troppo lungo', 'Mi hanno tradito', null, null, null]; // i18n-ok
 
 async function createDemo() {
   let code = null;
   for (let i = 0; i < 12 && !code; i++) { const c = randomCode(); if (!(await get(roomRef(c, 'meta'))).exists()) code = c; }
-  if (!code) throw new Error('nessun codice libero');
+  if (!code) throw new Error(tr('tv.noFreeCode'));
   // La prova usa l'armadio scelto (solo in lettura: la prova non cambia la collezione).
   const armSel = $('#armSel')?.value || '';
   let arm = null;
@@ -739,7 +761,7 @@ async function createArmadio(name) {
     const candidate = randomCode(6);
     if (!(await get(armadioRef(candidate, 'info'))).exists()) id = candidate;
   }
-  if (!id) throw new Error('nessun codice libero');
+  if (!id) throw new Error(tr('tv.noFreeCode'));
   await set(armadioRef(id, 'info'), { name, ownerUid: S.uid, createdAt: serverTimestamp() });
   return { id, name, isNew: true };
 }
@@ -747,7 +769,7 @@ async function createArmadio(name) {
 /** Apre un armadio esistente (dal suo codice) come pagina. */
 async function openArmadioById(id, knownName = '') {
   const info = (await get(armadioRef(id, 'info'))).val();
-  if (!info) { forgetArmadio(id); throw userError('Nessun armadio con questo codice.'); }
+  if (!info) { forgetArmadio(id); throw userError(tr('tv.arm.noArm')); }
   const arm = { id, name: info.name || knownName };
   rememberArmadio(arm);
   renderArmadio(arm);
@@ -758,7 +780,7 @@ async function resolveArmadio() {
   const choice = $('#armSel')?.value || '__new';
   if (choice === '__new') {
     const g = chosenGroupName();
-    const name = cleanName($('#armName')?.value || '') || (g ? `Giochi di ${g}` : 'I nostri giochi');
+    const name = cleanName($('#armName')?.value || '') || (g ? `Giochi di ${g}` : 'I nostri giochi'); // i18n-ok: nome predefinito salvato nel database
     const arm = await createArmadio(name);
     // Il gruppo aveva già dei giochi (versioni precedenti): passano nel nuovo armadio.
     const gid = $('#groupSel')?.value;
@@ -766,11 +788,11 @@ async function resolveArmadio() {
     return arm;
   }
   const id = choice === '__code' ? normalizeCode($('#armCode').value, 6) : choice;
-  if (id.length !== 6) throw userError('Il codice dell’armadio ha 6 caratteri.');
+  if (id.length !== 6) throw userError(tr('tv.arm.codeLen'));
   const info = (await get(armadioRef(id, 'info'))).val();
   if (!info) {
     forgetArmadio(id);
-    throw userError(choice === '__code' ? 'Nessun armadio con questo codice.' : 'Questo armadio non esiste più: creane uno nuovo.');
+    throw userError(choice === '__code' ? tr('tv.arm.noArm') : tr('tv.arm.gone'));
   }
   return { id, name: info.name };
 }
@@ -792,22 +814,22 @@ async function resolveGroup() {
   const choice = $('#groupSel').value;
   if (choice === '__new') {
     const name = cleanName($('#groupName').value);
-    if (!name) throw userError('Dai un nome al gruppo, es. "Amici del giovedì".');
+    if (!name) throw userError(tr('tv.group.needName'));
     let id = null;
     for (let i = 0; i < 12 && !id; i++) {
       const candidate = randomCode(6);
       if (!(await get(groupRef(candidate, 'info'))).exists()) id = candidate;
     }
-    if (!id) throw new Error('nessun codice libero');
+    if (!id) throw new Error(tr('tv.noFreeCode'));
     await set(groupRef(id, 'info'), { name, ownerUid: S.uid, createdAt: serverTimestamp() });
     return { id, name };
   }
   const id = choice === '__code' ? normalizeCode($('#groupCode').value, 6) : choice;
-  if (id.length !== 6) throw userError('Il codice del gruppo ha 6 caratteri.');
+  if (id.length !== 6) throw userError(tr('tv.group.codeLen'));
   const info = (await get(groupRef(id, 'info'))).val();
   if (!info) {
     forgetGroup(id);
-    throw userError(choice === '__code' ? 'Nessun gruppo con questo codice.' : 'Questo gruppo non esiste più: creane uno nuovo.');
+    throw userError(choice === '__code' ? tr('tv.group.noGroup') : tr('tv.group.gone'));
   }
   return { id, name: info.name };
 }
@@ -815,7 +837,7 @@ async function resolveGroup() {
 async function createRoom() {
   const btn = $('#createBtn');
   btn.disabled = true;
-  btn.textContent = 'Creo la stanza…';
+  btn.textContent = tr('tv.create.creating');
   try {
     const group = await resolveGroup();
     rememberGroup(group);
@@ -829,7 +851,7 @@ async function createRoom() {
       const snap = await get(roomRef(candidate, 'meta'));
       if (!snap.exists()) code = candidate;
     }
-    if (!code) throw new Error('nessun codice libero');
+    if (!code) throw new Error(tr('tv.noFreeCode'));
     await set(roomRef(code, 'meta'), {
       hostUid: S.uid, maxPlayers: S.setupCount, createdAt: serverTimestamp(),
       groupId: group.id, groupName: group.name, soundboard: true,
@@ -846,7 +868,7 @@ async function createRoom() {
   } catch (err) {
     $('#createErr').textContent = explainError(err);
     btn.disabled = false;
-    btn.textContent = 'Crea la stanza';
+    btn.textContent = tr('tv.create.btn');
   }
 }
 
@@ -855,17 +877,19 @@ function openRoom(code) {
   loadDraft();
   localStorage.setItem(STORE_KEY, code);
   history.replaceState(null, '', `${location.pathname}?room=${code}`);
-  app.innerHTML = loadingHTML('Apro la stanza…');
+  app.innerHTML = loadingHTML(tr('tv.boot.opening'));
   for (const key of WATCHED) {
     onValue(roomRef(code, key), (snap) => {
       const val = snap.val();
       S[key] = (key === 'meta' || key === 'state' || key === 'pendingImage' || key === 'poll') ? val : (val || {});
       S.loaded.add(key);
       render();
-    }, (err) => showFatal(app, 'Connessione alla stanza persa', explainError(err)));
+    }, (err) => showFatal(app, tr('tv.boot.lost'), explainError(err)));
   }
   requestWakeLock();
   trackConnection(connectionStatus);
+  // Suoni personalizzati di questo computer: i telefoni ricevono solo nome e icona.
+  CustomSounds.list().then(() => { if (S.meta) publishCustomSfx(); }).catch(() => {});
   // Battito: i telefoni capiscono se la pagina della TV si è bloccata.
   const beat = () => { if (S.meta?.hostUid === S.uid) set(roomRef(code, 'heartbeat'), serverTimestamp()).catch(() => {}); };
   beat();
@@ -885,10 +909,8 @@ function openRoom(code) {
 // macchina del tempo, backup di emergenza con versione del formato
 // ---------------------------------------------------------------------------
 
-const PHASE_LABEL = {
-  lobby: 'lobby', idle: 'scelta del prossimo gioco', voting: 'votazione', reveal: 'reveal', board: 'classifica',
-  poll: 'sondaggio', awards: 'premiazione', alltime: 'classifica di sempre'
-};
+/** Nome della fase per la cronologia ("votazione", "classifica"…). */
+const phaseLabel = (p) => (trHas(`tv.phase.${p}`) ? tr(`tv.phase.${p}`) : p);
 
 /** Copia della serata. Senza foto (withImages=false) le immagini dei giochi restano segnate come "__img". */
 function backupData(withImages = false) {
@@ -936,7 +958,7 @@ const Save = {
     if (!S.code || !S.meta) return Promise.resolve();
     const p = Vault.snapshot(S.code, label, backupData(false), kind).catch(() => null);
     this.snapSig = dataSig();
-    if (kind !== 'auto') logEvent(`Istantanea: ${label}`, '📸');
+    if (kind !== 'auto') logEvent(tr('tv.log.snap', { label }), '📸');
     return Promise.race([p, new Promise((r) => setTimeout(r, 700))]);
   },
   /** Ogni minuto, se la serata è cambiata, un'istantanea automatica. */
@@ -944,7 +966,7 @@ const Save = {
     if (!S.code || !S.meta || S.state?.phase === 'lobby') return;
     const sig = dataSig();
     if (sig === this.snapSig) return;
-    this.snap('Salvataggio automatico', 'auto');
+    this.snap(tr('tv.snap.auto'), 'auto');
   }
 };
 
@@ -963,22 +985,22 @@ function trackEvents() {
   };
   S.ev = now;
   if (!prev) return;
-  const name = (uid) => S.players[uid]?.name || 'Qualcuno';
-  const gname = (gid) => S.games[gid]?.name || 'un gioco';
+  const name = (uid) => S.players[uid]?.name || tr('tv.someone');
+  const gname = (gid) => S.games[gid]?.name || tr('tv.aGame');
   for (const [u, st] of Object.entries(now.players)) {
-    if (!prev.players[u]) logEvent(`Entra nella serata: ${name(u)}`, '👋');
-    else if (prev.players[u] !== st) logEvent(st === 'away' ? `Esce dalla serata: ${name(u)}` : `Rientra: ${name(u)}`, st === 'away' ? '🚪' : '↩️');
+    if (!prev.players[u]) logEvent(tr('tv.log.join', { name: name(u) }), '👋');
+    else if (prev.players[u] !== st) logEvent(st === 'away' ? tr('tv.log.leave', { name: name(u) }) : tr('tv.log.back', { name: name(u) }), st === 'away' ? '🚪' : '↩️');
   }
-  for (const u of Object.keys(prev.players)) if (!now.players[u] && !S.meta?.banned?.[u]) logEvent('Un giocatore è stato tolto dalla stanza (o ha cambiato telefono)', '➖');
+  for (const u of Object.keys(prev.players)) if (!now.players[u] && !S.meta?.banned?.[u]) logEvent(tr('tv.log.removed'), '➖');
   for (const [k, sig] of Object.entries(votes)) {
     const [gid, uid] = k.split('|');
-    if (!prev.votes[k]) logEvent(`${name(uid)} ha votato ${gname(gid)}`, '🗳️');
-    else if (prev.votes[k] !== sig) logEvent(`${name(uid)} ha modificato il voto a ${gname(gid)}`, '✏️');
+    if (!prev.votes[k]) logEvent(tr('tv.log.voted', { name: name(uid), game: gname(gid) }), '🗳️');
+    else if (prev.votes[k] !== sig) logEvent(tr('tv.log.revoted', { name: name(uid), game: gname(gid) }), '✏️');
   }
-  if (now.play && now.play !== prev.play && S.state?.playName) logEvent(`Partita iniziata: ${S.state.playName}`, '⏱️');
+  if (now.play && now.play !== prev.play && S.state?.playName) logEvent(tr('tv.log.playStart', { name: S.state.playName }), '⏱️');
   if (now.phase !== prev.phase || now.game !== prev.game) {
     const g = S.games[now.game];
-    const label = now.phase === 'voting' && g ? `Votazione aperta: ${g.name}` : now.phase === 'reveal' && g ? `Reveal: ${g.name}` : `Fase: ${PHASE_LABEL[now.phase] || now.phase}`;
+    const label = now.phase === 'voting' && g ? tr('tv.log.votingOpen', { name: g.name }) : now.phase === 'reveal' && g ? tr('tv.log.reveal', { name: g.name }) : tr('tv.log.phase', { phase: phaseLabel(now.phase) });
     logEvent(label, now.phase === 'reveal' ? '🎉' : now.phase === 'voting' ? '🔓' : '➡️');
   }
 }
@@ -1016,22 +1038,22 @@ async function restoreBackup(data) {
     if (!S.games[gid]) patch[`games/${gid}`] = { ...g, image: g.image === '__img' ? null : (g.image || null), status: g.status === 'voting' ? 'revealed' : (g.status || 'revealed') };
     for (const [uid, v] of Object.entries(data.votes?.[gid] || {})) if (!S.votes?.[gid]?.[uid]) patch[`votes/${gid}/${uid}`] = v;
   }
-  if (!Object.keys(patch).length) { toast('Niente da ripristinare: la serata contiene già tutto.'); return; }
-  await Save.snap('Prima di importare una copia');
+  if (!Object.keys(patch).length) { toast(tr('tv.bk.nothing')); return; }
+  await Save.snap(tr('tv.snap.beforeImport'));
   await update(roomRef(S.code, ''), patch);
   saveNight();
-  logEvent('Copia importata da file', '📥');
-  toast('Copia ripristinata');
+  logEvent(tr('tv.log.imported'), '📥');
+  toast(tr('tv.bk.restored'));
 }
 
 /** Controlla un file e, se va bene, lo importa. */
 async function importBackupFile(file) {
   const text = await file.text();
   const res = validateBackup(text, 'night');
-  if (!res.ok) { alert(`File corrotto o non valido:\n\n• ${res.errors.join('\n• ')}`); return; }
-  const warn = res.warnings.length ? `\n\nAttenzione:\n• ${res.warnings.join('\n• ')}` : '';
-  if (res.tampered && !confirm(`Il file è stato modificato a mano dopo il salvataggio.${warn}\n\nLa struttura è corretta: importarlo comunque?`)) return;
-  if (!res.tampered && !confirm(`Ripristinare giochi, voti e giocatori mancanti da questo file?${warn}`)) return;
+  if (!res.ok) { alert(tr('tv.bk.invalid', { list: res.errors.join('\n• ') })); return; }
+  const warn = res.warnings.length ? tr('tv.bk.warnings', { list: res.warnings.join('\n• ') }) : '';
+  if (res.tampered && !confirm(tr('tv.bk.tampered', { warn }))) return;
+  if (!res.tampered && !confirm(tr('tv.bk.confirm', { warn }))) return;
   await restoreBackup(res.data);
 }
 
@@ -1041,7 +1063,7 @@ function emergencyFileName() {
 }
 function downloadEmergency() {
   downloadFile(emergencyFileName(), JSON.stringify(sealBackup(backupData(true))), 'application/json');
-  logEvent('Backup di emergenza scaricato', '💾');
+  logEvent(tr('tv.log.emergency'), '💾');
 }
 
 /** Backup completo del gruppo: armadio, serate, identità (e le foto, se richieste). */
@@ -1054,17 +1076,17 @@ async function groupBackup(withPhotos = false) {
   const armadioImages = withPhotos && S.meta?.armadioId ? (await get(armadioRef(S.meta.armadioId, 'images')).catch(() => null))?.val() || null : null;
   const body = sealBackup({ app: 'GameNight_Show', kind: 'group', at: Date.now(), group: { id: gid, name: info?.name || S.meta.groupName || '' }, info, identity, library, nights, next, photos: photos || null, armadioImages });
   downloadFile(`gamenight_gruppo_${gid}_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(body), 'application/json');
-  logEvent('Backup del gruppo scaricato', '🗄️');
+  logEvent(tr('tv.log.groupBackup'), '🗄️');
 }
 
 /** Rimette nel gruppo i giochi e le serate che mancano (non sovrascrive niente). */
 async function restoreGroupFile(file) {
   const res = validateBackup(await file.text(), 'group');
-  if (!res.ok) { alert(`File corrotto o non valido:\n\n• ${res.errors.join('\n• ')}`); return; }
+  if (!res.ok) { alert(tr('tv.bk.invalid', { list: res.errors.join('\n• ') })); return; }
   const d = res.data;
   const gid = S.meta?.groupId;
-  if (d.group.id !== gid && !confirm(`Questo backup è del gruppo ${d.group.name || d.group.id}, non di quello di stasera. Importare comunque armadio e serate qui?`)) return;
-  if (res.tampered && !confirm('Il file è stato modificato a mano dopo il salvataggio. Importarlo comunque?')) return;
+  if (d.group.id !== gid && !confirm(tr('tv.bk.otherGroup', { name: d.group.name || d.group.id }))) return;
+  if (res.tampered && !confirm(tr('tv.bk.tamperedGroup'))) return;
   let lib = 0, nights = 0, failed = 0;
   for (const [id, it] of Object.entries(d.library || {})) {
     if (S.library?.[id]) continue;
@@ -1079,7 +1101,7 @@ async function restoreGroupFile(file) {
     try { await set(groupRef(gid, `nights/${room}`), n); nights++; } catch { failed++; }
   }
   if (!S.identity?.emblem && !S.identity?.logo && d.identity) await set(groupRef(gid, 'identity'), d.identity).catch(() => { failed++; });
-  toast(`Ripristinati ${lib} giochi e ${nights} serate${failed ? ` (${failed} non consentiti: serve il computer che ha creato il gruppo)` : ''}`, failed ? 'warn' : 'info');
+  toast(`${tr('tv.bk.groupRestored', { games: tr('tv.nGames', { n: lib }), nights: tr('tv.nNights', { n: nights }) })}${failed ? tr('tv.bk.groupFailed', { n: failed }) : ''}`, failed ? 'warn' : 'info');
 }
 
 /** Macchina del tempo: cronologia della serata e ripristino delle istantanee. */
@@ -1092,29 +1114,29 @@ const TimeMachine = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
-        <div class="panel-head"><h2 id="tmTitle">Macchina del tempo</h2>
-          <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tmSnap">📸 <span>Istantanea adesso</span></button>
-          <button type="button" class="icon-btn" id="tmClose" aria-label="Chiudi">${ICONS.x}</button></div></div>
-        <p class="panel-note" id="tmStatus">Leggo le copie su questo computer…</p>
+        <div class="panel-head"><h2 id="tmTitle">${tr('tv.tm.title')}</h2>
+          <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tmSnap">📸 <span>${tr('tv.tm.snapNow')}</span></button>
+          <button type="button" class="icon-btn" id="tmClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div></div>
+        <p class="panel-note" id="tmStatus">${tr('tv.tm.reading')}</p>
         <ol class="tm-list" id="tmList"></ol>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
     el.addEventListener('click', async (e) => {
       if (e.target === el || e.target.closest('#tmClose')) { this.close(); return; }
-      if (e.target.closest('#tmSnap')) { await Save.snap('Istantanea manuale', 'manual'); this.paint(); return; }
+      if (e.target.closest('#tmSnap')) { await Save.snap(tr('tv.snap.manual'), 'manual'); this.paint(); return; }
       const r = e.target.closest('[data-tmrestore]');
       if (!r) return;
-      const label = r.dataset.label || 'questa istantanea';
-      if (!confirm(`Rimettere la serata com’era ${label}?\n\nGiochi, voti, vincitori e fase tornano a quel momento. Prima di farlo salvo un’istantanea dello stato attuale, così puoi tornare indietro.`)) return;
+      const label = r.dataset.label || tr('tv.tm.thisSnap');
+      if (!confirm(tr('tv.tm.confirm', { label }))) return;
       r.disabled = true;
       try {
         const data = await Vault.getSnapshot(Number(r.dataset.tmrestore));
-        if (!data) throw userError('Questa istantanea è rovinata: scegline un’altra.');
-        await Save.snap('Prima del ripristino');
+        if (!data) throw userError(tr('tv.tm.broken'));
+        await Save.snap(tr('tv.snap.beforeRestore'));
         await applySnapshot(data);
-        logEvent(`Serata ripristinata ${label}`, '⏪');
-        toast('Serata ripristinata');
+        logEvent(tr('tv.log.restored', { label }), '⏪');
+        toast(tr('tv.tm.restored'));
         this.close();
       } catch (err) { toast(explainError(err), 'error'); r.disabled = false; }
     });
@@ -1124,17 +1146,18 @@ const TimeMachine = {
     if (!this.el) return;
     const [snaps, logs, slots] = await Promise.all([Vault.snapshots(S.code), Vault.logs(S.code, 120), Vault.slots(S.code)]);
     if (!this.el) return;
-    const t = (at) => new Date(at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const t = (at) => fmtDateL(at, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const okSlots = slots.filter((s) => s.ok);
     const cur = slots.find((s) => s.slot === 'current');
     $('#tmStatus', this.el).innerHTML = Vault.available
-      ? `Autosave ${cur?.ok ? '✔' : '⚠️'} <b>${cur ? t(cur.at) : '—'}</b> · Copie a rotazione integre: <b>${okSlots.length}/${slots.length || 4}</b> · Ultimo stato valido: <b>${okSlots[0] ? t(okSlots[0].at) : '—'}</b>`
-      : 'Questo browser non permette di salvare le copie (navigazione privata?): restano il backup di emergenza e il database.';
+      ? tr('tv.tm.status', { ok: cur?.ok ? '✔' : '⚠️', cur: cur ? t(cur.at) : '—', good: `${okSlots.length}/${slots.length || 4}`, last: okSlots[0] ? t(okSlots[0].at) : '—' })
+      : tr('tv.tm.noVault');
     const rows = [
-      ...snaps.map((s) => ({ at: s.at, html: `<li class="tm-row tm-row--snap ${s.ok ? '' : 'is-bad'}"><span class="tm-time">${t(s.at)}</span><span class="tm-text">📸 <b>${esc(s.label)}</b>${s.kind === 'auto' ? ' <span class="muted small">automatica</span>' : ''}</span>${s.ok ? `<button type="button" class="btn-sec btn-sec--sm" data-tmrestore="${s.id}" data-label="alle ${t(s.at)} (${esc(s.label.toLowerCase())})">Ripristina stato</button>` : '<span class="muted small">rovinata</span>'}</li>` })),
-      ...logs.filter((l) => !String(l.text).startsWith('Istantanea:')).map((l) => ({ at: l.at, html: `<li class="tm-row"><span class="tm-time">${t(l.at)}</span><span class="tm-text">${esc(l.icon)} ${esc(l.text)}</span></li>` }))
+      ...snaps.map((s) => ({ at: s.at, html: `<li class="tm-row tm-row--snap ${s.ok ? '' : 'is-bad'}"><span class="tm-time">${t(s.at)}</span><span class="tm-text">📸 <b>${esc(s.label)}</b>${s.kind === 'auto' ? ` <span class="muted small">${tr('tv.tm.auto')}</span>` : ''}</span>${s.ok ? `<button type="button" class="btn-sec btn-sec--sm" data-tmrestore="${s.id}" data-label="${tr('tv.tm.atLabel', { time: t(s.at), label: esc(s.label.toLowerCase()) })}">${tr('tv.tm.restore')}</button>` : `<span class="muted small">${tr('tv.tm.bad')}</span>`}</li>` })),
+      // Le istantanee hanno già la loro riga (le voci "📸" della cronologia sarebbero doppie).
+      ...logs.filter((l) => l.icon !== '📸').map((l) => ({ at: l.at, html: `<li class="tm-row"><span class="tm-time">${t(l.at)}</span><span class="tm-text">${esc(l.icon)} ${esc(l.text)}</span></li>` }))
     ].sort((a, b) => b.at - a.at).slice(0, 160);
-    $('#tmList', this.el).innerHTML = rows.length ? rows.map((r) => r.html).join('') : '<li class="muted">Ancora niente: la cronologia si riempie mentre giocate.</li>';
+    $('#tmList', this.el).innerHTML = rows.length ? rows.map((r) => r.html).join('') : `<li class="muted">${tr('tv.tm.empty')}</li>`;
   },
   close() { this.el?.remove(); this.el = null; }
 };
@@ -1166,8 +1189,8 @@ function integrityChecks() {
   for (const p of active) if (p.memberId) (mids[p.memberId] ||= []).push(p.name);
   const dupMid = Object.values(mids).filter((l) => l.length > 1).map((l) => l[0]);
   out.push({
-    id: 'players', label: 'Giocatori', level: badP.length ? 'error' : dupNames.length || dupMid.length ? 'warn' : 'ok',
-    text: `${active.length} in partita${away ? `, ${away} usciti` : ''}${badP.length ? ` · ${badP.length} con dati rovinati` : ''}${dupNames.length ? ` · nome doppio: ${dupNames.join(', ')}` : ''}${dupMid.length ? ` · stesso profilo su due telefoni: ${dupMid.join(', ')}` : ''}`,
+    id: 'players', label: tr('tv.players'), level: badP.length ? 'error' : dupNames.length || dupMid.length ? 'warn' : 'ok',
+    text: `${tr('tv.ic.inGame', { n: active.length })}${away ? tr('tv.ic.away', { n: away }) : ''}${badP.length ? tr('tv.ic.badP', { n: badP.length }) : ''}${dupNames.length ? tr('tv.ic.dupName', { list: dupNames.join(', ') }) : ''}${dupMid.length ? tr('tv.ic.dupMid', { list: dupMid.join(', ') }) : ''}`,
     fix: badP.length ? () => Object.fromEntries(badP.filter(([, p]) => !p?.name).map(([u]) => [`players/${u}`, null]).concat(badP.filter(([, p]) => p?.name).map(([u, p]) => [`players/${u}/color`, /^#[0-9A-Fa-f]{6}$/.test(p.color || '') ? p.color : PLAYER_COLORS[0]]))) : null
   });
   let total = 0;
@@ -1186,37 +1209,37 @@ function integrityChecks() {
   const curVotes = curGid ? Object.keys(votes[curGid] || {}).length : null;
   const vErr = orphanGame.length + orphanPlayer.length + outRange.length;
   out.push({
-    id: 'votes', label: 'Voti', level: vErr ? 'error' : 'ok',
-    text: `${total} voti${curGid ? ` · votazione in corso: ${curVotes}/${expectedVoters(votes[curGid] || {}).length}` : ''}${orphanPlayer.length ? ` · ${orphanPlayer.length} di giocatori che non ci sono più` : ''}${orphanGame.length ? ` · voti di ${orphanGame.length} ${orphanGame.length === 1 ? 'gioco cancellato' : 'giochi cancellati'}` : ''}${outRange.length ? ` · ${outRange.length} fuori scala` : ''}`,
+    id: 'votes', label: tr('tv.ic.votes'), level: vErr ? 'error' : 'ok',
+    text: `${tr('tv.ic.nVotes', { n: total })}${curGid ? tr('tv.ic.curVotes', { n: `${curVotes}/${expectedVoters(votes[curGid] || {}).length}` }) : ''}${orphanPlayer.length ? tr('tv.ic.orphanP', { n: orphanPlayer.length }) : ''}${orphanGame.length ? tr('tv.ic.orphanG', { n: orphanGame.length }) : ''}${outRange.length ? tr('tv.ic.outRange', { n: outRange.length }) : ''}`,
     fix: vErr ? () => Object.fromEntries([...orphanGame.map((g) => [`votes/${g}`, null]), ...[...orphanPlayer, ...outRange].map(([g, u]) => [`votes/${g}/${u}`, null])]) : null
   });
   const stuck = Object.entries(games).filter(([gid, g]) => g?.status === 'voting' && gid !== curGid);
   const unknown = Object.entries(games).filter(([, g]) => g?.status && !['voting', 'revealed'].includes(g.status));
   const empty = Object.entries(games).filter(([gid, g]) => g?.status === 'revealed' && !Object.keys(votes[gid] || {}).length);
   out.push({
-    id: 'games', label: 'Giochi', level: stuck.length || unknown.length ? 'error' : empty.length ? 'warn' : 'ok',
-    text: `${Object.keys(games).length} ${Object.keys(games).length === 1 ? 'gioco' : 'giochi'}${stuck.length ? ` · ${stuck.length} con la votazione rimasta aperta` : ''}${unknown.length ? ` · ${unknown.length} in uno stato sconosciuto` : ''}${empty.length ? ` · senza voti: ${empty.map(([, g]) => g.name).join(', ')}` : ''}`,
+    id: 'games', label: tr('tv.ic.games'), level: stuck.length || unknown.length ? 'error' : empty.length ? 'warn' : 'ok',
+    text: `${tr('tv.ic.nGames', { n: Object.keys(games).length })}${stuck.length ? tr('tv.ic.stuck', { n: stuck.length }) : ''}${unknown.length ? tr('tv.ic.unknown', { n: unknown.length }) : ''}${empty.length ? tr('tv.ic.empty', { list: empty.map(([, g]) => g.name).join(', ') }) : ''}`,
     fix: stuck.length || unknown.length ? () => Object.fromEntries([...stuck, ...unknown].map(([gid]) => [`games/${gid}/status`, 'revealed'])) : null
   });
   const noWinner = Object.values(games).filter((g) => g?.status === 'revealed' && !Object.keys(g.winners || {}).length).map((g) => g.name);
-  out.push({ id: 'winners', label: 'Vincitori', level: noWinner.length ? 'info' : 'ok', text: noWinner.length ? `Partite senza vincitore: ${noWinner.join(', ')} (si segnano con "Correggi" in classifica)` : 'Ogni partita ha il suo vincitore' });
+  out.push({ id: 'winners', label: tr('tv.ic.winners'), level: noWinner.length ? 'info' : 'ok', text: noWinner.length ? tr('tv.ic.noWinner', { list: noWinner.join(', ') }) : tr('tv.ic.allWinners') });
   const crits = activeCriteria(S.meta?.voting).filter((c) => !c.custom);
   let missing = 0;
   for (const [gid, gv] of Object.entries(votes)) {
     if (!games[gid] || games[gid].quick) continue;
     for (const v of Object.values(gv || {})) if (v && !v.byHost && crits.some((c) => v[c.key] === undefined || v[c.key] === null)) missing++;
   }
-  out.push({ id: 'crit', label: 'Criteri', level: missing ? 'info' : 'ok', text: missing ? `${missing} voti senza qualche criterio ("Non giudico" o voti dalle versioni precedenti)` : 'Validi' });
+  out.push({ id: 'crit', label: tr('tv.ic.crit'), level: missing ? 'info' : 'ok', text: missing ? tr('tv.ic.critMissing', { n: missing }) : tr('tv.ic.valid') });
   const noTime = Object.values(games).filter((g) => g && !g.createdAt && !g.order).length;
-  out.push({ id: 'time', label: 'Orari', level: !S.meta?.createdAt || noTime ? 'warn' : 'ok', text: !S.meta?.createdAt ? 'La serata non ha l’ora di inizio' : noTime ? `${noTime} giochi senza orario` : 'Ogni passaggio ha il suo orario' });
+  out.push({ id: 'time', label: tr('tv.ic.times'), level: !S.meta?.createdAt || noTime ? 'warn' : 'ok', text: !S.meta?.createdAt ? tr('tv.ic.noStart') : noTime ? tr('tv.ic.noTime', { n: noTime }) : tr('tv.ic.allTimes') });
   let boardOk = true;
   try {
     const b = buildBoard(games, votes);
     boardOk = b.every((r, i) => r.stats.avg >= 1 && r.stats.avg <= 10 && (i === 0 || r.rank >= b[i - 1].rank));
   } catch { boardOk = false; }
-  out.push({ id: 'board', label: 'Classifica', level: boardOk ? 'ok' : 'error', text: boardOk ? 'Coerente' : 'Non si riesce a calcolare: correggi i voti segnalati' });
+  out.push({ id: 'board', label: tr('tv.ic.board'), level: boardOk ? 'ok' : 'error', text: boardOk ? tr('tv.ic.boardOk') : tr('tv.ic.boardBad') });
   const age = Save.lastAt ? Date.now() - Save.lastAt : null;
-  out.push({ id: 'backup', label: 'Backup', level: !Vault.available ? 'warn' : age !== null && age < 180000 ? 'ok' : 'warn', text: !Vault.available ? 'Copie locali non disponibili in questo browser: scarica il backup di emergenza' : age !== null ? `Disponibile, ultimo salvataggio alle ${new Date(Save.lastAt).toLocaleTimeString('it-IT')}` : 'Nessun salvataggio locale ancora' });
+  out.push({ id: 'backup', label: tr('tv.ic.backup'), level: !Vault.available ? 'warn' : age !== null && age < 180000 ? 'ok' : 'warn', text: !Vault.available ? tr('tv.ic.noVault') : age !== null ? tr('tv.ic.saved', { time: clockL(Save.lastAt) }) : tr('tv.ic.notSaved') });
   return out;
 }
 
@@ -1224,14 +1247,14 @@ const IntegrityPanel = {
   el: null,
   isOpen() { return Boolean(this.el); },
   /** onContinue: se c'è, il pannello fa da "cancello" prima di un passaggio (es. premiazione). */
-  open(onContinue = null, title = 'Controllo integrità') {
+  open(onContinue = null, title = tr('tv.ic.title')) {
     this.close();
     this.onContinue = onContinue;
     const el = document.createElement('div');
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="icTitle">
-        <div class="panel-head"><h2 id="icTitle">🔎 ${esc(title)}</h2><button type="button" class="icon-btn" id="icClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="icTitle">🔎 ${esc(title)}</h2><button type="button" class="icon-btn" id="icClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <ul class="ic-list" id="icList"></ul>
         <p class="ic-summary" id="icSummary"></p>
         <div class="claim-actions" id="icActions"></div>
@@ -1244,11 +1267,11 @@ const IntegrityPanel = {
         const patch = {};
         for (const c of this.checks) if (c.fix && c.level === 'error') Object.assign(patch, c.fix());
         try {
-          await Save.snap('Prima delle correzioni automatiche');
+          await Save.snap(tr('tv.snap.beforeFix'));
           await update(roomRef(S.code, ''), patch);
           saveNight();
-          logEvent('Correzioni automatiche dal controllo integrità', '🩺');
-          toast('Problemi corretti');
+          logEvent(tr('tv.log.fixed'), '🩺');
+          toast(tr('tv.ic.fixedToast'));
           setTimeout(() => this.paint(), 400);
         } catch (err) { toast(explainError(err), 'error'); }
         return;
@@ -1264,10 +1287,10 @@ const IntegrityPanel = {
     $('#icList', this.el).innerHTML = this.checks.map((c) => `<li class="ic-row ic-row--${c.level}"><span class="ic-ico" aria-hidden="true">${ico[c.level]}</span><b>${esc(c.label)}</b><span>${esc(c.text)}</span></li>`).join('');
     const errors = this.checks.filter((c) => c.level === 'error');
     const fixable = errors.filter((c) => c.fix);
-    $('#icSummary', this.el).innerHTML = errors.length ? `<b>${errors.length} ${errors.length === 1 ? 'problema' : 'problemi'} da correggere</b>` : '<b class="ic-ready">SESSIONE PRONTA</b>';
+    $('#icSummary', this.el).innerHTML = errors.length ? `<b>${tr('tv.ic.toFix', { n: errors.length })}</b>` : `<b class="ic-ready">${tr('tv.ic.ready')}</b>`;
     $('#icActions', this.el).innerHTML = `
-      ${fixable.length ? '<button type="button" class="btn-sec" id="icFix">🩺 <span>Correggi automaticamente</span></button>' : ''}
-      ${this.onContinue ? `<button type="button" class="btn-sec" id="icCancel">Annulla</button><button type="button" class="btn btn-big" id="icGo">${errors.length ? 'Continua comunque' : 'Continua'}</button>` : ''}`;
+      ${fixable.length ? `<button type="button" class="btn-sec" id="icFix">🩺 <span>${tr('tv.ic.autoFix')}</span></button>` : ''}
+      ${this.onContinue ? `<button type="button" class="btn-sec" id="icCancel">${tr('tv.cancel')}</button><button type="button" class="btn btn-big" id="icGo">${errors.length ? tr('tv.ic.goAnyway') : tr('tv.ic.go')}</button>` : ''}`;
   },
   close() { this.el?.remove(); this.el = null; this.onContinue = null; }
 };
@@ -1286,13 +1309,13 @@ function guarded(title, go) {
 /** Ricrea la serata dal salvataggio locale (stesso codice, se è ancora libero). */
 async function recreateFromVault(room) {
   const saved = await Vault.loadCurrent(room);
-  if (!saved?.data) throw userError('La copia locale non è più leggibile.');
+  if (!saved?.data) throw userError(tr('tv.rec.unreadable'));
   const d = saved.data;
   let code = room;
   if ((await get(roomRef(code, 'meta'))).exists()) {
     code = null;
     for (let i = 0; i < 12 && !code; i++) { const c = randomCode(); if (!(await get(roomRef(c, 'meta'))).exists()) code = c; }
-    if (!code) throw new Error('nessun codice libero');
+    if (!code) throw new Error(tr('tv.noFreeCode'));
   }
   const m = d.meta || {};
   await set(roomRef(code, 'meta'), {
@@ -1328,7 +1351,7 @@ async function resumeSession(room) {
     return;
   }
   const code = await recreateFromVault(room);
-  toast(code === room ? 'Serata ricreata dalla copia locale' : `Serata ricreata con il nuovo codice ${code}`);
+  toast(code === room ? tr('tv.rec.recreated') : tr('tv.rec.recreatedNew', { code }));
   openRoom(code);
 }
 
@@ -1337,12 +1360,12 @@ function recoveryHTML(sess) {
   const i = sess.info || {};
   return `
     <section class="card recover-card" role="alert">
-      <p class="recover-kicker">⚠️ La sessione precedente è stata interrotta</p>
-      <p>Trovata una copia valida delle <b>${esc(t.toLocaleTimeString('it-IT'))}</b>${t.toDateString() !== new Date().toDateString() ? ` del ${esc(t.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }))}` : ''}:
-        ${i.group ? `<b>${esc(i.group)}</b>, ` : ''}stanza <b>${esc(sess.room)}</b>${i.number ? `, Game Night #${esc(i.number)}` : ''} · ${Number(i.games) || 0} ${Number(i.games) === 1 ? 'gioco votato' : 'giochi votati'} · ${Number(i.players) || 0} ${Number(i.players) === 1 ? 'giocatore' : 'giocatori'}.</p>
+      <p class="recover-kicker">${tr('tv.rec.kicker')}</p>
+      <p>${tr('tv.rec.found', { time: esc(clockL(t)) })}${t.toDateString() !== new Date().toDateString() ? tr('tv.rec.foundDay', { date: esc(fmtDateL(t, { day: 'numeric', month: 'long' })) }) : ''}:
+        ${i.group ? `<b>${esc(i.group)}</b>, ` : ''}${tr('tv.rec.room', { room: esc(sess.room) })}${i.number ? `, Game Night #${esc(i.number)}` : ''} · ${tr('tv.rec.games', { n: Number(i.games) || 0 })} · ${tr('tv.rec.players', { n: Number(i.players) || 0 })}.</p>
       <div class="claim-actions">
-        <button type="button" class="btn btn-big" id="recGo" data-room="${esc(sess.room)}">${ICONS.play}<span>Riprendi serata</span></button>
-        <button type="button" class="btn-sec" id="recNew" data-room="${esc(sess.room)}">Inizia nuova serata</button>
+        <button type="button" class="btn btn-big" id="recGo" data-room="${esc(sess.room)}">${ICONS.play}<span>${tr('tv.rec.go')}</span></button>
+        <button type="button" class="btn-sec" id="recNew" data-room="${esc(sess.room)}">${tr('tv.rec.new')}</button>
       </div>
       <p class="form-error" id="recErr" role="alert"></p>
     </section>`;
@@ -1358,12 +1381,12 @@ async function renderRoomGone() {
   app.innerHTML = `
     <main class="create">
       <section class="card create-card">
-        <h2>La stanza non c’è più</h2>
-        <p>La stanza <b>${esc(S.code)}</b> non esiste più nel database (forse è stata cancellata dalla console di Firebase).</p>
-        ${saved ? `<p>Su questo computer c’è una copia valida delle <b>${esc(new Date(saved.at).toLocaleTimeString('it-IT'))}</b>: posso ricreare la serata con giocatori, giochi e voti.</p>
-          <button type="button" class="btn btn-big btn-block" id="goneRestore">Ricrea la serata da questa copia</button>` : '<p class="muted">Non ho trovato copie locali di questa serata.</p>'}
+        <h2>${tr('tv.gone.title')}</h2>
+        <p>${tr('tv.gone.text', { code: esc(S.code) })}</p>
+        ${saved ? `<p>${tr('tv.gone.copy', { time: esc(clockL(saved.at)) })}</p>
+          <button type="button" class="btn btn-big btn-block" id="goneRestore">${tr('tv.gone.restore')}</button>` : `<p class="muted">${tr('tv.gone.noCopy')}</p>`}
         <p class="form-error" id="goneErr" role="alert"></p>
-        <button type="button" class="link-btn" id="goneNew">Crea una serata nuova</button>
+        <button type="button" class="link-btn" id="goneNew">${tr('tv.lost.new')}</button>
       </section>
     </main>`;
   $('#goneNew').addEventListener('click', () => { localStorage.removeItem(STORE_KEY); location.href = location.pathname; });
@@ -1379,15 +1402,15 @@ async function renderRoomGone() {
 
 async function setLocked(on) {
   await update(roomRef(S.code, 'meta'), { locked: on || null });
-  logEvent(on ? 'Stanza chiusa: niente nuovi ingressi' : 'Stanza riaperta', on ? '🔒' : '🔓');
-  toast(on ? 'Stanza chiusa: il QR non funziona più per chi non è già dentro' : 'Stanza riaperta: si può entrare con il QR');
+  logEvent(on ? tr('tv.log.locked') : tr('tv.log.unlocked'), on ? '🔒' : '🔓');
+  toast(on ? tr('tv.lock.on') : tr('tv.lock.off'));
 }
 
 /** Espelle un dispositivo: esce dalla stanza e stasera non può rientrare (si riammette dal pannello). */
 async function kickPlayer(uid, all = false) {
   const p = S.players[uid];
   if (!p) return;
-  await Save.snap(`Prima di espellere ${p.name}`);
+  await Save.snap(tr('tv.snap.beforeKick', { name: p.name }));
   const patch = {
     [`players/${uid}`]: null, [`claims/${uid}`]: null, [`hb/${uid}`]: null,
     [`meta/banned/${uid}`]: String(p.name).slice(0, 16)
@@ -1404,8 +1427,8 @@ async function kickPlayer(uid, all = false) {
   await update(roomRef(S.code, ''), patch);
   S.draft.winners = (S.draft.winners || []).filter((u) => u !== uid);
   saveNight();
-  logEvent(`Espulsione: ${p.name}${all ? ' (con tutti i suoi voti)' : ''}`, '⛔');
-  toastUndo(`Fuori dalla stanza: ${p.name}`, async () => {
+  logEvent(`${tr('tv.log.kick', { name: p.name })}${all ? tr('tv.log.kickAll') : ''}`, '⛔');
+  toastUndo(tr('tv.kick.out', { name: p.name }), async () => {
     const back = { [`players/${uid}`]: p, [`meta/banned/${uid}`]: null };
     for (const [gid, v] of Object.entries(removed)) if (S.games[gid]) back[`votes/${gid}/${uid}`] = v;
     await update(roomRef(S.code, ''), back).catch((err) => toast(explainError(err), 'error'));
@@ -1414,7 +1437,7 @@ async function kickPlayer(uid, all = false) {
 
 async function readmit(uid) {
   await update(roomRef(S.code, 'meta/banned'), { [uid]: null });
-  toast('Riammesso: può rientrare con il QR');
+  toast(tr('tv.kick.readmitted'));
 }
 
 /** Finestra di conferma dell'espulsione (con la scelta sui voti). */
@@ -1425,10 +1448,10 @@ function confirmKick(uid) {
   el.className = 'overlay';
   el.innerHTML = `
     <div class="card panel panel--claim" role="alertdialog" aria-modal="true" aria-labelledby="kkTitle">
-      <div class="claim-head">${avatarHTML(p, '4rem')}<div><h2 id="kkTitle">Espellere ${esc(p.name)}?</h2>
-        <p class="panel-note">Il dispositivo esce subito dalla stanza e stasera non può rientrare (lo riammetti dal pannello Giocatori). Il voto della votazione in corso, se c’è, viene tolto.</p></div></div>
-      <label class="quick-toggle"><input type="checkbox" id="kkAll"><span>Cancella anche tutti i suoi voti e le sue vittorie della serata (giocatore fantasma o troll)</span></label>
-      <div class="claim-actions"><button type="button" class="btn-sec" id="kkNo">Annulla</button><button type="button" class="btn btn-big btn--danger" id="kkYes">⛔ <span>Espelli</span></button></div>
+      <div class="claim-head">${avatarHTML(p, '4rem')}<div><h2 id="kkTitle">${tr('tv.kick.title', { name: esc(p.name) })}</h2>
+        <p class="panel-note">${tr('tv.kick.text')}</p></div></div>
+      <label class="quick-toggle"><input type="checkbox" id="kkAll"><span>${tr('tv.kick.all')}</span></label>
+      <div class="claim-actions"><button type="button" class="btn-sec" id="kkNo">${tr('tv.cancel')}</button><button type="button" class="btn btn-big btn--danger" id="kkYes">⛔ <span>${tr('tv.kick.btn')}</span></button></div>
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', async (e) => {
@@ -1494,15 +1517,15 @@ const TransferPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="trTitle">
-        <div class="panel-head"><h2 id="trTitle">Trasferisci la regia</h2><button type="button" class="icon-btn" id="trClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="trTitle">${tr('tv.tr.title')}</h2><button type="button" class="icon-btn" id="trClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         ${code ? `<div class="transfer">
           <div class="qr qr--panel" id="trQr"></div>
           <div class="transfer-text">
-            <p>Sul nuovo computer o tablet inquadra il QR, oppure apri <b>host.html</b>, tocca <b>Riprendi una serata già iniziata</b> e scrivi:</p>
-            <p class="transfer-codes"><span>Stanza <b class="code-chip">${esc(S.code)}</b></span><span>Codice regia <b class="code-chip">${esc(prettyRegia(code))}</b></span>${S.meta?.groupId && groupKey(S.meta.groupId) ? `<span>Chiave del gruppo <b class="code-chip">${esc(prettyKey(groupKey(S.meta.groupId)))}</b></span>` : ''}</p>
-            <p class="muted small">Il codice regia dà il controllo della serata: mostralo solo a chi deve prenderla. I telefoni non si accorgono di niente: restano collegati alla stessa stanza.</p>
-            <div class="rg-row"><button type="button" class="btn-sec" id="trBackup">${ICONS.download}<span>Scarica anche il backup di emergenza</span></button></div>
-          </div></div>` : '<p class="panel-note">Questo computer non conosce il codice regia della serata (è stata ripresa senza codice). Lo trovi sul dispositivo che l’ha creata.</p>'}
+            <p>${tr('tv.tr.how')}</p>
+            <p class="transfer-codes"><span>${tr('tv.tr.room')} <b class="code-chip">${esc(S.code)}</b></span><span>${tr('tv.regiaCode')} <b class="code-chip">${esc(prettyRegia(code))}</b></span>${S.meta?.groupId && groupKey(S.meta.groupId) ? `<span>${tr('tv.tr.groupKey')} <b class="code-chip">${esc(prettyKey(groupKey(S.meta.groupId)))}</b></span>` : ''}</p>
+            <p class="muted small">${tr('tv.tr.note')}</p>
+            <div class="rg-row"><button type="button" class="btn-sec" id="trBackup">${ICONS.download}<span>${tr('tv.tr.backup')}</span></button></div>
+          </div></div>` : `<p class="panel-note">${tr('tv.tr.noCode')}</p>`}
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -1523,7 +1546,7 @@ function applySafeMode(on) {
   setSafeMode(on);
   if (S.code && S.meta?.hostUid === S.uid) update(roomRef(S.code, 'meta'), { safeMode: on || null }).catch(() => {});
   if (on) { Music.stop(); stopSpeaking(); Interval.close(); }
-  logEvent(on ? 'Safe Mode attivata' : 'Safe Mode disattivata', '🚨');
+  logEvent(on ? tr('tv.log.safeOn') : tr('tv.log.safeOff'), '🚨');
   S.screenKey = null;
   render();
 }
@@ -1534,8 +1557,9 @@ function offerSafeMode(reason = '') {
   el.id = 'safeOffer';
   el.className = 'net-banner safe-offer';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<span>⚠️ La TV sta incontrando degli errori${reason ? '' : ''}. Con la <b>Safe Mode</b> si spengono animazioni, musica ed effetti e la serata continua.</span>
-    <button type="button" class="btn-sec btn-sec--sm" id="soOn">Attiva Safe Mode</button><button type="button" class="link-btn" id="soNo">Ignora</button>`;
+  void reason;
+  el.innerHTML = `<span>${tr('tv.safe.offer')}</span>
+    <button type="button" class="btn-sec btn-sec--sm" id="soOn">${tr('tv.safe.on')}</button><button type="button" class="link-btn" id="soNo">${tr('tv.safe.ignore')}</button>`;
   document.body.appendChild(el);
   el.addEventListener('click', (e) => {
     if (e.target.closest('#soOn')) { el.remove(); applySafeMode(true); }
@@ -1543,7 +1567,7 @@ function offerSafeMode(reason = '') {
   });
 }
 
-const fmtBytes = (b) => (b === null || b === undefined ? '—' : b < 1024 * 1024 ? `${b ? Math.max(1, Math.round(b / 1024)) : 0} KB` : b < 1024 ** 3 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${(b / 1024 ** 3).toFixed(1).replace('.', ',')} GB`);
+const fmtBytes = (b) => (b === null || b === undefined ? '—' : b < 1024 * 1024 ? `${b ? Math.max(1, Math.round(b / 1024)) : 0} KB` : b < 1024 ** 3 ? `${fmtNum(b / 1024 / 1024, 1)} MB` : `${fmtNum(b / 1024 ** 3, 1)} GB`);
 
 /** Quanto spazio occupano copie, foto e dati (sul computer e, a stima, nel database). */
 async function storageReport() {
@@ -1557,20 +1581,23 @@ async function storageReport() {
   };
 }
 
-/** Pausa: nessuno risulta scollegato, niente reveal automatici, i telefoni possono riposare. */
-async function setPaused(on, reason = null) {
-  if (Boolean(S.state?.paused) === on && !reason) return;
-  const patch = { paused: on ? true : null, pausedAt: on ? serverTimestamp() : null, pauseReason: on ? reason : null };
-  // Il timer della partita non conta il tempo passato in pausa.
-  if (!on && S.state?.playStart && S.state?.pausedAt) {
-    patch.playPaused = (Number(S.state.playPaused) || 0) + Math.max(0, Date.now() - Number(S.state.pausedAt));
+/**
+ * Pausa della serata (la decide solo la TV; i telefoni regia la chiedono con un comando).
+ * Nessuno risulta scollegato, niente reveal automatici; il cronometro della partita, il timer del voto
+ * e il quiz non contano il tempo di pausa; il timer condiviso si ferma se è "collegato" (nightclock.js).
+ */
+async function setPaused(on, reason = null, why = null) {
+  const now = serverNow();
+  const patch = pausePatch(S.state, on, { now, ts: serverTimestamp(), reason, key: why?.k, params: why?.p });
+  if (!patch) return;
+  const multi = Object.fromEntries(Object.entries(patch).map(([k, v]) => [`state/${k}`, v]));
+  // Il quiz aperto riprende con il suo tempo intatto.
+  if (!on && S.quiz?.open && Number.isFinite(Number(S.quiz.at)) && Number.isFinite(Number(S.state?.pausedAt))) {
+    multi['quiz/at'] = Number(S.quiz.at) + Math.max(0, now - Number(S.state.pausedAt));
   }
-  // Anche il timer del voto si ferma durante la pausa.
-  if (!on && S.state?.voteSecs && S.state?.pausedAt) {
-    patch.votePaused = (Number(S.state.votePaused) || 0) + Math.max(0, serverNow() - Number(S.state.pausedAt));
-  }
-  if (on && S.state?.paused) delete patch.pausedAt;
-  await update(roomRef(S.code, 'state'), patch);
+  await update(roomRef(S.code, ''), multi);
+  logEvent(on ? (reason ? tr('tv.log.pauseWhy', { reason }) : tr('tv.pause.kicker')) : tr('tv.log.resume'), on ? '⏸️' : '▶️');
+  SharedTimer.reconcile();
 }
 
 function paintPause() {
@@ -1582,11 +1609,11 @@ function paintPause() {
     el.className = 'pause-overlay';
     el.innerHTML = `
       <div class="pause-box">
-        <p class="pause-kicker" id="pauseKicker">Serata in pausa</p>
-        <h1 class="pause-title">Pausa!</h1>
-        <p class="lead-line">Mangiate, ricaricate i telefoni: nessuno risulta scollegato e la votazione aspetta.</p>
-        <button type="button" class="btn btn-big" id="resumeBtn">${ICONS.play}<span>Riprendi la serata</span></button>
-        <p class="muted">Tasto P per mettere e togliere la pausa.</p>
+        <p class="pause-kicker" id="pauseKicker">${tr('tv.pause.kicker')}</p>
+        <h1 class="pause-title">${tr('tv.pause.title')}</h1>
+        <p class="lead-line">${tr('tv.pause.lead')}</p>
+        <button type="button" class="btn btn-big" id="resumeBtn">${ICONS.play}<span>${tr('tv.resume.btn')}</span></button>
+        <p class="muted">${tr('tv.pause.key')}</p>
       </div>
       <p class="pause-fact" id="pauseFact"></p>`;
     document.body.appendChild(el);
@@ -1600,7 +1627,7 @@ function paintPause() {
   }
   if (on && el) {
     const k = $('#pauseKicker', el);
-    const txt = S.state?.pauseReason || 'Serata in pausa';
+    const txt = pauseText(S.state) || tr('tv.pause.kicker');
     if (k.textContent !== txt) k.textContent = txt;
   }
   if (!on && el) {
@@ -1615,14 +1642,14 @@ function paintPause() {
 async function trashGame(gid) {
   const g = S.games[gid];
   if (!g) return;
-  await Save.snap(`Prima di cestinare ${g.name}`);
+  await Save.snap(tr('tv.snap.beforeTrash', { name: g.name }));
   await update(roomRef(S.code, ''), {
     [`trash/${gid}`]: { game: g, votes: S.votes?.[gid] || null, at: serverTimestamp() },
     [`games/${gid}`]: null,
     [`votes/${gid}`]: null
   });
   saveNight();
-  toastUndo(`“${g.name}” spostato nel cestino`, () => restoreGame(gid));
+  toastUndo(tr('tv.trash.moved', { name: g.name }), () => restoreGame(gid));
 }
 
 async function restoreGame(gid) {
@@ -1635,10 +1662,10 @@ async function restoreGame(gid) {
     [`trash/${gid}`]: null
   });
   saveNight();
-  toast(`“${t.game.name}” ripristinato`);
+  toast(tr('tv.trash.restored', { name: t.game.name }));
 }
 
-const VOTE_TIMERS = [['0', 'Spento'], ['45', '45 secondi'], ['60', '1 minuto'], ['90', '1 minuto e mezzo'], ['120', '2 minuti'], ['180', '3 minuti']];
+const VOTE_TIMERS = () => ['0', '45', '60', '90', '120', '180'].map((v) => [v, tr(`tv.voteTimer.${v}`)]);
 
 /** Pannello "Strumenti": pausa, tema, musica, suoni, ticker, cestino, copie di sicurezza, verifica della configurazione. */
 /**
@@ -1660,12 +1687,12 @@ const InstallQR = {
       <div class="card panel install-qr-card" role="dialog" aria-modal="true" aria-labelledby="iqTitle">
         <div class="install-qr-code">${qrSVG(url, 4)}</div>
         <div class="install-qr-text">
-          <h2 id="iqTitle">📲 Installa GameNight su un altro dispositivo</h2>
-          <p class="install-qr-lead">Inquadra il QR con il telefono per scaricare GameNight Show e installarlo sul tuo dispositivo Android.</p>
+          <h2 id="iqTitle">${tr('tv.create.install')}</h2>
+          <p class="install-qr-lead">${tr('tv.iq.lead')}</p>
           <p class="install-qr-url">${esc(url.replace(/^https?:\/\//, ''))}</p>
-          <p class="muted" id="iqVer">Versione stabile: controllo…</p>
-          <p class="muted">Serve Android ${esc(MIN_ANDROID)} o più recente. Su iPhone si usa il sito (Safari › Condividi › Aggiungi alla schermata Home).</p>
-          <button type="button" class="btn" id="iqClose">Chiudi</button>
+          <p class="muted" id="iqVer">${tr('tv.iq.checking')}</p>
+          <p class="muted">${tr('tv.iq.android', { v: esc(MIN_ANDROID) })}</p>
+          <button type="button" class="btn" id="iqClose">${tr('tv.close')}</button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -1680,7 +1707,7 @@ const InstallQR = {
     getRelease().then((r) => {
       const v = r.release || r.stale;
       if (!this.el) return;
-      $('#iqVer', el).textContent = v ? `Versione stabile: ${v.version}${v.size ? ` · ${fmtSize(v.size)}` : ''}.` : 'La pagina mostra sempre l’ultima versione pubblicata.';
+      $('#iqVer', el).textContent = v ? tr('tv.iq.version', { v: `${v.version}${v.size ? ` · ${fmtSize(v.size)}` : ''}` }) : tr('tv.iq.latest');
     }).catch(() => {});
   },
   close() {
@@ -1688,6 +1715,90 @@ const InstallQR = {
     this.el = null;
     this.last?.focus?.({ preventScroll: true });
   }
+};
+
+/** Suoni personalizzati: caricati qui, salvati solo su questo computer; ai telefoni va solo nome e icona. */
+async function publishCustomSfx() {
+  if (!S.code || S.meta?.hostUid !== S.uid) return;
+  const list = await CustomSounds.list();
+  const pub = publicList(list);
+  const next = Object.keys(pub).length ? pub : null;
+  if (JSON.stringify(next) === JSON.stringify(S.meta?.customSfx || null)) return;
+  await update(roomRef(S.code, 'meta'), { customSfx: next }).catch(() => {});
+}
+
+const CustomSfxPanel = {
+  el: null,
+  isOpen() { return Boolean(this.el); },
+  async open() {
+    if (this.el) return;
+    const el = document.createElement('div');
+    el.className = 'overlay';
+    el.innerHTML = `
+      <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="csTitle">
+        <div class="panel-head"><h2 id="csTitle">🎵 ${esc(tr('csfx.title'))}</h2><button type="button" class="icon-btn" id="csClose" aria-label="${esc(tr('common.close'))}">${ICONS.x}</button></div>
+        <p class="panel-note">${esc(tr('csfx.lead'))}</p>
+        <p class="muted small">${esc(tr('csfx.limits', { max: CSFX_MAX }))}</p>
+        <div class="rg-row"><label class="btn"><input type="file" id="csFile" accept="audio/*" hidden>➕ <span>${esc(tr('csfx.add'))}</span></label><button type="button" class="btn-sec" id="csStop">⏹ ${esc(tr('csfx.stop'))}</button></div>
+        <p class="form-error" id="csErr" role="alert"></p>
+        <ul class="cs-list" id="csList"></ul>
+      </div>`;
+    document.body.appendChild(el);
+    this.el = el;
+    el.addEventListener('click', async (e) => {
+      if (e.target === el || e.target.closest('#csClose')) { this.close(); return; }
+      if (e.target.closest('#csStop')) { CustomSounds.stopAll(); return; }
+      const b = e.target.closest('[data-cs]');
+      if (!b) return;
+      const id = b.dataset.id;
+      const a = b.dataset.cs;
+      if (a === 'play') await CustomSounds.play(id, getVolume('fx')).catch(() => {});
+      if (a === 'up' || a === 'down') { await CustomSounds.move(id, a === 'up' ? -1 : 1); this.paint(); publishCustomSfx(); }
+      if (a === 'del') {
+        const rec = CustomSounds.cache.find((c) => c.id === id);
+        if (rec && confirm(tr('csfx.removeConfirm', { name: rec.label }))) { await CustomSounds.remove(id); this.paint(); publishCustomSfx(); }
+      }
+    });
+    el.addEventListener('change', async (e) => {
+      const tg = e.target;
+      if (tg.id === 'csFile') {
+        const f = tg.files[0]; tg.value = '';
+        const err = $('#csErr', el);
+        err.textContent = '';
+        if (!f) return;
+        const bad = checkFile(f, CustomSounds.cache.length);
+        if (bad) { err.textContent = tr(`csfx.err.${bad}`); return; }
+        try { await CustomSounds.add(f); toast(tr('csfx.added', { name: CustomSounds.cache[CustomSounds.cache.length - 1]?.label || '' })); this.paint(); publishCustomSfx(); }
+        catch (ex) { err.textContent = tr(`csfx.err.${['type', 'size', 'long', 'full', 'unreadable', 'none'].includes(ex.code) ? ex.code : 'idb'}`); }
+        return;
+      }
+      const id = tg.closest('[data-csrow]')?.dataset.csrow;
+      if (!id) return;
+      if (tg.dataset.f === 'label') { await CustomSounds.update(id, { label: tg.value }); publishCustomSfx(); }
+      if (tg.dataset.f === 'icon') { await CustomSounds.update(id, { icon: tg.value }); publishCustomSfx(); }
+      if (tg.dataset.f === 'volume') await CustomSounds.update(id, { volume: tg.value });
+    });
+    el.addEventListener('keydown', (e) => e.stopPropagation());
+    await CustomSounds.list();
+    this.paint();
+  },
+  paint() {
+    const box = this.el && $('#csList', this.el);
+    if (!box) return;
+    const list = CustomSounds.cache;
+    box.innerHTML = list.length ? list.map((c, i) => `
+      <li class="cs-row" data-csrow="${esc(c.id)}">
+        <select class="input select select--sm cs-icon" data-f="icon" aria-label="${esc(tr('csfx.icon'))}">${CSFX_ICONS.map((ic) => `<option ${ic === c.icon ? 'selected' : ''}>${ic}</option>`).join('')}</select>
+        <input class="input input--sm" data-f="label" maxlength="24" value="${esc(c.label)}" aria-label="${esc(tr('csfx.name'))}">
+        <span class="muted small">${esc(tr('csfx.secs', { n: c.secs || 0 }))}</span>
+        <input type="range" class="range range--vol" data-f="volume" min="0" max="1" step="0.05" value="${c.volume ?? 0.8}" aria-label="${esc(tr('csfx.volume'))}" style="--p:${Math.round((c.volume ?? 0.8) * 100)}%">
+        <span class="cs-btns"><button type="button" class="btn-sec btn-sec--sm" data-cs="play" data-id="${esc(c.id)}" aria-label="${esc(tr('csfx.play'))}">▶</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-cs="up" data-id="${esc(c.id)}" aria-label="${esc(tr('csfx.up'))}" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-cs="down" data-id="${esc(c.id)}" aria-label="${esc(tr('csfx.down'))}" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" class="btn-sec btn-sec--sm am-danger" data-cs="${'del'}" data-id="${esc(c.id)}" aria-label="${esc(tr('csfx.remove'))}">✕</button></span>
+      </li>`).join('') : `<li class="muted">${esc(tr('csfx.empty'))}</li>`;
+  },
+  close() { this.el?.remove(); this.el = null; }
 };
 
 const ToolsPanel = {
@@ -1701,75 +1812,82 @@ const ToolsPanel = {
     const opts = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('');
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="tlTitle">
-        <div class="panel-head"><h2 id="tlTitle">Strumenti</h2><button type="button" class="icon-btn" id="tlClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="tlTitle">${tr('tv.tl.title')}</h2><button type="button" class="icon-btn" id="tlClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <div class="tools-grid">
-          <section class="tool"><h3>Pausa</h3><p class="muted">Per le pause lunghe: nessuno risulta scollegato e la votazione aspetta.</p><button type="button" class="btn" id="tlPause"></button></section>
-          <section class="tool"><h3>Timer del voto</h3><p class="muted">Un conto alla rovescia sulla TV e una miccia sui telefoni. Allo scadere i ritardatari tremano.</p>
-            <select class="input select select--sm" id="tlVoteTimer" aria-label="Durata del timer">${opts(VOTE_TIMERS, String(Number(S.meta?.voteSeconds) || 0))}</select>
-            <label class="quick-toggle"><input type="checkbox" id="tlVoteAuto" ${S.meta?.voteAuto ? 'checked' : ''}><span>Allo scadere rivela da sola (se almeno uno ha votato)</span></label></section>
-          <section class="tool"><h3>Tema e atmosfera</h3>${themeSwitchHTML('tlTheme')}
-            <label class="field-label" for="tlAtmo">Atmosfera animata sullo sfondo</label>
+          <section class="tool"><h3>${tr('tv.tl.pause')}</h3><p class="muted">${tr('tv.tl.pauseText')}</p><button type="button" class="btn" id="tlPause"></button></section>
+          <section class="tool"><h3>🌙 ${esc(tr('amb.toolTitle'))}</h3><p class="muted">${esc(tr('amb.toolLead'))}</p><button type="button" class="btn-sec" id="tlAmbient"></button></section>
+          <section class="tool"><h3>⏱️ ${esc(tr('timer.title'))}</h3><p class="muted">${esc(tr('timer.lead'))}</p><button type="button" class="btn-sec" id="tlTimer">${esc(tr('amb.openTimer'))}</button></section>
+          <section class="tool"><h3>${tr('tv.tl.voteTimer')}</h3><p class="muted">${tr('tv.tl.voteTimerText')}</p>
+            <select class="input select select--sm" id="tlVoteTimer" aria-label="${tr('tv.tl.voteTimerAria')}">${opts(VOTE_TIMERS(), String(Number(S.meta?.voteSeconds) || 0))}</select>
+            <label class="quick-toggle"><input type="checkbox" id="tlVoteAuto" ${S.meta?.voteAuto ? 'checked' : ''}><span>${tr('tv.tl.voteAuto')}</span></label></section>
+          <section class="tool"><h3>${tr('tv.tl.theme')}</h3>${themeSwitchHTML('tlTheme')}
+            <h3>${tr('common.language')}</h3>${langSwitchHTML('tlLang')}
+            <label class="field-label" for="tlAtmo">${tr('tv.tl.atmo')}</label>
             <select class="input select select--sm" id="tlAtmo">${opts(ATMOS, S.meta?.atmosphere || 'none')}</select>
-            <label class="quick-toggle"><input type="checkbox" id="tlCine" ${cinematicOn() ? 'checked' : ''}><span>🎬 Reveal cinematico (luci basse, riflettore, ralenti sui voti estremi)</span></label></section>
-          <section class="tool"><h3>🎲 Tavolo e quiz</h3><p class="muted">Ruota per chi inizia, squadre equilibrate e clessidra (tasto <b>T</b>); quiz del gruppo con risposte dai telefoni (tasto <b>Q</b>).</p>
-            <div class="rg-row"><button type="button" class="btn-sec" id="tlTable">Strumenti da tavolo</button><button type="button" class="btn-sec" id="tlQuiz">🧠 Quiz</button></div></section>
-          <section class="tool"><h3>Modalità leggera</h3><p class="muted">Per Smart TV e computer lenti: toglie sfocature, bagliori, particelle e animazioni continue.</p>
-            <select class="input select select--sm" id="tlLite" aria-label="Modalità leggera">${opts([['auto', 'Automatica (si accende se la TV va a scatti)'], ['on', 'Sempre accesa'], ['off', 'Spenta']], Lite.mode())}</select>
-            ${Lite.on() ? '<p class="muted small">⚡ Adesso è accesa.</p>' : ''}</section>
-          <section class="tool"><h3>Accessibilità</h3><p class="muted">Per questa TV. Ogni telefono ha le sue in "Il mio profilo".</p>${a11yHTML('tlA11y')}</section>
-          <section class="tool"><h3>📲 App sui telefoni</h3><p class="muted">Un QR grande da inquadrare per scaricare l’app Android di GameNight Show (sempre l’ultima versione).</p>
-            <button type="button" class="btn-sec" id="tlInstall">📲 <span>Installa su un altro dispositivo</span></button></section>
-          <section class="tool"><h3>Registro errori</h3><p class="muted" id="tlErrInfo"></p>
-            <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tlErrDl">${ICONS.download}<span>Scarica il registro</span></button><button type="button" class="btn-sec btn-sec--sm" id="tlErrClear">Svuota</button></div>
-            <button type="button" class="link-btn" id="tlTour">🎓 Rivedi il tutorial</button></section>
-          <section class="tool"><h3>Musica</h3><p class="muted">Musica d’atmosfera generata dalla TV: lounge in attesa, suspense durante il voto, festa alla premiazione. Tasto <b>M</b> per accenderla e spegnerla.</p>
-            <select class="input select select--sm" id="tlMusic" aria-label="Musica">${opts(MUSIC_MODES, Music.mode())}</select>
-            <label class="vol-row"><span>Volume musica</span><input type="range" class="range range--vol" id="tlMusicVol" min="0" max="1" step="0.05" value="${getVolume('music')}" style="--p:${Math.round(getVolume('music') * 100)}%"></label></section>
-          <section class="tool"><h3>Effetti sonori</h3>
-            <label class="quick-toggle"><input type="checkbox" id="tlSounds" ${soundsOn() ? 'checked' : ''}><span>Effetti sonori</span></label>
-            <label class="vol-row"><span>Volume effetti</span><input type="range" class="range range--vol" id="tlFxVol" min="0" max="1" step="0.05" value="${getVolume('fx')}" style="--p:${Math.round(getVolume('fx') * 100)}%"></label>
-            <label class="quick-toggle"><input type="checkbox" id="tlMute" ${isMuted() ? 'checked' : ''}><span>Silenzioso (spegne musica, effetti e voce)</span></label>
-            <label class="quick-toggle"><input type="checkbox" id="tlBoard" ${S.meta?.soundboard ? 'checked' : ''}><span>Soundboard dai telefoni</span></label>
-            <div class="sfx-grid">${SFX.map((x) => `<button type="button" class="sfx-btn" data-sfx="${x.k}" title="${esc(x.label)}"><span aria-hidden="true">${x.icon}</span><small>${esc(x.label)}</small></button>`).join('')}</div></section>
-          <section class="tool"><h3>Ticker e commentatore</h3>
-            <label class="quick-toggle"><input type="checkbox" id="tlTicker" ${S.meta?.ticker ? 'checked' : ''}><span>Ticker "Ultim’ora" in basso, con i pettegolezzi anonimi dai telefoni</span></label>
-            <label class="field-label" for="tlComment">Commentatore (voce della TV)</label>
+            <label class="field-label" for="tlAtmoLevel">${esc(tr('atmo.level'))}</label>
+            <select class="input select select--sm" id="tlAtmoLevel">${opts([['soft', tr('atmo.soft')], ['normal', tr('atmo.normal')], ['strong', tr('atmo.strong')]], S.meta?.atmoLevel || 'normal')}</select>
+            <label class="quick-toggle"><input type="checkbox" id="tlAtmoSound" ${S.meta?.atmoSound ? 'checked' : ''}><span>${esc(tr('atmo.sound', { list: SOUND_SCENES.map((k) => ATMOS.find(([x]) => x === k)?.[1].split(' ')[0] || k).join(' ') }))}</span></label>
+            <label class="quick-toggle"><input type="checkbox" id="tlCine" ${cinematicOn() ? 'checked' : ''}><span>${tr('tv.tl.cine')}</span></label></section>
+          <section class="tool"><h3>${tr('tv.tl.table')}</h3><p class="muted">${tr('tv.tl.tableText')}</p>
+            <div class="rg-row"><button type="button" class="btn-sec" id="tlTable">${tr('tv.tl.tableBtn')}</button><button type="button" class="btn-sec" id="tlQuiz">🧠 Quiz</button></div></section>
+          <section class="tool"><h3>${tr('tv.tl.lite')}</h3><p class="muted">${tr('tv.tl.liteText')}</p>
+            <select class="input select select--sm" id="tlLite" aria-label="${tr('tv.tl.lite')}">${opts([['auto', tr('tv.tl.liteAuto')], ['on', tr('tv.tl.liteOn')], ['off', tr('tv.tl.liteOff')]], Lite.mode())}</select>
+            ${Lite.on() ? `<p class="muted small">${tr('tv.tl.liteNow')}</p>` : ''}</section>
+          <section class="tool"><h3>${tr('tv.tl.a11y')}</h3><p class="muted">${tr('tv.tl.a11yText')}</p>${a11yHTML('tlA11y')}</section>
+          <section class="tool"><h3>${tr('tv.tl.app')}</h3><p class="muted">${tr('tv.tl.appText')}</p>
+            <button type="button" class="btn-sec" id="tlInstall">📲 <span>${tr('tv.tl.install')}</span></button></section>
+          <section class="tool"><h3>${tr('tv.tl.errors')}</h3><p class="muted" id="tlErrInfo"></p>
+            <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tlErrDl">${ICONS.download}<span>${tr('tv.tl.errDl')}</span></button><button type="button" class="btn-sec btn-sec--sm" id="tlErrClear">${tr('tv.tl.errClear')}</button></div>
+            <button type="button" class="link-btn" id="tlTour">${tr('tv.tl.tour')}</button></section>
+          <section class="tool"><h3>${tr('tv.tl.music')}</h3><p class="muted">${tr('tv.tl.musicText')}</p>
+            <select class="input select select--sm" id="tlMusic" aria-label="${tr('tv.tl.music')}">${opts(MUSIC_MODES, Music.mode())}</select>
+            <label class="vol-row"><span>${tr('tv.tl.musicVol')}</span><input type="range" class="range range--vol" id="tlMusicVol" min="0" max="1" step="0.05" value="${getVolume('music')}" style="--p:${Math.round(getVolume('music') * 100)}%"></label></section>
+          <section class="tool"><h3>${tr('tv.tl.sfx')}</h3>
+            <label class="quick-toggle"><input type="checkbox" id="tlSounds" ${soundsOn() ? 'checked' : ''}><span>${tr('tv.tl.sfx')}</span></label>
+            <label class="vol-row"><span>${tr('tv.tl.fxVol')}</span><input type="range" class="range range--vol" id="tlFxVol" min="0" max="1" step="0.05" value="${getVolume('fx')}" style="--p:${Math.round(getVolume('fx') * 100)}%"></label>
+            <label class="quick-toggle"><input type="checkbox" id="tlMute" ${isMuted() ? 'checked' : ''}><span>${tr('tv.tl.mute')}</span></label>
+            <label class="quick-toggle"><input type="checkbox" id="tlBoard" ${S.meta?.soundboard ? 'checked' : ''}><span>${tr('tv.tl.board')}</span></label>
+            <div class="sfx-grid">${SFX.map((x) => `<button type="button" class="sfx-btn" data-sfx="${x.k}" title="${esc(x.label)}"><span aria-hidden="true">${x.icon}</span><small>${esc(x.label)}</small></button>`).join('')}${CustomSounds.cache.map((c) => `<button type="button" class="sfx-btn sfx-btn--custom" data-csfx="${esc(c.id)}" title="${esc(c.label)}"><span aria-hidden="true">${esc(c.icon)}</span><small>${esc(c.label)}</small></button>`).join('')}</div>
+            <div class="rg-row"><button type="button" class="btn-sec btn-sec--sm" id="tlCustom">${esc(tr('csfx.open'))}</button><button type="button" class="btn-sec btn-sec--sm" id="tlStopSfx">⏹ ${esc(tr('csfx.stop'))}</button></div></section>
+          <section class="tool"><h3>${tr('tv.tl.ticker')}</h3>
+            <label class="quick-toggle"><input type="checkbox" id="tlTicker" ${S.meta?.ticker ? 'checked' : ''}><span>${tr('tv.tl.tickerOn')}</span></label>
+            <label class="field-label" for="tlComment">${tr('tv.tl.comment')}</label>
             <select class="input select select--sm" id="tlComment">${opts(COMMENTATOR_MODES, commentatorMode())}</select>
             <ul class="trash-list" id="tlGossip"></ul></section>
-          <section class="tool"><h3>Intervallo</h3><p class="muted">Tra un gioco e l’altro la TV fa scorrere curiosità del gruppo, foto delle serate passate e trivia. Tasto <b>I</b>.</p>
-            <label class="quick-toggle"><input type="checkbox" id="tlAutoInt" ${Interval.autoOn() ? 'checked' : ''}><span>Parte da solo dopo 3 minuti senza toccare niente</span></label>
-            <button type="button" class="btn-sec" id="tlInterval">☕ <span>Avvia l’intervallo</span></button></section>
-          <section class="tool tool--wide"><h3>Salvataggi e sicurezza</h3><p class="save-line" id="tlSave">Leggo le copie…</p>
-            <div class="rg-row"><button type="button" class="btn-sec" id="tlTime">⏪ <span>Macchina del tempo</span></button>
-            <button type="button" class="btn-sec" id="tlCheck">🔎 <span>Controllo integrità</span></button>
-            <button type="button" class="btn-sec" id="tlTransfer">📺 <span>Trasferisci la regia</span></button></div>
-            <div class="rg-row"><button type="button" class="btn-sec" id="tlDownload">${ICONS.download}<span>Backup di emergenza</span></button>
-            <button type="button" class="btn-sec" id="tlRestoreFile">📥 <span>Importa backup</span></button>
-            ${S.meta?.groupId ? '<button type="button" class="btn-sec" id="tlGroupBackup">🗄️ <span>Backup del gruppo</span></button><button type="button" class="btn-sec" id="tlGroupRestore">Importa backup del gruppo</button>' : ''}</div>
-            ${S.meta?.groupId ? `<label class="quick-toggle"><input type="checkbox" id="tlAutoGB" ${autoGroupBackup() ? 'checked' : ''}><span>Scarica da solo il backup del gruppo a fine serata</span></label>` : ''}
+          <section class="tool"><h3>${tr('tv.tl.interval')}</h3><p class="muted">${tr('tv.tl.intervalText')}</p>
+            <label class="quick-toggle"><input type="checkbox" id="tlAutoInt" ${Interval.autoOn() ? 'checked' : ''}><span>${tr('tv.tl.autoInt')}</span></label>
+            <button type="button" class="btn-sec" id="tlInterval">☕ <span>${tr('tv.tl.startInt')}</span></button></section>
+          <section class="tool tool--wide"><h3>${tr('tv.tl.saves')}</h3><p class="save-line" id="tlSave">${tr('tv.tl.reading')}</p>
+            <div class="rg-row"><button type="button" class="btn-sec" id="tlTime">⏪ <span>${tr('tv.tm.title')}</span></button>
+            <button type="button" class="btn-sec" id="tlCheck">🔎 <span>${tr('tv.ic.title')}</span></button>
+            <button type="button" class="btn-sec" id="tlTransfer">📺 <span>${tr('tv.tr.title')}</span></button></div>
+            <div class="rg-row"><button type="button" class="btn-sec" id="tlDownload">${ICONS.download}<span>${tr('tv.tl.emergency')}</span></button>
+            <button type="button" class="btn-sec" id="tlRestoreFile">📥 <span>${tr('tv.tl.import')}</span></button>
+            ${S.meta?.groupId ? `<button type="button" class="btn-sec" id="tlGroupBackup">🗄️ <span>${tr('tv.tl.groupBackup')}</span></button><button type="button" class="btn-sec" id="tlGroupRestore">${tr('tv.tl.groupImport')}</button>` : ''}</div>
+            ${S.meta?.groupId ? `<label class="quick-toggle"><input type="checkbox" id="tlAutoGB" ${autoGroupBackup() ? 'checked' : ''}><span>${tr('tv.tl.autoGB')}</span></label>` : ''}
             <input type="file" id="tlFile" accept="application/json,.json" hidden><input type="file" id="tlGroupFile" accept="application/json,.json" hidden></section>
-          <section class="tool"><h3>Stanza</h3>
-            <label class="quick-toggle"><input type="checkbox" id="tlLock" ${S.meta?.locked ? 'checked' : ''}><span>🔒 Stanza chiusa: nessun nuovo ingresso. Chi è già dentro può sempre rientrare dal suo telefono.</span></label>
-            <p class="muted small">Per espellere un dispositivo: pannello Giocatori (tasto G), pulsante ⛔.</p>
-            <button type="button" class="btn-sec btn-sec--sm" id="tlRegiaNew">🔑 Cambia il codice regia</button>
-            <p class="muted small">Con un codice nuovo i telefoni regia e gli altri computer che avevano il vecchio perdono l’accesso.</p>
-            <h4 class="tool-sub">🚨 Allarme intrusi</h4><div id="tlKnocks">${Knocks.html()}</div></section>
-          <section class="tool"><h3>🚨 Safe Mode</h3><p class="muted">Se qualcosa va storto: spegne animazioni, musica, effetti, commentatore, atmosfere e ticker, anche sui telefoni. Restano giocatori, voti, classifica, regia e salvataggi.</p>
-            <label class="quick-toggle"><input type="checkbox" id="tlSafe" ${isSafeMode() ? 'checked' : ''}><span>Safe Mode attiva</span></label></section>
-          <section class="tool"><h3>Spazio</h3><div class="space-list" id="tlSpace"><p class="muted">Calcolo…</p></div>
-            <button type="button" class="btn-sec btn-sec--sm" id="tlPrune">Pulisci le copie delle serate vecchie (oltre 30 giorni)</button></section>
-          ${S.meta?.groupId ? `<section class="tool"><h3>Il gruppo</h3><p class="muted">Emblema, motto e colore del gruppo; album con le foto ricordo di stasera.</p><div class="rg-row"><button type="button" class="btn-sec" id="tlIdentity">Identità del gruppo</button><button type="button" class="btn-sec" id="tlAlbum">Album</button></div>
-            <p class="gk-line">${S.groupAdmin && groupKey(S.meta.groupId) ? `🔑 Chiave del gruppo <b class="code-chip code-chip--sm">${esc(prettyKey(groupKey(S.meta.groupId)))}</b>: serve per guidare le serate del gruppo da un altro computer. Tienila per te.` : S.groupAdmin ? '🔑 Questo computer è autorizzato a guidare il gruppo.' : '🔑 Questo computer non è autorizzato a salvare nel gruppo.'}</p>
-            <div class="rg-row">${!S.groupAdmin ? '<button type="button" class="btn-sec btn-sec--sm" id="tlGkEnter">Inserisci la chiave del gruppo</button>' : ''}${S.groupOwner ? '<button type="button" class="btn-sec btn-sec--sm" id="tlGkNew">Cambia chiave</button>' : ''}</div>
+          <section class="tool"><h3>${tr('tv.tl.room')}</h3>
+            <label class="quick-toggle"><input type="checkbox" id="tlLock" ${S.meta?.locked ? 'checked' : ''}><span>${tr('tv.tl.lock')}</span></label>
+            <p class="muted small">${tr('tv.tl.kickHint')}</p>
+            <button type="button" class="btn-sec btn-sec--sm" id="tlRegiaNew">${tr('tv.tl.regiaNew')}</button>
+            <p class="muted small">${tr('tv.tl.regiaNewText')}</p>
+            <h4 class="tool-sub">${tr('tv.tl.knocks')}</h4><div id="tlKnocks">${Knocks.html()}</div></section>
+          <section class="tool"><h3>🚨 Safe Mode</h3><p class="muted">${tr('tv.tl.safeText')}</p>
+            <label class="quick-toggle"><input type="checkbox" id="tlSafe" ${isSafeMode() ? 'checked' : ''}><span>${tr('tv.tl.safeOn')}</span></label></section>
+          <section class="tool"><h3>${tr('tv.tl.space')}</h3><div class="space-list" id="tlSpace"><p class="muted">${tr('tv.tl.calc')}</p></div>
+            <button type="button" class="btn-sec btn-sec--sm" id="tlPrune">${tr('tv.tl.prune')}</button></section>
+          ${S.meta?.groupId ? `<section class="tool"><h3>${tr('tv.tl.group')}</h3><p class="muted">${tr('tv.tl.groupText')}</p><div class="rg-row"><button type="button" class="btn-sec" id="tlIdentity">${tr('tv.tl.identity')}</button><button type="button" class="btn-sec" id="tlAlbum">${tr('tv.tl.album')}</button></div>
+            <p class="gk-line">${S.groupAdmin && groupKey(S.meta.groupId) ? tr('tv.tl.gkShow', { key: esc(prettyKey(groupKey(S.meta.groupId))) }) : S.groupAdmin ? tr('tv.tl.gkAdmin') : tr('tv.tl.gkNo')}</p>
+            <div class="rg-row">${!S.groupAdmin ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkEnter">${tr('tv.tl.gkEnter')}</button>` : ''}${S.groupOwner ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkNew">${tr('tv.tl.gkNew')}</button>` : ''}</div>
             ${S.groupAdmin ? `<h4 class="tool-sub">🔐 Privacy</h4>
-            <label class="quick-toggle"><input type="checkbox" id="tlPrivate" ${S.privacy?.private ? 'checked' : ''}><span>Storico privato: serate e foto visibili solo a chi ha giocato con il gruppo (l’armadio resta pubblico)</span></label>
-            <label class="field-label" for="tlExpire">Cancella da sole le stanze vecchie (le serate restano nello storico)</label>
-            <select class="input select select--sm" id="tlExpire">${opts([['0', 'Mai'], ['7', 'Dopo 7 giorni'], ['30', 'Dopo 30 giorni'], ['90', 'Dopo 90 giorni']], String(Number(S.privacy?.expireDays) || 0))}</select>` : ''}</section>` : ''}
-          <section class="tool"><h3>Domande e Chaos</h3><p class="muted">Criteri attivi, domande personalizzate e modalità Chaos con eventi casuali.</p><button type="button" class="btn-sec" id="tlVoting">Domande della serata</button></section>
-          <section class="tool"><h3>Verifica configurazione</h3><p class="muted">Controlla che Firebase e le regole siano a posto (meglio prima della serata).</p>
-            <a class="btn-sec" href="test.html" target="_blank" rel="noopener">Apri la verifica</a></section>
+            <label class="quick-toggle"><input type="checkbox" id="tlPrivate" ${S.privacy?.private ? 'checked' : ''}><span>${tr('tv.tl.private')}</span></label>
+            <label class="field-label" for="tlExpire">${tr('tv.tl.expire')}</label>
+            <select class="input select select--sm" id="tlExpire">${opts([['0', tr('tv.tl.never')], ['7', tr('tv.tl.afterDays', { n: 7 })], ['30', tr('tv.tl.afterDays', { n: 30 })], ['90', tr('tv.tl.afterDays', { n: 90 })]], String(Number(S.privacy?.expireDays) || 0))}</select>` : ''}</section>` : ''}
+          <section class="tool"><h3>${tr('tv.tl.chaos')}</h3><p class="muted">${tr('tv.tl.chaosText')}</p><button type="button" class="btn-sec" id="tlVoting">${tr('tv.tl.questions')}</button></section>
+          <section class="tool"><h3>${tr('tv.tl.check')}</h3><p class="muted">${tr('tv.tl.checkText')}</p>
+            <a class="btn-sec" href="test.html" target="_blank" rel="noopener">${tr('tv.tl.checkOpen')}</a></section>
         </div>
-        <section class="tool"><h3>Cestino</h3><ul class="trash-list" id="tlTrash"></ul></section>
+        <section class="tool"><h3>${tr('tv.tl.trash')}</h3><ul class="trash-list" id="tlTrash"></ul></section>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -1779,6 +1897,8 @@ const ToolsPanel = {
       if (e.target === el || e.target.closest('#tlClose')) { this.close(); return; }
       if (e.target.closest('#tlPause')) { setPaused(!S.state?.paused).catch((err) => toast(explainError(err), 'error')); this.close(); return; }
       if (e.target.closest('#tlVoting')) { this.close(); VotingPanel.open(); return; }
+      if (e.target.closest('#tlAmbient')) { setAmbient(!S.meta?.ambient).catch((err) => toast(explainError(err), 'error')); this.close(); return; }
+      if (e.target.closest('#tlTimer')) { this.close(); TablePanel.open('timer'); return; }
       if (e.target.closest('#tlIdentity')) { this.close(); IdentityPanel.open(); return; }
       if (e.target.closest('#tlAlbum')) { this.close(); AlbumPanel.open(); return; }
       if (e.target.closest('#tlInterval')) { this.close(); Interval.open(); return; }
@@ -1786,39 +1906,43 @@ const ToolsPanel = {
       if (e.target.closest('#tlQuiz')) { this.close(); Quiz.open(); return; }
       if (e.target.closest('#tlKnockClear')) { remove(roomRef(S.code, 'knock')).catch((err) => toast(explainError(err), 'error')); return; }
       if (e.target.closest('#tlRegiaNew')) {
-        if (!confirm('Creare un nuovo codice regia?\n\nI telefoni con la regia attiva e gli altri computer che conoscono il vecchio codice non potranno più guidare la serata.')) return;
-        try { const c = await changeRegiaCode(); this.close(); this.open(); toast(`Nuovo codice regia: ${prettyRegia(c)}`); } catch (err) { toast(explainError(err), 'error'); }
+        if (!confirm(tr('tv.tl.regiaConfirm'))) return;
+        try { const c = await changeRegiaCode(); this.close(); this.open(); toast(tr('tv.tl.regiaDone', { code: prettyRegia(c) })); } catch (err) { toast(explainError(err), 'error'); }
         return;
       }
       const sfx = e.target.closest('[data-sfx]');
       if (sfx) { playSfx(sfx.dataset.sfx); return; }
+      const cs = e.target.closest('[data-csfx]');
+      if (cs) { CustomSounds.play(cs.dataset.csfx, getVolume('fx')).catch(() => {}); return; }
+      if (e.target.closest('#tlCustom')) { this.close(); CustomSfxPanel.open(); return; }
+      if (e.target.closest('#tlStopSfx')) { CustomSounds.stopAll(); stopSpeaking(); return; }
       const gd = e.target.closest('[data-delgossip]');
       if (gd) { remove(roomRef(S.code, `gossip/${gd.dataset.delgossip}`)).catch((err) => toast(explainError(err), 'error')); return; }
       if (e.target.closest('#tlDownload')) { downloadEmergency(); return; }
       if (e.target.closest('#tlRestoreFile')) { $('#tlFile', el).click(); return; }
       if (e.target.closest('#tlGroupRestore')) { $('#tlGroupFile', el).click(); return; }
       if (e.target.closest('#tlGroupBackup')) {
-        const photos = confirm('Includere anche le foto ricordo? Il file diventa molto più grande.\n\nOK = con le foto · Annulla = solo dati');
+        const photos = confirm(tr('tv.tl.withPhotos'));
         groupBackup(photos).catch((err) => toast(explainError(err), 'error'));
         return;
       }
       if (e.target.closest('#tlTime')) { this.close(); TimeMachine.open(); return; }
       if (e.target.closest('#tlErrDl')) { ErrLog.download({ stanza: S.code, fase: S.state?.phase, giocatori: activePlayers(S.players).length, safeMode: isSafeMode() }); return; }
-      if (e.target.closest('#tlErrClear')) { if (confirm('Svuotare il registro degli errori?')) { ErrLog.clear(); this.paintErr(); } return; }
+      if (e.target.closest('#tlErrClear')) { if (confirm(tr('tv.tl.errClearConfirm'))) { ErrLog.clear(); this.paintErr(); } return; }
       if (e.target.closest('#tlInstall')) { this.close(); InstallQR.open(); return; }
       if (e.target.closest('#tlTour')) { resetTours(); this.close(); setTimeout(() => runTour(S.state?.phase || 'lobby', TOURS[S.state?.phase] || TOURS.lobby, { force: true }), 200); return; }
       if (e.target.closest('#tlGkEnter')) { this.close(); showGroupKeyBanner(); $('#gkInput')?.focus(); return; }
       if (e.target.closest('#tlGkNew')) {
-        if (!confirm('Creare una nuova chiave del gruppo? I computer già autorizzati restano tali; la vecchia chiave non servirà più per autorizzarne altri.')) return;
+        if (!confirm(tr('tv.tl.gkConfirm'))) return;
         const k = randomCode(8);
-        try { await set(dbRef(`groupKeys/${S.meta.groupId}`), k); saveGroupKey(S.meta.groupId, k); toast(`Nuova chiave del gruppo: ${prettyKey(k)}`); this.close(); this.open(); } catch (err) { toast(explainError(err), 'error'); }
+        try { await set(dbRef(`groupKeys/${S.meta.groupId}`), k); saveGroupKey(S.meta.groupId, k); toast(tr('tv.tl.gkDone', { key: prettyKey(k) })); this.close(); this.open(); } catch (err) { toast(explainError(err), 'error'); }
         return;
       }
       if (e.target.closest('#tlCheck')) { this.close(); IntegrityPanel.open(); return; }
       if (e.target.closest('#tlTransfer')) { this.close(); TransferPanel.open(); return; }
       if (e.target.closest('#tlPrune')) {
         const n = await Vault.prune(30, S.code).catch(() => 0);
-        toast(n ? `Tolte ${n} copie vecchie` : 'Nessuna copia vecchia da togliere');
+        toast(n ? tr('tv.tl.pruned', { n }) : tr('tv.tl.pruneNone'));
         this.paintSpace();
         return;
       }
@@ -1832,21 +1956,23 @@ const ToolsPanel = {
       if (t.id === 'tlMute') { setMuted(t.checked); if (t.checked) stopSpeaking(); syncMusic(); }
       if (t.id === 'tlMusic') { Music.setMode(t.value); syncMusic(true); }
       if (t.id === 'tlAtmo') metaFlag('atmosphere', t.value === 'none' ? null : t.value);
+      if (t.id === 'tlAtmoLevel') metaFlag('atmoLevel', t.value === 'normal' ? null : t.value);
+      if (t.id === 'tlAtmoSound') { audioCtx(); metaFlag('atmoSound', t.checked || null); }
       if (t.id === 'tlVoteTimer') metaFlag('voteSeconds', Number(t.value) || null);
-      if (t.id === 'tlLite') { Lite.setMode(t.value); toast(t.value === 'on' ? 'Modalità leggera accesa' : t.value === 'off' ? 'Modalità leggera spenta' : 'Modalità leggera automatica'); }
-      if (t.id === 'tlPrivate') update(groupRef(S.meta.groupId, 'privacy'), { private: t.checked || null }).then(() => toast(t.checked ? 'Storico privato: serate e foto solo ai membri' : 'Storico visibile a chi ha il codice del gruppo')).catch((err) => toast(explainError(err), 'error'));
+      if (t.id === 'tlLite') { Lite.setMode(t.value); toast(t.value === 'on' ? tr('tv.tl.liteToastOn') : t.value === 'off' ? tr('tv.tl.liteToastOff') : tr('tv.tl.liteToastAuto')); }
+      if (t.id === 'tlPrivate') update(groupRef(S.meta.groupId, 'privacy'), { private: t.checked || null }).then(() => toast(t.checked ? tr('tv.tl.privateOn') : tr('tv.tl.privateOff'))).catch((err) => toast(explainError(err), 'error'));
       if (t.id === 'tlExpire') {
         const days = Number(t.value) || 0;
         update(groupRef(S.meta.groupId, 'privacy'), { expireDays: days || null }).then(async () => {
-          if (!days) { toast('Le stanze vecchie restano'); return; }
+          if (!days) { toast(tr('tv.tl.expireNever')); return; }
           const n = await cleanupOldRooms(S.meta.groupId, days);
-          toast(n ? `Cancellate ${n} ${n === 1 ? 'stanza vecchia' : 'stanze vecchie'}` : `Le stanze più vecchie di ${days} giorni verranno cancellate`);
+          toast(n ? tr('tv.tl.expired', { n }) : tr('tv.tl.expireLater', { n: days }));
         }).catch((err) => toast(explainError(err), 'error'));
       }
       if (t.id === 'tlVoteAuto') metaFlag('voteAuto', t.checked || null);
       if (t.id === 'tlBoard') metaFlag('soundboard', t.checked || null);
       if (t.id === 'tlTicker') metaFlag('ticker', t.checked || null);
-      if (t.id === 'tlComment') { setCommentatorMode(t.value); if (t.value !== 'off') speak(t.value === 'roast' ? 'Commentatore pronto. Siete sicuri di volerlo?' : 'Commentatore pronto! Che la serata abbia inizio!'); }
+      if (t.id === 'tlComment') { setCommentatorMode(t.value); if (t.value !== 'off') speak(t.value === 'roast' ? tr('tv.tl.commentRoast') : tr('tv.tl.commentReady')); }
       if (t.id === 'tlAutoInt') Interval.setAuto(t.checked);
       if (t.id === 'tlCine') { try { localStorage.setItem(CINE_KEY, t.checked ? '1' : '0'); } catch { /* niente */ } }
       if (t.id === 'tlLock') setLocked(t.checked).catch((err) => toast(explainError(err), 'error'));
@@ -1880,7 +2006,7 @@ const ToolsPanel = {
     const box = this.el && $('#tlErrInfo', this.el);
     if (!box) return;
     const l = ErrLog.list();
-    box.textContent = l.length ? `${l.length} ${l.length === 1 ? 'voce registrata' : 'voci registrate'} su questo computer, l’ultima alle ${new Date(l[l.length - 1].t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Scaricale per capire cosa è successo.` : 'Nessun errore registrato su questo computer.';
+    box.textContent = l.length ? tr('tv.tl.errInfo', { n: l.length, time: clockL(l[l.length - 1].t, false) }) : tr('tv.tl.errNone');
   },
   /** "Autosave ✔ 22:14:31 · Backup ✔ · Ultimo stato valido". */
   async paintSave() {
@@ -1888,11 +2014,11 @@ const ToolsPanel = {
     const [slots, snaps] = await Promise.all([Vault.slots(S.code), Vault.snapshots(S.code)]);
     const box = this.el && $('#tlSave', this.el);
     if (!box) return;
-    if (!Vault.available) { box.innerHTML = '⚠️ Questo browser non permette le copie locali (navigazione privata?): usa il backup di emergenza.'; return; }
-    const t = (at) => new Date(at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (!Vault.available) { box.innerHTML = tr('tv.tl.noVault'); return; }
+    const t = (at) => fmtDateL(at, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const cur = slots.find((x) => x.slot === 'current');
     const ok = slots.filter((x) => x.ok);
-    box.innerHTML = `Autosave ${cur?.ok ? '✔' : '⚠️'} <b>${cur ? t(cur.at) : '—'}</b> · Backup a rotazione ${ok.length >= 2 ? '✔' : '…'} <b>${ok.length}</b> · Istantanee <b>${snaps.length}</b> · Ultimo stato valido <b>${ok[0] ? t(ok[0].at) : '—'}</b>`;
+    box.innerHTML = tr('tv.tl.saveLine', { ok: cur?.ok ? '✔' : '⚠️', cur: cur ? t(cur.at) : '—', rot: ok.length >= 2 ? '✔' : '…', good: String(ok.length), snaps: String(snaps.length), last: ok[0] ? t(ok[0].at) : '—' });
   },
   async paintSpace() {
     if (!this.el) return;
@@ -1902,15 +2028,16 @@ const ToolsPanel = {
     const q = r.browser.quota;
     const pct = q ? Math.round((r.browser.usage / q) * 100) : null;
     box.innerHTML = `
-      <p>Questo browser: <b>${fmtBytes(r.browser.usage)}</b>${q ? ` di ${fmtBytes(q)} (${pct}%)` : ''}${r.browser.persisted ? ' · protetto dalla pulizia automatica' : ''}</p>
-      <p class="muted small">Copie locali ${fmtBytes(r.vault)} (stasera ${fmtBytes(r.thisRoom)}, ${r.snaps} istantanee) · Foto di stasera ${fmtBytes(r.photos)} · Dati della serata ${fmtBytes(r.data)} · Armadio ${fmtBytes(r.library)} · Storico ${fmtBytes(r.nights)}</p>
-      ${pct !== null && pct >= 80 ? '<p class="claim-warn">⚠️ Lo spazio locale sta finendo: pulisci le copie vecchie o scarica il backup di emergenza.</p>' : ''}
-      ${r.photos > 60 * 1024 * 1024 ? '<p class="claim-warn">⚠️ Le foto di stasera occupano molto: il piano gratuito di Firebase ha 1 GB in tutto.</p>' : ''}`;
+      <p>${tr('tv.sp.browser', { used: fmtBytes(r.browser.usage) })}${q ? tr('tv.sp.of', { quota: fmtBytes(q), pct: String(pct) }) : ''}${r.browser.persisted ? tr('tv.sp.persisted') : ''}</p>
+      <p class="muted small">${tr('tv.sp.detail', { vault: fmtBytes(r.vault), room: fmtBytes(r.thisRoom), snaps: String(r.snaps), photos: fmtBytes(r.photos), data: fmtBytes(r.data), lib: fmtBytes(r.library), nights: fmtBytes(r.nights) })}</p>
+      ${pct !== null && pct >= 80 ? `<p class="claim-warn">${tr('tv.sp.full')}</p>` : ''}
+      ${r.photos > 60 * 1024 * 1024 ? `<p class="claim-warn">${tr('tv.sp.photos')}</p>` : ''}`;
   },
   close() { this.el?.remove(); this.el = null; },
   update() {
     if (!this.el) return;
-    $('#tlPause', this.el).innerHTML = S.state?.paused ? `${ICONS.play}<span>Riprendi la serata</span>` : '<span>Metti in pausa</span>';
+    $('#tlPause', this.el).innerHTML = S.state?.paused ? `${ICONS.play}<span>${tr('tv.resume.btn')}</span>` : `<span>${tr('tv.tl.pauseBtn')}</span>`;
+    $('#tlAmbient', this.el).textContent = S.meta?.ambient ? tr('amb.off') : tr('amb.on');
     const lock = $('#tlLock', this.el);
     if (lock && lock.checked !== Boolean(S.meta?.locked)) lock.checked = Boolean(S.meta?.locked);
     const gossip = gossipList();
@@ -1919,7 +2046,7 @@ const ToolsPanel = {
       this.gsig = gsig;
       $('#tlGossip', this.el).innerHTML = S.meta?.ticker ? (gossip.length ? gossip.map((g) => `
         <li><span>«${esc(g.text)}» <span class="muted small">${esc(S.players[g.by]?.name || '')}</span></span>
-        <button type="button" class="btn-sec btn-sec--sm" data-delgossip="${esc(g.id)}" aria-label="Togli dal ticker">${ICONS.x}</button></li>`).join('') : '<li class="muted">Ancora nessun pettegolezzo dai telefoni.</li>') : '';
+        <button type="button" class="btn-sec btn-sec--sm" data-delgossip="${esc(g.id)}" aria-label="${tr('tv.tl.gossipDel')}">${ICONS.x}</button></li>`).join('') : `<li class="muted">${tr('tv.tl.gossipNone')}</li>`) : '';
     }
     const ksig = JSON.stringify(S.knock || {});
     if (ksig !== this.ksig) { this.ksig = ksig; const kb = $('#tlKnocks', this.el); if (kb) kb.innerHTML = Knocks.html(); }
@@ -1928,10 +2055,46 @@ const ToolsPanel = {
     if (sig === this.sig) return;
     this.sig = sig;
     $('#tlTrash', this.el).innerHTML = items.length ? items.map(([id, t]) => `
-      <li><span><b>${esc(t.game.name)}</b> <span class="muted">${Object.keys(t.votes || {}).length} voti</span></span>
-      <button type="button" class="btn-sec btn-sec--sm" data-restore="${esc(id)}">Ripristina</button></li>`).join('') : '<li class="muted">Il cestino è vuoto.</li>';
+      <li><span><b>${esc(t.game.name)}</b> <span class="muted">${tr('tv.ic.nVotes', { n: Object.keys(t.votes || {}).length })}</span></span>
+      <button type="button" class="btn-sec btn-sec--sm" data-restore="${esc(id)}">${tr('tv.tl.restore')}</button></li>`).join('') : `<li class="muted">${tr('tv.tl.trashEmpty')}</li>`;
   }
 };
+
+/** Accende o spegne la schermata ambientale (salvata nella stanza: resta anche dopo un ricaricamento). */
+async function setAmbient(on) {
+  if (!S.code || Boolean(S.meta?.ambient) === Boolean(on)) return;
+  await update(roomRef(S.code, 'meta'), { ambient: on ? true : null });
+  logEvent(on ? tr('amb.logOn') : tr('amb.logOff'), '🌙');
+}
+
+/** Tutto quello che la schermata ambientale mostra, ricavato dallo stato della serata. */
+function ambientModel() {
+  const st = S.state || {};
+  const phase = st.phase || 'lobby';
+  const playing = phase === 'idle' && st.playStart && st.playName;
+  const pick = !playing && phase === 'idle' && S.draft?.name ? S.draft.name : '';
+  const name = playing ? st.playName : pick;
+  const it = name ? (S.draft?.libraryId && S.library?.[S.draft.libraryId]?.name === name ? { id: S.draft.libraryId, ...S.library[S.draft.libraryId] } : findLibrary(name)) : null;
+  const atmoCode = S.meta?.atmosphere === 'auto' ? autoAtmo() : (S.meta?.atmosphere || 'none');
+  const atmo = ATMOS.find(([k]) => k === atmoCode);
+  const players = playing
+    ? (st.playPlayers ? Object.keys(st.playPlayers) : activePlayers(S.players).map((p) => p.uid)).map((u) => S.players[u]).filter(Boolean).slice(0, 12)
+    : null;
+  const board = buildBoard(S.games, S.votes).slice(0, 3).map((r) => ({ name: r.name, avg: fmt(r.stats.avg) }));
+  return {
+    on: Boolean(S.meta?.ambient), phase,
+    mode: name ? 'game' : 'idle',
+    statusKey: S.state?.paused ? 'paused' : playing ? 'playing' : pick ? 'next' : phase === 'lobby' ? 'lobby' : phase === 'board' ? 'board' : 'between',
+    game: name ? { key: `${playing ? st.playId : 'pick'}:${name}`, name, image: S.draft?.image && !playing ? S.draft.image : (it?.image || it?.thumb || null), info: it ? libInfo(it) : '' } : null,
+    players, board,
+    playStart: playing ? Number(st.playStart) : 0,
+    playElapsed: () => playElapsed(),
+    group: S.meta?.groupName || '', emblem: emblemHTML(), night: nightNumber(),
+    count: activePlayers(S.players).length,
+    paused: Boolean(st.paused), pauseReason: pauseText(st),
+    atmoLabel: atmo && atmo[0] !== 'none' ? atmo[1] : ''
+  };
+}
 
 /** Stato "partita in corso": timer, nome e pronostici aperti sui telefoni. */
 function playState(name, spectators = []) {
@@ -1946,7 +2109,7 @@ function playState(name, spectators = []) {
 
 function setPhase(phase, gameId = null, extra = {}) {
   // Istantanea prima di cambiare fase (reveal e premiazione hanno la loro, con il nome del gioco).
-  if (S.state?.phase && phase !== S.state.phase && !['reveal', 'awards'].includes(phase)) Save.snap(`Prima di: ${PHASE_LABEL[phase] || phase}`, 'phase');
+  if (S.state?.phase && phase !== S.state.phase && !['reveal', 'awards'].includes(phase)) Save.snap(tr('tv.snap.beforePhase', { phase: phaseLabel(phase) }), 'phase');
   const state = { phase, at: serverTimestamp(), ...extra };
   if (gameId) state.gameId = gameId;
   // Timer del voto (se acceso negli Strumenti): parte quando si apre la votazione.
@@ -2044,17 +2207,17 @@ function showGroupKeyBanner() {
   el.id = 'gkBanner';
   el.className = 'net-banner gk-banner';
   el.setAttribute('role', 'alert');
-  el.innerHTML = `<span>🔑 Questo computer non è ancora autorizzato a salvare nel gruppo <b>${esc(S.meta.groupName || '')}</b> (serate, armadio dei giochi, membri). Scrivi la <b>chiave del gruppo</b>: la trovi negli Strumenti del computer che l’ha creato.</span>
-    <span class="gk-row"><label class="sr-only" for="gkInput">Chiave del gruppo</label><input class="input code-input code-input--8" id="gkInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX">
-    <button type="button" class="btn-sec btn-sec--sm" id="gkGo">Conferma</button><button type="button" class="link-btn" id="gkLater">Più tardi</button></span>`;
+  el.innerHTML = `<span>${tr('tv.gk.banner', { name: esc(S.meta.groupName || '') })}</span>
+    <span class="gk-row"><label class="sr-only" for="gkInput">${tr('tv.tr.groupKey')}</label><input class="input code-input code-input--8" id="gkInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX">
+    <button type="button" class="btn-sec btn-sec--sm" id="gkGo">${tr('tv.gk.confirm')}</button><button type="button" class="link-btn" id="gkLater">${tr('tv.later')}</button></span>`;
   document.body.appendChild(el);
   $('#gkInput', el).addEventListener('input', (e) => { const v = normalizeCode(e.target.value, 8); e.target.value = v.length > 4 ? `${v.slice(0, 4)}-${v.slice(4)}` : v; });
   el.addEventListener('click', async (e) => {
     if (e.target.closest('#gkLater')) { el.remove(); return; }
     if (!e.target.closest('#gkGo')) return;
     const ok = await ensureGroupAdmin(S.meta.groupId, $('#gkInput', el).value).catch(() => false);
-    if (ok) { toast('Computer autorizzato: la serata si salva nel gruppo'); onGroupAdmin(S.meta.groupId); }
-    else toast('Chiave del gruppo sbagliata.', 'error');
+    if (ok) { toast(tr('tv.gk.ok')); onGroupAdmin(S.meta.groupId); }
+    else toast(tr('tv.gk.wrong'), 'error');
   });
 }
 
@@ -2106,17 +2269,17 @@ const IdentityPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="idTitle">
-        <div class="panel-head"><h2 id="idTitle">Identità del gruppo</h2><button type="button" class="icon-btn" id="idClose" aria-label="Chiudi">${ICONS.x}</button></div>
-        <p class="panel-note"><b>${esc(S.meta.groupName || '')}</b>: emblema, motto e colore compaiono sulla TV, sui telefoni e nell'immagine da condividere.</p>
-        <span class="field-label">Emblema</span>
+        <div class="panel-head"><h2 id="idTitle">${tr('tv.tl.identity')}</h2><button type="button" class="icon-btn" id="idClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
+        <p class="panel-note">${tr('tv.id.note', { name: esc(S.meta.groupName || '') })}</p>
+        <span class="field-label">${tr('tv.id.emblem')}</span>
         <div class="emblem-grid">${EMBLEMS.map((e) => `<button type="button" class="emblem-btn" data-emb="${e}" aria-pressed="${this.emblem === e && !this.logo}">${e}</button>`).join('')}
           <button type="button" class="emblem-btn emblem-btn--img" id="idLogoPick" aria-pressed="${Boolean(this.logo)}">${this.logo ? `<img src="${esc(this.logo)}" alt="">` : ICONS.image}</button>
           <input type="file" id="idLogo" accept="image/*" hidden></div>
-        <label class="field-label" for="idMotto">Motto</label>
-        <input class="input" id="idMotto" maxlength="60" placeholder="Es. Chi perde lava i piatti" value="${esc(id.motto || '')}">
-        <span class="field-label">Colore</span>
-        <div class="ed-swatches">${GROUP_COLORS.map((c) => `<button type="button" class="ed-sw" data-col="${c}" style="--c:${c}" aria-pressed="${this.color === c}" aria-label="Colore ${c}"></button>`).join('')}</div>
-        <div class="claim-actions"><button type="button" class="btn btn-big" id="idSave">${ICONS.check}<span>Salva</span></button></div>
+        <label class="field-label" for="idMotto">${tr('tv.id.motto')}</label>
+        <input class="input" id="idMotto" maxlength="60" placeholder="${tr('tv.id.mottoPh')}" value="${esc(id.motto || '')}">
+        <span class="field-label">${tr('tv.id.color')}</span>
+        <div class="ed-swatches">${GROUP_COLORS.map((c) => `<button type="button" class="ed-sw" data-col="${c}" style="--c:${c}" aria-pressed="${this.color === c}" aria-label="${tr('tv.id.colorN', { c })}"></button>`).join('')}</div>
+        <div class="claim-actions"><button type="button" class="btn btn-big" id="idSave">${ICONS.check}<span>${tr('tv.save')}</span></button></div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -2129,7 +2292,7 @@ const IdentityPanel = {
       if (c) { this.color = c.dataset.col; el.querySelectorAll('[data-col]').forEach((x) => x.setAttribute('aria-pressed', String(x === c))); return; }
       if (e.target.closest('#idSave')) {
         const patch = { emblem: this.logo ? null : (this.emblem || null), logo: this.logo || null, motto: cleanName($('#idMotto', el).value, 60) || null, color: this.color || null };
-        try { await set(groupRef(S.meta.groupId, 'identity'), patch); toast('Identità del gruppo salvata'); this.close(); } catch (err) { toast(explainError(err), 'error'); }
+        try { await set(groupRef(S.meta.groupId, 'identity'), patch); toast(tr('tv.id.saved')); this.close(); } catch (err) { toast(explainError(err), 'error'); }
       }
     });
     $('#idLogo', el).addEventListener('change', async (e) => {
@@ -2160,7 +2323,7 @@ const AlbumPanel = {
   el: null,
   isOpen() { return Boolean(this.el); },
   /** room: stanza di cui mostrare le foto (di default quella di stasera). */
-  async open(room = S.code, title = 'Album della serata') {
+  async open(room = S.code, title = tr('tv.al.title')) {
     if (this.el || !S.meta?.groupId) return;
     this.room = room;
     this.slide = null;
@@ -2170,10 +2333,10 @@ const AlbumPanel = {
     el.innerHTML = `
       <div class="card panel panel--wide panel--album" role="dialog" aria-modal="true" aria-labelledby="alTitle">
         <div class="panel-head"><h2 id="alTitle">${esc(title)}</h2>
-          <div class="rg-row">${room === S.code ? `<button type="button" class="btn-sec btn-sec--sm" id="alAdd">${ICONS.image}<span>Aggiungi foto</span></button><input type="file" id="alFile" accept="image/*" hidden>` : ''}
-          <button type="button" class="btn-sec btn-sec--sm" id="alShow">${ICONS.play}<span>Presentazione</span></button>
-          <button type="button" class="icon-btn" id="alClose" aria-label="Chiudi">${ICONS.x}</button></div></div>
-        <div class="album-grid" id="alGrid"><p class="muted">Carico le foto…</p></div>
+          <div class="rg-row">${room === S.code ? `<button type="button" class="btn-sec btn-sec--sm" id="alAdd">${ICONS.image}<span>${tr('tv.al.add')}</span></button><input type="file" id="alFile" accept="image/*" hidden>` : ''}
+          <button type="button" class="btn-sec btn-sec--sm" id="alShow">${ICONS.play}<span>${tr('tv.al.show')}</span></button>
+          <button type="button" class="icon-btn" id="alClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div></div>
+        <div class="album-grid" id="alGrid"><p class="muted">${tr('tv.al.loading')}</p></div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -2182,7 +2345,7 @@ const AlbumPanel = {
       if (e.target.closest('#alAdd')) { $('#alFile', el).click(); return; }
       if (e.target.closest('#alShow')) { this.show(0); return; }
       const d = e.target.closest('[data-delphoto]');
-      if (d && confirm('Togliere questa foto dall’album?')) { remove(groupRef(S.meta.groupId, `photos/${this.room}/${d.dataset.delphoto}`)).catch((err) => toast(explainError(err), 'error')); return; }
+      if (d && confirm(tr('tv.al.delConfirm'))) { remove(groupRef(S.meta.groupId, `photos/${this.room}/${d.dataset.delphoto}`)).catch((err) => toast(explainError(err), 'error')); return; }
       const ph = e.target.closest('[data-photo]');
       if (ph) this.show(Number(ph.dataset.photo));
     });
@@ -2210,10 +2373,10 @@ const AlbumPanel = {
     this.sig = sig;
     $('#alGrid', this.el).innerHTML = list.length ? list.map((p, i) => `
       <figure class="polaroid" style="--r:${((i * 37) % 7) - 3}deg">
-        <button type="button" class="polaroid-img" data-photo="${i}" aria-label="Apri la foto"><img src="${esc(p.data)}" alt="${esc(p.caption || 'Foto ricordo')}"></button>
+        <button type="button" class="polaroid-img" data-photo="${i}" aria-label="${tr('tv.al.open')}"><img src="${esc(p.data)}" alt="${esc(p.caption || tr('tv.al.photo'))}"></button>
         <figcaption>${esc(p.caption || '')}<small>${esc(p.by || '')}${p.game ? ` · ${esc(p.game)}` : ''}</small></figcaption>
-        ${this.room === S.code ? `<button type="button" class="lib-del" data-delphoto="${esc(p.id)}" aria-label="Togli la foto">${ICONS.x}</button>` : ''}
-      </figure>`).join('') : `<p class="muted">${this.room === S.code ? 'Ancora nessuna foto. Dai telefoni: "Foto ricordo" nella schermata di attesa.' : 'Nessuna foto per questa serata.'}</p>`;
+        ${this.room === S.code ? `<button type="button" class="${'lib-del'}" data-delphoto="${esc(p.id)}" aria-label="${tr('tv.al.del')}">${ICONS.x}</button>` : ''}
+      </figure>`).join('') : `<p class="muted">${this.room === S.code ? tr('tv.al.empty') : tr('tv.al.emptyOld')}</p>`;
   },
   show(i) {
     const list = this.list();
@@ -2224,7 +2387,7 @@ const AlbumPanel = {
     box.className = 'slideshow';
     const paint = () => {
       const p = list[idx % list.length];
-      box.innerHTML = `<figure><img src="${esc(p.data)}" alt=""><figcaption>${esc(p.caption || '')} <small>${esc(p.by || '')}</small></figcaption></figure><p class="muted">${(idx % list.length) + 1} / ${list.length} · tocca per chiudere</p>`;
+      box.innerHTML = `<figure><img src="${esc(p.data)}" alt=""><figcaption>${esc(p.caption || '')} <small>${esc(p.by || '')}</small></figcaption></figure><p class="muted">${tr('tv.al.slide', { i: String((idx % list.length) + 1), n: String(list.length) })}</p>`;
     };
     paint();
     this.timer = setInterval(() => { idx++; paint(); }, 4500);
@@ -2238,7 +2401,7 @@ const AlbumPanel = {
 // Prossima serata (data, luogo, presenze)
 // ---------------------------------------------------------------------------
 
-const RSVP_LABEL = { si: 'Ci sono', forse: 'Forse', no: 'Non ci sono' };
+const RSVP_LABEL = (a) => tr(`tv.rsvp.${a}`);
 
 function nextNightHTML(withForm = true) {
   const nx = S.next;
@@ -2248,23 +2411,23 @@ function nextNightHTML(withForm = true) {
   const local = at ? new Date(at - new Date(at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   return `
     <section class="card stat-card next-card-cal">
-      <h2>📅 Prossima serata</h2>
-      ${at ? `<p class="next-when">${esc(new Date(at).toLocaleString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}${nx.place ? ` · ${esc(nx.place)}` : ''}</p>
+      <h2>${tr('tv.nx.title')}</h2>
+      ${at ? `<p class="next-when">${esc(fmtDateL(at, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}${nx.place ? ` · ${esc(nx.place)}` : ''}</p>
         ${nx.note ? `<p class="muted">${esc(nx.note)}</p>` : ''}
-        <div class="rsvp-cols">${['si', 'forse', 'no'].map((a) => `<div><b>${RSVP_LABEL[a]} (${by(a).length})</b><p>${esc(by(a).join(', ')) || '—'}</p></div>`).join('')}</div>` : '<p class="muted">Nessuna data fissata. Le presenze si segnano dal telefono.</p>'}
+        <div class="rsvp-cols">${['si', 'forse', 'no'].map((a) => `<div><b>${RSVP_LABEL(a)} (${by(a).length})</b><p>${esc(by(a).join(', ')) || '—'}</p></div>`).join('')}</div>` : `<p class="muted">${tr('tv.nx.none')}</p>`}
       ${withForm ? `<form class="next-form" id="nxForm" novalidate>
-        <label class="sr-only" for="nxAt">Data e ora</label><input class="input" type="datetime-local" id="nxAt" value="${local}">
-        <label class="sr-only" for="nxPlace">Luogo</label><input class="input" id="nxPlace" maxlength="60" placeholder="Dove? (es. da Giulia)" value="${esc(nx?.place || '')}">
-        <button type="submit" class="btn-sec">${at ? 'Aggiorna' : 'Fissa la data'}</button>
-        ${at ? '<button type="button" class="link-btn" id="nxClear">Cancella</button>' : ''}
+        <label class="sr-only" for="nxAt">${tr('tv.nx.at')}</label><input class="input" type="datetime-local" id="nxAt" value="${local}">
+        <label class="sr-only" for="nxPlace">${tr('tv.nx.place')}</label><input class="input" id="nxPlace" maxlength="60" placeholder="${tr('tv.nx.placePh')}" value="${esc(nx?.place || '')}">
+        <button type="submit" class="btn-sec">${at ? tr('tv.nx.update') : tr('tv.nx.set')}</button>
+        ${at ? `<button type="button" class="link-btn" id="nxClear">${tr('tv.nx.clear')}</button>` : ''}
       </form>` : ''}
-      ${at ? '<button type="button" class="btn-sec btn-sec--sm" id="nxIcs">📅 <span>Invito per il calendario (.ics)</span></button>' : ''}
+      ${at ? `<button type="button" class="btn-sec btn-sec--sm" id="nxIcs">📅 <span>${tr('tv.nx.ics')}</span></button>` : ''}
     </section>`;
 }
 
 async function saveNextNight(atStr, place) {
   const at = atStr ? new Date(atStr).getTime() : 0;
-  if (!at) throw userError('Scegli data e ora.');
+  if (!at) throw userError(tr('tv.nx.need'));
   const same = Number(S.next?.at) === at;
   await set(groupRef(S.meta.groupId, 'next'), { at, place: cleanName(place, 60) || null, note: S.next?.note || null, rsvp: same ? (S.next?.rsvp || null) : null });
 }
@@ -2291,40 +2454,40 @@ const GameSheet = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="gsTitle">
-        <div class="panel-head"><h2 id="gsTitle">${esc(it.name)}</h2><button type="button" class="icon-btn" id="gsClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="gsTitle">${esc(it.name)}</h2><button type="button" class="icon-btn" id="gsClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <div class="gs-record">
-          <span><b>${rec.matches}</b> partite</span>
-          <span><b>${rec.avg !== null ? fmt(rec.avg) : '—'}</b> media di sempre</span>
-          <span><b>${rec.minutes ? `${rec.minutes} min` : '—'}</b> durata reale</span>
-          <span><b>${rec.last ? new Date(rec.last).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' }) : 'mai'}</b> ultima volta</span>
-          <span><b>${rec.consensus !== null ? `${rec.consensus}%` : '—'}</b> consenso</span>
-          <span><b>${rec.champion ? esc(rec.champion.name) : '—'}</b> ${rec.champion ? `vince di più (${rec.champion.wins})` : 'campione'}</span>
-          <span><b>Lv ${rec.level}</b> livello del gioco</span>
+          <span>${tr('tv.gs.matches', { n: String(rec.matches) })}</span>
+          <span>${tr('tv.gs.avg', { v: rec.avg !== null ? fmt(rec.avg) : '—' })}</span>
+          <span>${tr('tv.gs.minutes', { v: rec.minutes ? `${rec.minutes} min` : '—' })}</span>
+          <span>${tr('tv.gs.last', { v: rec.last ? fmtDateL(rec.last, { day: 'numeric', month: 'short', year: 'numeric' }) : tr('tv.gs.never') })}</span>
+          <span>${tr('tv.gs.consensus', { v: rec.consensus !== null ? `${rec.consensus}%` : '—' })}</span>
+          <span><b>${rec.champion ? esc(rec.champion.name) : '—'}</b> ${rec.champion ? tr('tv.gs.champWins', { n: rec.champion.wins }) : tr('tv.gs.champ')}</span>
+          <span>${tr('tv.gs.level', { n: String(rec.level) })}</span>
         </div>
         <div class="gs-grid">
-          <button type="button" class="lib-add-img ${this.image ? 'has-img' : ''}" id="gsPick" aria-label="Cambia la foto">${this.image ? `<img src="${esc(this.image)}" alt="">` : ICONS.image}</button>
+          <button type="button" class="lib-add-img ${this.image ? 'has-img' : ''}" id="gsPick" aria-label="${tr('tv.gs.photo')}">${this.image ? `<img src="${esc(this.image)}" alt="">` : ICONS.image}</button>
           <input type="file" id="gsFile" accept="image/*" hidden>
-          <label class="gs-f gs-f--wide"><span class="field-label">Nome</span><input class="input" id="gsName" maxlength="40" value="${esc(it.name)}"></label>
-          <label class="gs-f"><span class="field-label">Giocatori da</span><select class="input select" id="gsMin">${playersOptions(it.minPlayers, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">a</span><select class="input select" id="gsMax">${playersOptions(it.maxPlayers, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">Durata</span><select class="input select" id="gsDur">${durationOptions(it.duration)}</select></label>
-          <label class="gs-f"><span class="field-label">Modalità</span><select class="input select" id="gsMode">${opt(Object.entries(GAME_MODES), it.mode, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">Peso / difficoltà</span><select class="input select" id="gsWeight">${opt([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((w) => [w, `${String(w).replace('.', ',')} / 5`]), it.weight, '—')}</select></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">Categorie e meccaniche (separate da virgola)</span><input class="input" id="gsTags" maxlength="120" placeholder="party, deduzione, bluff" value="${esc(tagsOf(it).join(', '))}"></label>
-          <label class="gs-f"><span class="field-label">Editore</span><input class="input" id="gsPub" maxlength="40" value="${esc(it.publisher || '')}"></label>
-          <label class="gs-f"><span class="field-label">Anno</span><input class="input" id="gsYear" type="number" min="1900" max="2100" value="${esc(it.year || '')}"></label>
-          <label class="gs-f"><span class="field-label">Lingua</span><input class="input" id="gsLang" maxlength="20" value="${esc(it.language || '')}"></label>
-          <label class="gs-f"><span class="field-label">Di chi è</span><input class="input" id="gsOwner" maxlength="24" value="${esc(it.owner || (it.addedBy && it.addedBy !== 'TV' ? it.addedBy : ''))}"></label>
-          <label class="gs-f"><span class="field-label">Stato</span><select class="input select" id="gsStatus">${opt(Object.entries(GAME_STATUS).filter(([k]) => k !== 'posseduto'), it.status === 'posseduto' ? '' : it.status, 'Disponibile')}</select></label>
-          <label class="gs-f"><span class="field-label">Prestato a</span><input class="input" id="gsLoan" maxlength="24" value="${esc(it.loanTo || '')}"></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">Espansione di</span><select class="input select" id="gsBase">${opt(bases, it.baseId, 'È un gioco base')}</select></label>
-          <label class="gs-f gs-f--full"><span class="field-label">Regole in breve <span class="muted">(compaiono sulla TV e sui telefoni prima di giocare)</span></span><textarea class="input" id="gsRules" maxlength="600" rows="3" placeholder="Obiettivo, turno, come si vince">${esc(it.rules || '')}</textarea></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">Preparazione <span class="muted">(un punto per riga)</span></span><textarea class="input" id="gsSetup" maxlength="300" rows="3" placeholder="Mescola le carte&#10;5 carte a testa">${esc(it.setup || '')}</textarea></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">Video delle regole (link https)</span><input class="input" id="gsVideo" type="url" maxlength="200" placeholder="https://www.youtube.com/…" value="${esc(it.video || '')}">
-            ${it.ean ? `<small class="muted">Codice a barre: ${esc(it.ean)} <button type="button" class="link-btn" id="gsEanClear">togli</button></small>` : '<small class="muted">Codice a barre: si collega inquadrando la scatola dal telefono.</small>'}</label>
+          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.name')}</span><input class="input" id="gsName" maxlength="40" value="${esc(it.name)}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.minP')}</span><select class="input select" id="gsMin">${playersOptions(it.minPlayers, '—')}</select></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.maxP')}</span><select class="input select" id="gsMax">${playersOptions(it.maxPlayers, '—')}</select></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.dur')}</span><select class="input select" id="gsDur">${durationOptions(it.duration)}</select></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.mode')}</span><select class="input select" id="gsMode">${opt(Object.entries(GAME_MODES), it.mode, '—')}</select></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.weight')}</span><select class="input select" id="gsWeight">${opt([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((w) => [w, `${fmtNum(w)} / 5`]), it.weight, '—')}</select></label>
+          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.tags')}</span><input class="input" id="gsTags" maxlength="120" placeholder="${tr('tv.gs.tagsPh')}" value="${esc(tagsOf(it).join(', '))}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.pub')}</span><input class="input" id="gsPub" maxlength="40" value="${esc(it.publisher || '')}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.year')}</span><input class="input" id="gsYear" type="number" min="1900" max="2100" value="${esc(it.year || '')}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.lang')}</span><input class="input" id="gsLang" maxlength="20" value="${esc(it.language || '')}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.owner')}</span><input class="input" id="gsOwner" maxlength="24" value="${esc(it.owner || (it.addedBy && it.addedBy !== 'TV' ? it.addedBy : ''))}"></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.status')}</span><select class="input select" id="gsStatus">${opt(Object.entries(GAME_STATUS).filter(([k]) => k !== 'posseduto'), it.status === 'posseduto' ? '' : it.status, tr('tv.gs.available'))}</select></label>
+          <label class="gs-f"><span class="field-label">${tr('tv.gs.loan')}</span><input class="input" id="gsLoan" maxlength="24" value="${esc(it.loanTo || '')}"></label>
+          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.base')}</span><select class="input select" id="gsBase">${opt(bases, it.baseId, tr('tv.gs.isBase'))}</select></label>
+          <label class="gs-f gs-f--full"><span class="field-label">${tr('tv.gs.rules')}</span><textarea class="input" id="gsRules" maxlength="600" rows="3" placeholder="${tr('tv.gs.rulesPh')}">${esc(it.rules || '')}</textarea></label>
+          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.setup')}</span><textarea class="input" id="gsSetup" maxlength="300" rows="3" placeholder="${tr('tv.gs.setupPh')}">${esc(it.setup || '')}</textarea></label>
+          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.video')}</span><input class="input" id="gsVideo" type="url" maxlength="200" placeholder="https://www.youtube.com/…" value="${esc(it.video || '')}">
+            ${it.ean ? `<small class="muted">${tr('tv.gs.ean', { ean: esc(it.ean) })} <button type="button" class="link-btn" id="gsEanClear">${tr('tv.gs.eanDel')}</button></small>` : `<small class="muted">${tr('tv.gs.eanHow')}</small>`}</label>
         </div>
         <p class="form-error" id="gsErr" role="alert"></p>
-        <div class="claim-actions"><button type="button" class="btn btn-big" id="gsSave">${ICONS.check}<span>Salva</span></button></div>
+        <div class="claim-actions"><button type="button" class="btn btn-big" id="gsSave">${ICONS.check}<span>${tr('tv.save')}</span></button></div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -2332,7 +2495,7 @@ const GameSheet = {
       if (e.target === el || e.target.closest('#gsClose')) { this.close(); return; }
       if (e.target.closest('#gsPick')) { $('#gsFile', el).click(); return; }
       if (e.target.closest('#gsSave')) this.save();
-      if (e.target.closest('#gsEanClear')) { this.eanClear = true; e.target.closest('small').textContent = 'Codice a barre tolto (salva per confermare).'; }
+      if (e.target.closest('#gsEanClear')) { this.eanClear = true; e.target.closest('small').textContent = tr('tv.gs.eanGone'); }
     });
     $('#gsFile', el).addEventListener('change', async (e) => {
       const f = e.target.files[0];
@@ -2346,11 +2509,11 @@ const GameSheet = {
     const num = (id) => Number(v(id)) || null;
     const name = cleanName(v('#gsName'));
     const err = $('#gsErr', this.el);
-    if (!name) { err.textContent = 'Il nome non può essere vuoto.'; return; }
+    if (!name) { err.textContent = tr('tv.gs.errName'); return; }
     const same = findLibrary(name);
-    if (same && same.id !== this.id) { err.textContent = 'C’è già un altro gioco con questo nome.'; return; }
-    if (num('#gsMin') && num('#gsMax') && num('#gsMin') > num('#gsMax')) { err.textContent = 'Il minimo di giocatori è più alto del massimo.'; return; }
-    if (v('#gsVideo') && !/^https:\/\/[^\s"<>]+$/.test(v('#gsVideo'))) { err.textContent = 'Il link del video deve iniziare con https://'; return; }
+    if (same && same.id !== this.id) { err.textContent = tr('tv.gs.errDup'); return; }
+    if (num('#gsMin') && num('#gsMax') && num('#gsMin') > num('#gsMax')) { err.textContent = tr('tv.gs.errMinMax'); return; }
+    if (v('#gsVideo') && !/^https:\/\/[^\s"<>]+$/.test(v('#gsVideo'))) { err.textContent = tr('tv.gs.errVideo'); return; }
     const year = num('#gsYear');
     const status = v('#gsStatus') || null;
     const patch = {
@@ -2372,9 +2535,9 @@ const GameSheet = {
         const before = S.library?.[this.id] || {};
         delete patch.image;
         await saveGame(S.meta.armadioId, this.id, patch, this.imageChanged ? { full: this.image || null } : {});
-        armLog(S.meta.armadioId, { op: 'edit', item: this.id, name, by: 'TV', msg: before.name !== name ? `prima: ${before.name}` : '' });
+        armLog(S.meta.armadioId, { op: 'edit', item: this.id, name, by: 'TV', msg: before.name !== name ? `prima: ${before.name}` : '' }); // i18n-ok: cronologia dell'armadio nel database
       } else await update(libRef(this.id), patch);
-      toast(`${name} aggiornato`);
+      toast(tr('tv.gs.saved', { name }));
       this.close();
     } catch (e) { err.textContent = explainError(e); }
   },
@@ -2392,16 +2555,16 @@ function knownPeople() {
 function filterChips(f) {
   const people = Object.fromEntries(knownPeople().map((p) => [p.key, p.name]));
   const out = [];
-  if (f.players) out.push(`${f.players} giocatori`);
+  if (f.players) out.push(tr('tv.fc.players', { n: String(f.players) }));
   if (f.maxMin) out.push(`max ${f.maxMin} min`);
   if (f.mode) out.push(GAME_MODES[f.mode]);
-  if (f.maxWeight) out.push('leggeri');
-  if (f.minWeight) out.push('impegnativi');
+  if (f.maxWeight) out.push(tr('tv.fc.light'));
+  if (f.minWeight) out.push(tr('tv.fc.heavy'));
   if (f.tag) out.push(`#${f.tag}`);
-  if (f.never) out.push('mai giocati');
-  if (f.staleDays) out.push(`non giocati da ${f.staleDays} giorni`);
-  if (f.notHatedBy) out.push(`che ${people[f.notHatedBy] || 'lui/lei'} non odia`);
-  if (f.available) out.push('disponibili');
+  if (f.never) out.push(tr('tv.fc.never'));
+  if (f.staleDays) out.push(tr('tv.fc.stale', { n: String(f.staleDays) }));
+  if (f.notHatedBy) out.push(tr('tv.fc.notHated', { name: people[f.notHatedBy] || tr('tv.fc.them') }));
+  if (f.available) out.push(tr('tv.fc.available'));
   return out;
 }
 
@@ -2451,11 +2614,11 @@ function toggleMusic() {
     const back = localStorage.getItem('gnr_music_last') || 'auto';
     Music.setMode(back);
     if (isMuted()) setMuted(false);
-    toast(`Musica: ${MUSIC_MODES.find(([k]) => k === back)?.[1] || 'accesa'}`);
+    toast(tr('tv.music.on', { mode: MUSIC_MODES.find(([k]) => k === back)?.[1] || tr('tv.music.onDefault') }));
   } else {
     localStorage.setItem('gnr_music_last', cur);
     Music.setMode('off');
-    toast('Musica spenta');
+    toast(tr('tv.music.off'));
   }
   syncMusic();
   const sel = $('#tlMusic');
@@ -2479,8 +2642,18 @@ function autoAtmo() {
 function syncAtmo() {
   const a = S.meta?.atmosphere || 'none';
   // Con il tema Show lo schermo non resta mai fermo: senza un'atmosfera scelta c'è il palcoscenico.
-  Atmo.set(a === 'auto' ? autoAtmo() : a === 'none' && isShowTheme() ? 'palco' : a);
+  let x = a === 'auto' ? autoAtmo() : a === 'none' && isShowTheme() ? 'palco' : a;
+  // La schermata ambientale ha sempre uno sfondo vivo (le stelle, se non ce n'è un altro).
+  if (x === 'none' && Ambient.isShown()) x = 'stelle';
+  Atmo.set(x);
+  // Intensità (1.10): l'atmosfera si vede di più o di meno; il suono d'ambiente è facoltativo.
+  const lv = { soft: 0.45, normal: 1, strong: 1 }[S.meta?.atmoLevel] ?? 1;
+  if (Atmo.canvas) { Atmo.canvas.style.opacity = String(lv); Atmo.canvas.dataset.level = S.meta?.atmoLevel || 'normal'; }
+  const vol = { soft: 0.35, normal: 0.6, strong: 0.9 }[S.meta?.atmoLevel] ?? 0.6;
+  AtmoSound.set(Atmo.scene, Boolean(S.meta?.atmoSound) && !document.hidden, Music.playing() ? vol * 0.4 : vol);
 }
+window.addEventListener('gnr-mute', () => syncAtmo());
+document.addEventListener('visibilitychange', () => syncAtmo());
 window.addEventListener('gnr-theme', () => syncAtmo());
 
 function gossipList() {
@@ -2519,7 +2692,7 @@ const Ticker = {
       ...newsTonight().map((t) => ({ k: 'n', text: `📰 ${t}` })),
       ...cachedFacts().slice(0, 5).map((f) => ({ k: 'f', text: `${f.icon} ${f.text}` }))
     ];
-    if (!items.length) items.push({ k: 'n', text: '📰 La serata è appena cominciata: scrivete i vostri pettegolezzi dal telefono (pulsante Tavolo)!' });
+    if (!items.length) items.push({ k: 'n', text: tr('tv.ticker.empty') });
     const sig = JSON.stringify(items.map((i) => i.text));
     if (sig === this.sig) return;
     this.sig = sig;
@@ -2529,7 +2702,7 @@ const Ticker = {
       this.el = document.createElement('div');
       this.el.className = 'ticker';
       this.el.setAttribute('aria-hidden', 'true');
-      this.el.innerHTML = '<span class="ticker-label">Ultim’ora</span><div class="ticker-view"><div class="ticker-track" id="tickerTrack"></div></div>';
+      this.el.innerHTML = `<span class="ticker-label">${tr('tv.ticker.label')}</span><div class="ticker-view"><div class="ticker-track" id="tickerTrack"></div></div>`;
       document.body.appendChild(this.el);
     }
     const ordered = fresh.length ? [...fresh.map((g) => ({ k: 'g', text: `🗣️ «${g.text}»` })), ...items.filter((i) => !fresh.some((g) => i.text === `🗣️ «${g.text}»`))] : items;
@@ -2569,15 +2742,26 @@ function playNextSfx() {
   const wait = sfxBusyUntil - Date.now();
   if (wait > 0) { clearTimeout(playNextSfx.t); playNextSfx.t = setTimeout(playNextSfx, wait + 20); return; }
   const x = sfxQueue.shift();
-  const why = audioStatus();
-  if (why === 'audio da attivare') audioCtx();
+  if (audioNeedsUnlock()) audioCtx();
+  // Suono personalizzato (file salvato solo su questo computer).
+  const cid = customIdOf(x.k);
+  if (cid) {
+    const rec = CustomSounds.cache.find((c) => c.id === cid);
+    if (rec && !isMuted() && !isSafeMode()) {
+      CustomSounds.play(cid, getVolume('fx')).catch(() => {});
+      sfxBusyUntil = Date.now() + Math.min(4000, (rec.secs || 1.4) * 1000);
+      sfxBubble(`${rec.icon} ${S.players[x.by]?.name || (x.regia ? tr('tv.regia') : tr('tv.someone'))}: ${rec.label}`);
+    }
+    if (sfxQueue.length) playNextSfx();
+    return;
+  }
   const s = playSfx(x.k);
   sfxBusyUntil = Date.now() + 1400;
   if (s) {
-    const who = S.players[x.by]?.name || (x.regia ? 'Regia' : 'Qualcuno');
+    const who = S.players[x.by]?.name || (x.regia ? tr('tv.regia') : tr('tv.someone'));
     const st = audioStatus();
     sfxBubble(`${s.icon} ${who}: ${s.label}${st ? ` · 🔇 ${st}` : ''}`);
-    if (st === 'audio da attivare') AudioHint.show();
+    if (audioNeedsUnlock()) AudioHint.show();
   }
   if (sfxQueue.length) playNextSfx();
 }
@@ -2590,7 +2774,7 @@ const AudioHint = {
     const el = document.createElement('button');
     el.type = 'button';
     el.className = 'audio-hint';
-    el.innerHTML = '🔇 <span>Tocca qui per attivare l’audio della TV (soundboard, applausi, reveal)</span>';
+    el.innerHTML = `🔇 <span>${tr('tv.audioHint')}</span>`;
     el.addEventListener('click', () => { audioCtx(); setTimeout(() => this.hide(), 200); });
     document.body.appendChild(el);
     this.el = el;
@@ -2624,17 +2808,17 @@ const Interval = {
 
   buildCards() {
     const board = buildBoard(S.games, S.votes);
-    const facts = shuffled(cachedFacts()).map((f) => ({ type: 'fact', icon: f.icon, kicker: 'Lo sapevi?', text: f.text }));
-    const news = newsTonight(board).map((t) => ({ type: 'news', icon: '📰', kicker: 'Stasera', text: t }));
-    const trivia = shuffled(TRIVIA).slice(0, 8).map((t) => ({ type: 'trivia', icon: '🎲', kicker: 'Curiosità ludica', text: t }));
-    const photos = photoList(S.photos).map((p) => ({ type: 'photo', data: p.data, caption: p.caption, by: p.by, when: 'Stasera' }));
+    const facts = shuffled(cachedFacts()).map((f) => ({ type: 'fact', icon: f.icon, kicker: tr('tv.int.fact'), text: f.text }));
+    const news = newsTonight(board).map((t) => ({ type: 'news', icon: '📰', kicker: tr('tv.int.tonight'), text: t }));
+    const trivia = shuffled(TRIVIA).slice(0, 8).map((t) => ({ type: 'trivia', icon: '🎲', kicker: tr('tv.int.trivia'), text: t }));
+    const photos = photoList(S.photos).map((p) => ({ type: 'photo', data: p.data, caption: p.caption, by: p.by, when: tr('tv.int.tonight') }));
     const lanes = [facts, trivia, photos, news];
     const out = board.length ? [{ type: 'board', rows: board.slice(0, 3) }] : [];
     for (let i = 0; out.length < 40 && lanes.some((l) => l.length); i++) {
       const lane = lanes[i % lanes.length];
       if (lane.length) out.push(lane.shift());
     }
-    return out.length ? out : [{ type: 'trivia', icon: '🎲', kicker: 'Curiosità ludica', text: TRIVIA[0] }];
+    return out.length ? out : [{ type: 'trivia', icon: '🎲', kicker: tr('tv.int.trivia'), text: TRIVIA[0] }];
   },
 
   async loadPastPhotos() {
@@ -2645,7 +2829,7 @@ const Interval = {
       const snap = await get(groupRef(gid, `photos/${n.room}`)).catch(() => null);
       const list = photoList(snap?.val()).slice(0, 4);
       if (!this.el || !list.length) continue;
-      const when = `Game Night #${n.number} · ${new Date(Number(n.at)).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+      const when = `Game Night #${n.number} · ${fmtDateL(Number(n.at), { day: 'numeric', month: 'long', year: 'numeric' })}`;
       for (const p of list) this.cards.splice(Math.min(this.cards.length, 1 + Math.floor(Math.random() * this.cards.length)), 0, { type: 'photo', data: p.data, caption: p.caption, by: p.by, when });
     }
   },
@@ -2658,9 +2842,9 @@ const Interval = {
     el.className = 'interval';
     el.id = 'intervalOverlay';
     el.innerHTML = `
-      <div class="int-top"><span class="int-kicker">☕ Intervallo</span><span class="int-group">${S.identity?.emblem && !S.identity?.logo ? `${esc(S.identity.emblem)} ` : ''}${esc(S.meta.groupName || '')}</span><span class="int-clock" id="intClock"></span></div>
+      <div class="int-top"><span class="int-kicker">☕ ${tr('tv.tl.interval')}</span><span class="int-group">${S.identity?.emblem && !S.identity?.logo ? `${esc(S.identity.emblem)} ` : ''}${esc(S.meta.groupName || '')}</span><span class="int-clock" id="intClock"></span></div>
       <div class="int-stage" id="intStage"></div>
-      <p class="int-foot"><span id="intNext"></span><span>Tocca lo schermo o premi un tasto per tornare alla serata</span></p>`;
+      <p class="int-foot"><span id="intNext"></span><span>${tr('tv.int.foot')}</span></p>`;
     document.body.appendChild(el);
     this.el = el;
     el.addEventListener('click', () => this.close());
@@ -2674,14 +2858,14 @@ const Interval = {
     const c = this.cards[this.idx % this.cards.length];
     const stage = $('#intStage', this.el);
     const now = new Date();
-    $('#intClock', this.el).textContent = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    $('#intClock', this.el).textContent = clockL(now, false);
     const next = S.state?.playName || S.draft?.name;
-    $('#intNext', this.el).textContent = next ? `Prossimo gioco: ${next}` : '';
+    $('#intNext', this.el).textContent = next ? tr('tv.int.next', { name: next }) : '';
     let html = '';
     if (c.type === 'photo') {
-      html = `<figure class="int-photo"><img src="${esc(c.data)}" alt=""><figcaption>${esc(c.caption || 'Foto ricordo')}<small>${esc(c.when)}${c.by ? ` · ${esc(c.by)}` : ''}</small></figcaption></figure>`;
+      html = `<figure class="int-photo"><img src="${esc(c.data)}" alt=""><figcaption>${esc(c.caption || tr('tv.al.photo'))}<small>${esc(c.when)}${c.by ? ` · ${esc(c.by)}` : ''}</small></figcaption></figure>`;
     } else if (c.type === 'board') {
-      html = `<div class="int-card int-card--board"><p class="int-k">🏆 La classifica di stasera</p><ol>${c.rows.map((r) => `<li><span>${r.rank}</span><b>${esc(r.name)}</b><em>${fmt(r.stats.avg)}</em></li>`).join('')}</ol></div>`;
+      html = `<div class="int-card int-card--board"><p class="int-k">${tr('tv.int.board')}</p><ol>${c.rows.map((r) => `<li><span>${r.rank}</span><b>${esc(r.name)}</b><em>${fmt(r.stats.avg)}</em></li>`).join('')}</ol></div>`;
     } else {
       html = `<div class="int-card int-card--${c.type}"><span class="int-icon" aria-hidden="true">${esc(c.icon)}</span><p class="int-k">${esc(c.kicker)}</p><p class="int-text">${esc(c.text)}</p></div>`;
     }
@@ -2718,7 +2902,7 @@ const QrPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel qr-panel" role="dialog" aria-modal="true" aria-labelledby="qpTitle">
-        <div class="panel-head"><h2 id="qpTitle">${esc(title)}</h2><button type="button" class="icon-btn" id="qpClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="qpTitle">${esc(title)}</h2><button type="button" class="icon-btn" id="qpClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <div class="qr qr--big" id="qpQr"></div>
         ${note ? `<p class="panel-note">${note}</p>` : ''}
         <p class="qr-url"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ''))}</a></p>
@@ -2765,7 +2949,7 @@ function recapData(board, awards) {
     kingWins: top,
     mvp: mvpA ? mvpA.players.map((p) => p.name) : [],
     awards: awards.filter((a) => a.kind === 'player' && !['mvp', 'wins'].includes(a.key)).map((a) => ({ title: a.title, who: namesList(a.players.map((p) => p.name)) })),
-    next: S.next?.at ? new Date(Number(S.next.at)).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }) : null
+    next: S.next?.at ? fmtDateL(Number(S.next.at), { weekday: 'long', day: 'numeric', month: 'long' }) : null
   };
 }
 
@@ -2781,13 +2965,13 @@ const ExportPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="exTitle">
-        <div class="panel-head"><h2 id="exTitle">Condividi ed esporta</h2><button type="button" class="icon-btn" id="exClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="exTitle">${tr('tv.ex.title')}</h2><button type="button" class="icon-btn" id="exClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <div class="export-grid">
-          <button type="button" class="export-opt" id="exImg"><span aria-hidden="true">🖼️</span><b>Immagine della classifica</b><small>Podio, classifica e premi speciali (PNG)</small></button>
-          <button type="button" class="export-opt" id="exStory"><span aria-hidden="true">📱</span><b>Storia verticale</b><small>Per Instagram e WhatsApp, 1080 × 1920</small></button>
-          <button type="button" class="export-opt" id="exPdf"><span aria-hidden="true">📄</span><b>PDF della serata</b><small>Classifica, premi, commenti e album: scegli “Salva come PDF”</small></button>
-          <button type="button" class="export-opt" id="exCsv"><span aria-hidden="true">📊</span><b>CSV</b><small>I risultati da aprire con Excel o Fogli</small></button>
-          <button type="button" class="export-opt" id="exVideo"><span aria-hidden="true">🎬</span><b>Video della serata</b><small>Storia animata di 20 secondi con giochi, campioni, premi e foto</small></button>
+          <button type="button" class="export-opt" id="exImg"><span aria-hidden="true">🖼️</span><b>${tr('tv.ex.img')}</b><small>${tr('tv.ex.imgText')}</small></button>
+          <button type="button" class="export-opt" id="exStory"><span aria-hidden="true">📱</span><b>${tr('tv.ex.story')}</b><small>${tr('tv.ex.storyText')}</small></button>
+          <button type="button" class="export-opt" id="exPdf"><span aria-hidden="true">📄</span><b>${tr('tv.ex.pdf')}</b><small>${tr('tv.ex.pdfText')}</small></button>
+          <button type="button" class="export-opt" id="exCsv"><span aria-hidden="true">📊</span><b>CSV</b><small>${tr('tv.ex.csvText')}</small></button>
+          <button type="button" class="export-opt" id="exVideo"><span aria-hidden="true">🎬</span><b>${tr('tv.ex.video')}</b><small>${tr('tv.ex.videoText')}</small></button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -2804,32 +2988,32 @@ const ExportPanel = {
         if (b.id === 'exVideo') { const data = this.videoData(); this.close(); VideoPanel.open(data); return; }
         if (b.id === 'exCsv') downloadFile(`GameNight_Show_${S.code}_${new Date().toISOString().slice(0, 10)}.csv`, boardCSV(this.board, S.players), 'text/csv;charset=utf-8');
       } catch (err) {
-        toast('Non sono riuscito a creare il file.', 'error');
+        toast(tr('tv.ex.failed'), 'error');
         console.error(err);
       } finally { b.disabled = false; }
     });
   },
-  title() { return `${S.identity?.emblem && !S.identity?.logo ? `${S.identity.emblem} ` : ''}${S.meta.groupName || 'La nostra serata'}`; },
+  title() { return `${S.identity?.emblem && !S.identity?.logo ? `${S.identity.emblem} ` : ''}${S.meta.groupName || tr('tv.ourNight')}`; },
   /** Dati per il video riassunto. */
   videoData() {
     const champs = nightChampions(this.board).filter((c) => c.rank <= 3).slice(0, 3).map((c) => ({ name: playerOrGhost(c.uid).name, points: c.points, player: playerOrGhost(c.uid) }));
     const awards = this.awards.filter((a) => a.kind !== 'ach').map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) }));
     return {
-      group: S.meta.groupName || 'La nostra serata', subtitle: nightDate(S.meta.createdAt), number: nightNumber(),
+      group: S.meta.groupName || tr('tv.ourNight'), subtitle: nightDate(S.meta.createdAt), number: nightNumber(),
       games: this.board.map((r) => ({ name: r.name, avg: r.stats.avg, image: /^data:image\//.test(r.image || '') ? r.image : null })),
       champs, awards, photos: photoList(S.photos).map((p) => p.data)
     };
   },
   async image() {
     const blob = await renderShareImage({ title: this.title(), subtitle: nightDate(S.meta.createdAt), board: this.board, awards: this.awards.filter((a) => a.kind !== 'ach') });
-    await shareOrDownload(blob, `GameNight_Show_${new Date().toISOString().slice(0, 10)}.png`, 'La classifica della serata', true);
+    await shareOrDownload(blob, `GameNight_Show_${new Date().toISOString().slice(0, 10)}.png`, tr('tv.ex.shareTitle'), true);
   },
   async story() {
     const d = recapData(this.board, this.awards);
-    const facts = [`${d.games} ${d.games === 1 ? 'gioco' : 'giochi'}`, `${activePlayers(S.players).length} giocatori`, d.minutes ? (d.minutes >= 60 ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : `${d.minutes} min`) : ''].filter(Boolean).join(' · ');
+    const facts = [tr('tv.ic.nGames', { n: d.games }), tr('tv.fc.players', { n: String(activePlayers(S.players).length) }), d.minutes ? (d.minutes >= 60 ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : `${d.minutes} min`) : ''].filter(Boolean).join(' · ');
     const awards = this.awards.filter((a) => a.kind !== 'ach' && !['mvp', 'wins'].includes(a.key)).map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) }));
-    const blob = await renderStoryImage({ title: S.meta.groupName || 'La nostra serata', emblem: S.identity?.logo ? '' : (S.identity?.emblem || ''), color: S.identity?.color, subtitle: nightDate(S.meta.createdAt), number: nightNumber(), board: this.board, mvp: d.mvp, winners: d.kings, facts, awards });
-    await shareOrDownload(blob, `GameNight_Show_storia_${new Date().toISOString().slice(0, 10)}.png`, 'La nostra serata', true);
+    const blob = await renderStoryImage({ title: S.meta.groupName || tr('tv.ourNight'), emblem: S.identity?.logo ? '' : (S.identity?.emblem || ''), color: S.identity?.color, subtitle: nightDate(S.meta.createdAt), number: nightNumber(), board: this.board, mvp: d.mvp, winners: d.kings, facts, awards });
+    await shareOrDownload(blob, `GameNight_Show_storia_${new Date().toISOString().slice(0, 10)}.png`, tr('tv.ourNight'), true);
   },
   pdf() {
     const d = recapData(this.board, this.awards);
@@ -2843,18 +3027,19 @@ const ExportPanel = {
     }));
     const quotes = [];
     for (const r of this.board) for (const v of [...r.stats.list, ...(r.stats.audience?.list || [])]) if (v.comment) quotes.push({ name: playerOrGhost(v.uid).name, game: r.name, text: v.comment });
-    const html = reportHTML({
+    const data = {
       group: S.meta.groupName || '', emblem: S.identity?.logo ? '' : (S.identity?.emblem || ''), color: S.identity?.color,
       date: nightDate(S.meta.createdAt), number: nightNumber(),
-      facts: [`${d.games} ${d.games === 1 ? 'gioco' : 'giochi'}`, `${activePlayers(S.players).length} giocatori`, d.minutes ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : ''].filter(Boolean).join(' · '),
+      facts: [tr('tv.ic.nGames', { n: d.games }), tr('tv.fc.players', { n: String(activePlayers(S.players).length) }), d.minutes ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : ''].filter(Boolean).join(' · '),
       rows,
       awards: this.awards.filter((a) => a.kind !== 'ach').map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)), value: a.value })),
       achievements: this.awards.filter((a) => a.kind === 'ach').map((a) => ({ title: a.title, who: namesList(a.players.map((p) => p.name)) })),
       quotes: quotes.slice(0, 20),
       photos: photoList(S.photos),
       next: d.next ? `${d.next}${S.next?.place ? `, ${S.next.place}` : ''}` : ''
-    });
-    if (printReport(html)) toast('Nella finestra di stampa scegli “Salva come PDF”.');
+    };
+    // Browser: finestra di stampa ("Salva come PDF"). App Android: PDF vero salvato e aperto.
+    exportReport(data).then((r) => { if (r === 'print') toast(tr('tv.ex.printHint')); });
   },
   close() { this.el?.remove(); this.el = null; }
 };
@@ -2862,7 +3047,7 @@ const ExportPanel = {
 function render() {
   if (!WATCHED.every((k) => S.loaded.has(k))) return;
   if (S.meta && S.meta.hostUid !== S.uid) { renderLostRegia(); return; }
-  if (S.meta && S.rememberedRoom !== S.code) { S.rememberedRoom = S.code; rememberNight(S.code, { group: S.meta.groupName, gid: S.meta.groupId }); }
+  if (S.meta && S.rememberedRoom !== S.code) { S.rememberedRoom = S.code; rememberNight(S.code, { group: S.meta.groupName, gid: S.meta.groupId }); publishCustomSfx(); }
   // Dopo un ricaricamento il browser tiene l'audio bloccato finché qualcuno non tocca la TV: lo diciamo.
   if (S.meta?.soundboard && !S.audioHintChecked) { S.audioHintChecked = true; audioCtx(); setTimeout(() => { if (audioBlocked()) AudioHint.show(); }, 1500); }
   watchGroup();
@@ -2906,13 +3091,14 @@ function render() {
   TablePanel.update();
   PlanPanel.update();
   RulesPanel.update();
-  Sand.sync();
+  SharedTimer.sync();
   Quiz.update();
   Knocks.sync();
   maybeCleanup();
   applyIdentity();
   processBuzz();
   paintPause();
+  Ambient.sync();
   paintEvent();
   processCommands();
   processSfx();
@@ -2927,31 +3113,31 @@ function render() {
 /** Tutorial della TV: un giro per schermata, la prima volta che la si vede. */
 const TOURS = {
   lobby: [
-    { sel: '#lobbyQr', title: 'Si entra dal telefono', text: 'Ognuno inquadra il QR (o scrive il codice) e sceglie nome, personaggio e colore. Non serve installare niente.' },
-    { sel: '#slots', title: 'Chi c’è stasera', text: 'Qui compaiono i giocatori man mano che entrano. Con + e − cambi i posti, anche a serata iniziata.' },
-    { sel: '#lobbyLock', title: 'Chiudi la stanza', text: 'Quando ci sono tutti, chiudila: chi non è già dentro non può più entrare, nemmeno con una foto del QR.' },
-    { sel: '#hdrTools', title: 'Strumenti', text: 'Pausa, tema, musica, effetti, salvataggi, macchina del tempo, Safe Mode, accessibilità e molto altro.' },
-    { sel: '#hdrLib', title: 'Armadio', text: 'I giochi del gruppo, con giocatori, durata e foto: la TV li propone e i telefoni li votano.' },
-    { sel: '#startBtn', title: 'Si parte!', text: 'Inizia la serata: da qui in poi, dopo ogni partita, si vota il gioco appena giocato.' }
+    { sel: '#lobbyQr', title: tr('tv.tour.l1.t'), text: tr('tv.tour.l1.x') },
+    { sel: '#slots', title: tr('tv.tour.l2.t'), text: tr('tv.tour.l2.x') },
+    { sel: '#lobbyLock', title: tr('tv.tour.l3.t'), text: tr('tv.tour.l3.x') },
+    { sel: '#hdrTools', title: tr('tv.tl.title'), text: tr('tv.tour.l4.x') },
+    { sel: '#hdrLib', title: tr('tv.armadio'), text: tr('tv.tour.l5.x') },
+    { sel: '#startBtn', title: tr('tv.tour.l6.t'), text: tr('tv.tour.l6.x') }
   ],
   idle: [
-    { sel: '#libPick', title: 'Cosa giochiamo?', text: 'Tocca un gioco dell’armadio, chiedi i consigli o fai votare i telefoni.' },
-    { sel: '#gameName', title: 'Il gioco', text: 'Oppure scrivi il nome: con una foto viene ancora meglio nella classifica.' },
-    { sel: '.win-pick', title: 'Chi ha giocato e chi ha vinto', text: 'Tocca un personaggio per segnarlo vincitore, toccalo ancora per segnarlo spettatore (vota come pubblico).' },
-    { sel: '#startPlay', title: 'Inizia la partita', text: 'Parte il timer e i telefoni possono pronosticare chi vincerà.' },
-    { sel: '#openVote', title: 'Apri la votazione', text: 'A partita finita: i telefoni votano in segreto, la TV svela i voti quando hanno votato tutti.' },
-    { sel: '#openTable', title: 'Tavolo e quiz', text: 'Ruota per chi inizia, squadre equilibrate, clessidra e, nelle pause, il quiz del gruppo con le risposte dal telefono.' }
+    { sel: '#libPick', title: tr('tv.tour.i1.t'), text: tr('tv.tour.i1.x') },
+    { sel: '#gameName', title: tr('tv.tour.i2.t'), text: tr('tv.tour.i2.x') },
+    { sel: '.win-pick', title: tr('tv.tour.i3.t'), text: tr('tv.tour.i3.x') },
+    { sel: '#startPlay', title: tr('tv.tour.i4.t'), text: tr('tv.tour.i4.x') },
+    { sel: '#openVote', title: tr('tv.tour.i5.t'), text: tr('tv.tour.i5.x') },
+    { sel: '#openTable', title: tr('tv.tour.i6.t'), text: tr('tv.tour.i6.x') }
   ],
   voting: [
-    { sel: '#voters', title: 'Chi ha votato', text: 'Ogni personaggio si accende quando arriva il suo voto (segreto fino al reveal). Chi ha il telefono fuori uso si può far votare dalla TV.' },
-    { sel: '#revealBtn', title: 'Rivela i voti', text: 'Il reveal parte da solo quando hanno votato tutti; da qui lo anticipi.' }
+    { sel: '#voters', title: tr('tv.tour.v1.t'), text: tr('tv.tour.v1.x') },
+    { sel: '#revealBtn', title: tr('tv.tour.v2.t'), text: tr('tv.tour.v2.x') }
   ],
   reveal: [
-    { sel: '.vcards', title: 'Il verdetto', text: 'Le carte si girano dal voto più basso al più alto, poi arriva la media.' },
-    { sel: '#nextGame', title: 'E adesso?', text: 'Si passa al prossimo gioco. La classifica della serata si aggiorna da sola.' }
+    { sel: '.vcards', title: tr('tv.tour.r1.t'), text: tr('tv.tour.r1.x') },
+    { sel: '#nextGame', title: tr('tv.tour.r2.t'), text: tr('tv.tour.r2.x') }
   ],
   board: [
-    { sel: '#endNight', title: 'Fine serata', text: 'Quando avete finito, la premiazione svela il podio e i premi speciali, ai giochi e ai giocatori.' }
+    { sel: '#endNight', title: tr('tv.endNight'), text: tr('tv.tour.b1.x') }
   ]
 };
 const CINE_KEY = 'gnr_cine';
@@ -2970,23 +3156,23 @@ function shellHTML(phase) {
     <div class="tv-shell">
       <header class="topbar ${phase === 'lobby' ? 'topbar--lobby' : ''}">
         <div class="brand-wrap">
-          <button class="chip chip-btn hdr-back" type="button" id="hdrBack" title="Torna alla schermata precedente">← <span>Indietro</span></button>
+          <button class="chip chip-btn hdr-back" type="button" id="hdrBack" title="${tr('tv.hdr.backTitle')}">← <span>${tr('tv.back')}</span></button>
           <span class="topbar-emblem" id="hdrEmblem"></span>
           <div class="brand">GameNight <span class="logo-tag logo-tag--sm">Show</span></div>
           ${S.meta?.groupName ? `<span class="topbar-group">${esc(S.meta.groupName)}</span>` : ''}
         </div>
         <div class="topbar-right">
-          <a class="chip chip-btn hdr-home" id="hdrHome" href="index.html" title="Home: profilo, armadi, altre serate (la serata resta aperta)">🏠 <span>Home</span></a>
-          <span class="chip chip--clock" id="hdrClock" title="Ora e durata della serata"></span>
-          ${S.meta?.demo ? '<span class="chip chip--demo" title="Modalità prova: i giocatori finti votano da soli, niente viene salvato">🧪 Prova</span>' : ''}
-          <button class="chip chip-btn chip--safe" type="button" id="hdrSafe" hidden title="Safe Mode attiva: tocca per spegnerla">🚨 <span>Safe Mode</span></button>
-          <span class="chip">Stanza <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="Stanza chiusa" hidden> 🔒</span></span>
-          <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="Giocatori e posti (tasto G)">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
-          <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="Termina la serata adesso (anche a votazione aperta) e passa alla premiazione">🏁 <span>Fine serata</span></button>
-          <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="Strumenti: pausa, tema, cestino, copie">${ICONS.edit}<span>Strumenti</span></button>
-          ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="Armadio (tasto L)">${ICONS.books}<span>Armadio</span></button>` : ''}
-          <button class="icon-btn" type="button" id="fsBtn" aria-label="Schermo intero" title="Schermo intero (tasto F)">${ICONS.expand}</button>
-          <button class="text-btn" type="button" id="newNightBtn">Nuova serata</button>
+          <a class="chip chip-btn hdr-home" id="hdrHome" href="index.html" title="${tr('tv.hdr.homeTitle')}">🏠 <span>Home</span></a>
+          <span class="chip chip--clock" id="hdrClock" title="${tr('tv.hdr.clockTitle')}"></span>
+          ${S.meta?.demo ? `<span class="chip chip--demo" title="${tr('tv.hdr.demoTitle')}">🧪 ${tr('tv.hdr.demo')}</span>` : ''}
+          <button class="chip chip-btn chip--safe" type="button" id="hdrSafe" hidden title="${tr('tv.hdr.safeTitle')}">🚨 <span>Safe Mode</span></button>
+          <span class="chip">${tr('tv.tr.room')} <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="${tr('tv.hdr.locked')}" hidden> 🔒</span></span>
+          <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="${tr('tv.hdr.playersTitle')}">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
+          <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="${tr('tv.hdr.endTitle')}">🏁 <span>${tr('tv.endNight')}</span></button>
+          <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="${tr('tv.hdr.toolsTitle')}">${ICONS.edit}<span>${tr('tv.tl.title')}</span></button>
+          ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="${tr('tv.hdr.libTitle')}">${ICONS.books}<span>${tr('tv.armadio')}</span></button>` : ''}
+          <button class="icon-btn" type="button" id="fsBtn" aria-label="${tr('tv.hdr.fs')}" title="${tr('tv.hdr.fsTitle')}">${ICONS.expand}</button>
+          <button class="text-btn" type="button" id="newNightBtn">${tr('tv.create.title')}</button>
         </div>
       </header>
       <main id="screen" class="screen screen--${phase}"></main>
@@ -2999,12 +3185,12 @@ async function goBack() {
   try {
     switch (ph) {
       case 'lobby':
-        if (!confirm('Tornare alla schermata iniziale? La stanza resta aperta: la riprendi con “Riprendi una serata già iniziata”.')) return;
+        if (!confirm(tr('tv.back.toStart'))) return;
         localStorage.removeItem(STORE_KEY);
         location.href = location.pathname;
         return;
       case 'idle':
-        if (confirm('Tornare alla sala d’attesa con il QR per entrare?')) await setPhase('lobby');
+        if (confirm(tr('tv.back.toLobby'))) await setPhase('lobby');
         return;
       case 'voting': $('#cancelGame')?.click(); return;
       case 'poll': await setPhase('idle'); remove(roomRef(S.code, 'poll')).catch(() => {}); return;
@@ -3029,26 +3215,26 @@ function bindShell() {
   $('#hdrTools')?.addEventListener('click', () => ToolsPanel.open());
   $('#hdrEnd')?.addEventListener('click', () => endNight());
   $('#newNightBtn').addEventListener('click', newNight);
-  $('#hdrSafe').addEventListener('click', () => { if (confirm('Spegnere la Safe Mode e riaccendere animazioni, musica ed effetti?')) applySafeMode(false); });
+  $('#hdrSafe').addEventListener('click', () => { if (confirm(tr('tv.safe.offConfirm'))) applySafeMode(false); });
 }
 
 function paintClock() {
   const el = $('#hdrClock');
   if (!el || !S.meta) return;
   const now = new Date();
-  const hm = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const hm = clockL(now, false);
   const start = Number(S.meta.createdAt) || 0;
   const mins = start ? Math.floor((Date.now() - start) / 60000) : null;
   const night = mins === null ? '' : mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')}`;
   const games = Object.values(S.games || {}).filter((g) => g?.status === 'revealed').length;
-  el.innerHTML = `${ICONS.clock}<span>${hm}${night ? ` · ${night}` : ''}${games ? ` · ${games} ${games === 1 ? 'partita' : 'partite'}` : ''}</span>`;
+  el.innerHTML = `${ICONS.clock}<span>${hm}${night ? ` · ${night}` : ''}${games ? ` · ${tr('tv.hdr.matches', { n: games })}` : ''}</span>`;
 }
 
 function updateShell() {
   paintClock();
   const n = activePlayers(S.players).length;
   const el = $('#hdrPlayersTxt');
-  if (el) el.textContent = `${n} / ${S.meta.maxPlayers || DEFAULT_PLAYERS} giocatori`;
+  if (el) el.textContent = tr('tv.hdr.players', { n: `${n} / ${S.meta.maxPlayers || DEFAULT_PLAYERS}` });
   const lock = $('#hdrLock');
   if (lock) lock.hidden = !S.meta.locked;
   const safe = $('#hdrSafe');
@@ -3056,8 +3242,8 @@ function updateShell() {
 }
 
 async function newNight() {
-  if (!confirm('Iniziare una nuova serata? La TV creerà una stanza nuova; quella attuale resta salvata.')) return;
-  await Save.snap('Prima di chiudere la serata', 'phase');
+  if (!confirm(tr('tv.newNight.confirm'))) return;
+  await Save.snap(tr('tv.snap.beforeClose'), 'phase');
   await Save.now();
   await Vault.close(S.code).catch(() => {});
   localStorage.removeItem(STORE_KEY);
@@ -3082,9 +3268,10 @@ function setupGlobalKeys() {
     touch();
     if (tourOpen()) return;
     if (Interval.isOpen()) { e.preventDefault(); Interval.close(); return; }
+    if (Ambient.isShown() && (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack' || e.key === 'BrowserBack')) { e.preventDefault(); setAmbient(false).catch(() => {}); return; }
     if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (ClaimPanel.isOpen() || Quiz.isOpen()) return;
-    const open = [PlanPanel, RulesPanel, TablePanel, GameWheel, VideoPanel, TimeMachine, IntegrityPanel, TransferPanel, QrPanel, ExportPanel, GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel].find((p) => p.isOpen());
+    const open = [CustomSfxPanel, PlanPanel, RulesPanel, TablePanel, GameWheel, VideoPanel, TimeMachine, IntegrityPanel, TransferPanel, QrPanel, ExportPanel, GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel].find((p) => p.isOpen());
     if (e.key === 'Escape' && open) { e.preventDefault(); open.close(); return; }
     if (open) return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); return; }
@@ -3093,6 +3280,7 @@ function setupGlobalKeys() {
     if ((e.key === 'g' || e.key === 'G') && S.code && S.meta) { e.preventDefault(); Panel.open(); return; }
     if ((e.key === 'l' || e.key === 'L') && hasLib()) { e.preventDefault(); LibPanel.open(); return; }
     if ((e.key === 'p' || e.key === 'P') && S.code && S.meta) { e.preventDefault(); setPaused(!S.state?.paused).catch(() => {}); return; }
+    if ((e.key === 'a' || e.key === 'A') && S.code && S.meta) { e.preventDefault(); setAmbient(!S.meta?.ambient).catch((err) => toast(explainError(err), 'error')); return; }
     if ((e.key === 't' || e.key === 'T') && S.code && S.meta && S.state?.phase !== 'lobby') { e.preventDefault(); TablePanel.open(); return; }
     if ((e.key === 'q' || e.key === 'Q') && S.code && S.meta && ['idle', 'board'].includes(S.state?.phase)) { e.preventDefault(); Quiz.open(); return; }
     S.screen?.onKey?.(e);
@@ -3116,13 +3304,14 @@ function renderQR(el, text) {
   el.innerHTML = qrSVG(text);
 }
 
+/** "Anna, Bruno e Carla" nella lingua scelta. */
 function namesList(names) {
   if (names.length <= 1) return names[0] || '';
-  return names.slice(0, -1).join(', ') + ' e ' + names[names.length - 1];
+  return fmtList(names);
 }
 
 function playerOrGhost(uid) {
-  return { uid, ...(S.players[uid] || { name: 'Ex giocatore' }) };
+  return { uid, ...(S.players[uid] || { name: tr('tv.exPlayer') }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -3179,7 +3368,7 @@ function trophyMap() {
 function trophyBadges(p) {
   const t = trophyMap()[personKey(p)];
   if (!t) return '';
-  return `${t.crown ? `<span class="trophy trophy--crown" title="MVP della serata precedente">${ICONS.crown}</span>` : ''}${t.star ? `<span class="trophy trophy--star" title="MVP di sempre">${ICONS.star}</span>` : ''}`;
+  return `${t.crown ? `<span class="trophy trophy--crown" title="${tr('tv.pl.mvpLast')}">${ICONS.crown}</span>` : ''}${t.star ? `<span class="trophy trophy--star" title="${tr('tv.pl.mvpEver')}">${ICONS.star}</span>` : ''}`;
 }
 function trophyTitle(p) {
   const k = trophyMap()[personKey(p)]?.title;
@@ -3196,8 +3385,8 @@ function changeSeats(delta) {
   const max = S.meta.maxPlayers || DEFAULT_PLAYERS;
   const next = Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, n, max + delta));
   if (next === max) {
-    if (delta < 0) toast('Per togliere un posto, prima segna come uscito chi va via.', 'warn');
-    if (delta > 0) toast(`Il massimo è ${MAX_PLAYERS} giocatori.`, 'warn');
+    if (delta < 0) toast(tr('tv.pl.seatLess'), 'warn');
+    if (delta > 0) toast(tr('tv.pl.seatMax', { n: MAX_PLAYERS }), 'warn');
     return;
   }
   update(roomRef(S.code, 'meta'), { maxPlayers: next }).catch((err) => toast(explainError(err), 'error'));
@@ -3210,7 +3399,7 @@ function markOut(uid) {
   const op = hasVoted(uid)
     ? update(roomRef(S.code, `players/${uid}`), { away: true })
     : remove(roomRef(S.code, `players/${uid}`));
-  op.then(() => toastUndo(`${p.name} ha lasciato la serata`, () => {
+  op.then(() => toastUndo(tr('tv.pl.left', { name: p.name }), () => {
     if (S.players[uid]) bringBack(uid);
     else set(roomRef(S.code, `players/${uid}`), p).catch((err) => toast(explainError(err), 'error'));
   })).catch((err) => toast(explainError(err), 'error'));
@@ -3223,7 +3412,7 @@ function bringBack(uid) {
   const max = S.meta.maxPlayers || DEFAULT_PLAYERS;
   const patch = { away: null };
   if (n >= max) {
-    if (max >= MAX_PLAYERS) { toast(`Siete già in ${MAX_PLAYERS}: non c'è posto.`, 'warn'); return; }
+    if (max >= MAX_PLAYERS) { toast(tr('tv.pl.full', { n: MAX_PLAYERS }), 'warn'); return; }
     // Il posto si aggiunge da solo: chi rientra lo aveva già.
     update(roomRef(S.code, 'meta'), { maxPlayers: max + 1 }).catch(() => {});
   }
@@ -3233,7 +3422,7 @@ function bringBack(uid) {
     if (free) patch.color = free;
   }
   update(roomRef(S.code, `players/${uid}`), patch)
-    .then(() => toast(`${p.name} è di nuovo in partita!`))
+    .then(() => toast(tr('tv.pl.back', { name: p.name })))
     .catch((err) => toast(explainError(err), 'error'));
 }
 
@@ -3253,30 +3442,30 @@ const Panel = {
     el.innerHTML = `
       <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="ppTitle">
         <div class="panel-head">
-          <h2 id="ppTitle">Giocatori della serata</h2>
-          <button type="button" class="icon-btn" id="ppClose" aria-label="Chiudi">${ICONS.x}</button>
+          <h2 id="ppTitle">${tr('tv.pl.title')}</h2>
+          <button type="button" class="icon-btn" id="ppClose" aria-label="${tr('tv.close')}">${ICONS.x}</button>
         </div>
         <div class="panel-join" id="ppJoin">
           <div class="qr qr--panel" id="ppQr"></div>
-          <div class="lock-box" id="ppLocked" hidden><span aria-hidden="true">🔒</span><b>Stanza chiusa</b></div>
+          <div class="lock-box" id="ppLocked" hidden><span aria-hidden="true">🔒</span><b>${tr('tv.hdr.locked')}</b></div>
           <div class="panel-join-text">
-            <p class="panel-strong" id="ppJoinTitle">Arriva qualcuno?</p>
-            <p id="ppJoinText">Inquadra il QR o scrivi il codice <span class="code-chip code-chip--sm">${esc(S.code)}</span>. Si entra subito, anche a votazione aperta.</p>
+            <p class="panel-strong" id="ppJoinTitle">${tr('tv.pl.joinTitle')}</p>
+            <p id="ppJoinText">${tr('tv.pl.joinText', { code: esc(S.code) })}</p>
             <button type="button" class="btn-sec btn-sec--sm" id="ppLock"></button>
-            ${regiaCode() ? `<p class="regia-line">Codice regia <b>${esc(prettyRegia(regiaCode()))}</b>: serve per guidare la serata dal telefono o riprenderla da un altro computer. Fotografalo.</p>` : ''}
+            ${regiaCode() ? `<p class="regia-line">${tr('tv.pl.regia', { code: esc(prettyRegia(regiaCode())) })}</p>` : ''}
             <div class="seat-row">
-              <span class="field-label" id="ppSeatsLabel">Posti</span>
+              <span class="field-label" id="ppSeatsLabel">${tr('tv.pl.seats')}</span>
               <div class="stepper" role="group" aria-labelledby="ppSeatsLabel">
-                <button type="button" class="step-btn" data-seat="-1" aria-label="Un posto in meno">${ICONS.minus}</button>
+                <button type="button" class="step-btn" data-seat="-1" aria-label="${tr('tv.pl.seatMinus')}">${ICONS.minus}</button>
                 <output id="ppSeats" aria-live="polite"></output>
-                <button type="button" class="step-btn" data-seat="1" aria-label="Un posto in più">${ICONS.plus}</button>
+                <button type="button" class="step-btn" data-seat="1" aria-label="${tr('tv.pl.seatPlus')}">${ICONS.plus}</button>
               </div>
             </div>
           </div>
         </div>
         <ul class="panel-list" id="ppList"></ul>
         <div id="ppBanned"></div>
-        <p class="muted small">Chi esce resta in classifica con i voti già dati, ma non viene più aspettato nelle votazioni. ⛔ espelle un dispositivo buggato, fantasma o indesiderato.</p>
+        <p class="muted small">${tr('tv.pl.note')}</p>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -3316,16 +3505,16 @@ const Panel = {
     const locked = Boolean(S.meta?.locked);
     $('#ppQr', this.el).hidden = locked;
     $('#ppLocked', this.el).hidden = !locked;
-    $('#ppJoinTitle', this.el).textContent = locked ? 'Stanza chiusa' : 'Arriva qualcuno?';
+    $('#ppJoinTitle', this.el).textContent = locked ? tr('tv.hdr.locked') : tr('tv.pl.joinTitle');
     $('#ppJoinText', this.el).innerHTML = locked
-      ? 'Nessun nuovo ingresso: il QR e il codice non funzionano più per chi non è già dentro. Chi era in partita può sempre rientrare dal suo telefono.'
-      : `Inquadra il QR o scrivi il codice <span class="code-chip code-chip--sm">${esc(S.code)}</span>. Si entra subito, anche a votazione aperta.`;
-    $('#ppLock', this.el).innerHTML = locked ? '🔓 <span>Riapri la stanza</span>' : '🔒 <span>Chiudi la stanza</span>';
+      ? tr('tv.pl.lockedText')
+      : `${tr('tv.pl.joinText', { code: esc(S.code) })}`;
+    $('#ppLock', this.el).innerHTML = locked ? `🔓 <span>${tr('tv.pl.unlock')}</span>` : `🔒 <span>${tr('tv.tour.l3.t')}</span>`;
     const banned = Object.entries(S.meta?.banned || {});
     const bsig = JSON.stringify(banned);
     if (bsig !== this.bsig) {
       this.bsig = bsig;
-      $('#ppBanned', this.el).innerHTML = banned.length ? `<p class="field-label">Espulsi stasera</p><ul class="trash-list">${banned.map(([uid, name]) => `<li><span>⛔ <b>${esc(name)}</b></span><button type="button" class="btn-sec btn-sec--sm" data-readmit="${esc(uid)}">Riammetti</button></li>`).join('')}</ul>` : '';
+      $('#ppBanned', this.el).innerHTML = banned.length ? `<p class="field-label">${tr('tv.pl.banned')}</p><ul class="trash-list">${banned.map(([uid, name]) => `<li><span>⛔ <b>${esc(name)}</b></span><button type="button" class="btn-sec btn-sec--sm" data-readmit="${esc(uid)}">${tr('tv.pl.readmit')}</button></li>`).join('')}</ul>` : '';
     }
     const all = sortedPlayers(S.players);
     const sig = JSON.stringify([all.map((p) => [p.uid, p.name, p.style, p.seed, p.color, Boolean(p.away), isOnline(p.uid)])]);
@@ -3337,12 +3526,12 @@ const Panel = {
       <li class="panel-row ${p.away ? 'is-away' : ''}">
         ${avatarHTML(p, '2.8rem')}
         <span class="panel-name">${esc(p.name)}${trophyTitle(p) ? ` <small class="panel-title">${esc(trophyTitle(p))}</small>` : ''}</span>
-        <span class="panel-status ${!p.away && !isOnline(p.uid) ? 'is-offline' : ''}">${p.away ? 'Fuori dalla serata' : isOnline(p.uid) ? 'In partita' : `${ICONS.wifiOff}Non collegato`}</span>
+        <span class="panel-status ${!p.away && !isOnline(p.uid) ? 'is-offline' : ''}">${p.away ? tr('tv.pl.away') : isOnline(p.uid) ? tr('tv.pl.in') : `${ICONS.wifiOff}${tr('tv.pl.offline')}`}</span>
         <span class="panel-acts">${p.away
-          ? `<button type="button" class="btn-sec btn-sec--sm" data-back="${esc(p.uid)}">Fai rientrare</button>`
-          : `<button type="button" class="btn-sec btn-sec--sm" data-out="${esc(p.uid)}">${ICONS.exit}<span>Segna l’uscita</span></button>`}
-          <button type="button" class="icon-btn icon-btn--sm" data-kickp="${esc(p.uid)}" title="Espelli ${esc(p.name)}" aria-label="Espelli ${esc(p.name)}">⛔</button></span>
-      </li>`).join('') : '<li class="muted">Ancora nessun giocatore.</li>';
+          ? `<button type="button" class="btn-sec btn-sec--sm" data-back="${esc(p.uid)}">${tr('tv.pl.bringBack')}</button>`
+          : `<button type="button" class="btn-sec btn-sec--sm" data-out="${esc(p.uid)}">${ICONS.exit}<span>${tr('tv.pl.markOut')}</span></button>`}
+          <button type="button" class="icon-btn icon-btn--sm" data-kickp="${esc(p.uid)}" title="${tr('tv.pl.kick', { name: esc(p.name) })}" aria-label="${tr('tv.pl.kick', { name: esc(p.name) })}">⛔</button></span>
+      </li>`).join('') : `<li class="muted">${tr('tv.pl.none')}</li>`;
   }
 };
 
@@ -3352,8 +3541,8 @@ const Panel = {
  */
 async function migratePlayer(oldUid, newUid) {
   const p = S.players[oldUid];
-  if (!p) throw userError('Questo giocatore non c’è più.');
-  await Save.snap(`Prima del rientro di ${p.name} da un altro telefono`);
+  if (!p) throw userError(tr('tv.pl.gone'));
+  await Save.snap(tr('tv.snap.beforeMigrate', { name: p.name }));
   const patch = {};
   const { away, ...profile } = p;
   patch[`players/${newUid}`] = profile;
@@ -3410,7 +3599,7 @@ const ClaimPanel = {
         this.auto.add(c.uid);
         const name = S.players[c.target].name;
         migratePlayer(c.target, c.uid)
-          .then(() => toast(`${name} è di nuovo in partita con il nuovo telefono`))
+          .then(() => toast(tr('tv.pl.backNewPhone', { name })))
           .catch((err) => { this.auto.delete(c.uid); toast(explainError(err), 'error'); });
       }
     }
@@ -3431,14 +3620,14 @@ const ClaimPanel = {
         <div class="claim-head">
           ${avatarHTML(p, '5rem', 'avatar--shadow')}
           <div>
-            <h2 id="clTitle">${esc(p.name)} vuole rientrare</h2>
-            <p class="panel-note">Un telefono nuovo dice di essere ${esc(p.name)}. Se confermi, voti, vittorie e MVP passano a quel telefono.</p>
+            <h2 id="clTitle">${tr('tv.cl.title', { name: esc(p.name) })}</h2>
+            <p class="panel-note">${tr('tv.cl.text', { name: esc(p.name) })}</p>
           </div>
         </div>
-        ${online ? `<p class="claim-warn">${ICONS.wifiOff}<span>Attenzione: il vecchio telefono di ${esc(p.name)} risulta ancora collegato.</span></p>` : ''}
+        ${online ? `<p class="claim-warn">${ICONS.wifiOff}<span>${tr('tv.cl.online', { name: esc(p.name) })}</span></p>` : ''}
         <div class="claim-actions">
-          <button type="button" class="btn-sec" id="clNo">No, non è ${esc(p.name)}</button>
-          <button type="button" class="btn btn-big" id="clYes">${ICONS.check}<span>Sì, è ${esc(p.name)}</span></button>
+          <button type="button" class="btn-sec" id="clNo">${tr('tv.cl.no', { name: esc(p.name) })}</button>
+          <button type="button" class="btn btn-big" id="clYes">${ICONS.check}<span>${tr('tv.cl.yes', { name: esc(p.name) })}</span></button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -3451,7 +3640,7 @@ const ClaimPanel = {
       e.currentTarget.disabled = true;
       try {
         await migratePlayer(claim.target, claim.uid);
-        toast(`${p.name} è di nuovo in partita con il nuovo telefono`);
+        toast(tr('tv.pl.backNewPhone', { name: p.name }));
         this.close();
       } catch (err) {
         toast(explainError(err), 'error');
@@ -3502,28 +3691,28 @@ const ProfileClaimPanel = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--claim" role="alertdialog" aria-modal="true" aria-labelledby="pcTitle">
-        <h2 id="pcTitle">${esc(info.name || c.name)} vuole ritrovare il suo profilo</h2>
-        <p class="panel-note">Un telefono nuovo, senza codice personale, dice di essere <b>${esc(info.name || c.name)}</b>${info.nights ? ` (${info.nights} ${info.nights === 1 ? 'serata' : 'serate'} di statistiche)` : ''}. Se confermi, profilo, livello e statistiche di sempre passano anche a quel telefono.</p>
-        ${!info.name ? `<p class="claim-warn">⚠️ Questo profilo non compare nello storico del gruppo.</p>` : ''}
-        ${inRoom ? `<p class="claim-warn">⚠️ ${esc(inRoom.name)} è già in partita con un altro telefono.</p>` : ''}
+        <h2 id="pcTitle">${tr('tv.pc.title', { name: esc(info.name || c.name) })}</h2>
+        <p class="panel-note">${tr('tv.pc.text', { name: esc(info.name || c.name), stats: info.nights ? tr('tv.pc.stats', { n: info.nights }) : '' })}</p>
+        ${!info.name ? `<p class="claim-warn">${tr('tv.pc.unknown')}</p>` : ''}
+        ${inRoom ? `<p class="claim-warn">${tr('tv.pc.inRoom', { name: esc(inRoom.name) })}</p>` : ''}
         <div class="claim-actions">
-          <button type="button" class="btn-sec" id="pcNo">No, non è ${esc(info.name || c.name)}</button>
-          <button type="button" class="btn btn-big" id="pcYes">${ICONS.check}<span>Sì, è ${esc(info.name || c.name)}</span></button>
+          <button type="button" class="btn-sec" id="pcNo">${tr('tv.cl.no', { name: esc(info.name || c.name) })}</button>
+          <button type="button" class="btn btn-big" id="pcYes">${ICONS.check}<span>${tr('tv.cl.yes', { name: esc(info.name || c.name) })}</span></button>
         </div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
     $('#pcNo', el).addEventListener('click', () => {
       remove(roomRef(S.code, `profileClaims/${c.uid}`)).catch(() => {});
-      logEvent(`Richiesta di profilo rifiutata (${c.name})`, '🚫');
+      logEvent(tr('tv.log.profileNo', { name: c.name }), '🚫');
       this.close();
     });
     $('#pcYes', el).addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       try {
         await update(roomRef(S.code, ''), { [`profileGrants/${c.uid}`]: { mid: c.mid, at: serverTimestamp() }, [`profileClaims/${c.uid}`]: null });
-        logEvent(`Profilo di ${info.name || c.name} ritrovato su un telefono nuovo`, '🪪');
-        toast(`${info.name || c.name} ritrova il suo profilo`);
+        logEvent(tr('tv.log.profileYes', { name: info.name || c.name }), '🪪');
+        toast(tr('tv.pc.done', { name: info.name || c.name }));
         this.close();
       } catch (err) { toast(explainError(err), 'error'); e.currentTarget.disabled = false; }
     });
@@ -3549,21 +3738,21 @@ const EditGame = {
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="egTitle">
-        <div class="panel-head"><h2 id="egTitle">Correggi “${esc(g.name)}”</h2><button type="button" class="icon-btn" id="egClose" aria-label="Chiudi">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="egTitle">${tr('tv.eg.title', { name: esc(g.name) })}</h2><button type="button" class="icon-btn" id="egClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <div class="eg-top">
-          <button type="button" class="lib-add-img ${this.image ? 'has-img' : ''}" id="egPick" aria-label="Cambia la foto">${this.image ? `<img src="${esc(this.image)}" alt="">` : ICONS.image}</button>
-          <div class="field"><label class="field-label" for="egName">Nome del gioco</label><input class="input" id="egName" maxlength="40" value="${esc(g.name)}"></div>
+          <button type="button" class="lib-add-img ${this.image ? 'has-img' : ''}" id="egPick" aria-label="${tr('tv.gs.photo')}">${this.image ? `<img src="${esc(this.image)}" alt="">` : ICONS.image}</button>
+          <div class="field"><label class="field-label" for="egName">${tr('tv.eg.name')}</label><input class="input" id="egName" maxlength="40" value="${esc(g.name)}"></div>
           <input type="file" id="egFile" accept="image/*" hidden>
         </div>
-        <span class="field-label">Chi ha vinto?</span>
+        <span class="field-label">${tr('tv.eg.winners')}</span>
         <div class="rg-chips">${people.map((p) => `<button type="button" class="lib-chip" data-egwin="${esc(p.uid)}" aria-pressed="${this.winners.has(p.uid)}">${esc(p.name)}</button>`).join('')}</div>
-        <span class="field-label">Voti (togli quelli sbagliati)</span>
+        <span class="field-label">${tr('tv.eg.votes')}</span>
         <ul class="trash-list">${Object.entries(votes).map(([uid, v]) => `
-          <li><span><b>${esc(S.players[uid]?.name || 'Ex giocatore')}</b> ${v.overall}${v.byHost ? ' <span class="muted">(inserito dalla TV)</span>' : ''}</span>
-          <button type="button" class="btn-sec btn-sec--sm" data-egdrop="${esc(uid)}" aria-pressed="false">Togli</button></li>`).join('') || '<li class="muted">Nessun voto.</li>'}</ul>
+          <li><span><b>${esc(S.players[uid]?.name || tr('tv.exPlayer'))}</b> ${v.overall}${v.byHost ? ` <span class="muted">${tr('tv.eg.byHost')}</span>` : ''}</span>
+          <button type="button" class="btn-sec btn-sec--sm" data-egdrop="${esc(uid)}" aria-pressed="false">${tr('tv.eg.drop')}</button></li>`).join('') || `<li class="muted">${tr('tv.eg.noVotes')}</li>`}</ul>
         <div class="claim-actions">
-          <button type="button" class="btn-sec" id="egTrash">Sposta nel cestino</button>
-          <button type="button" class="btn btn-big" id="egSave">${ICONS.check}<span>Salva</span></button>
+          <button type="button" class="btn-sec" id="egTrash">${tr('tv.eg.trash')}</button>
+          <button type="button" class="btn btn-big" id="egSave">${ICONS.check}<span>${tr('tv.save')}</span></button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -3574,8 +3763,8 @@ const EditGame = {
       const w = e.target.closest('[data-egwin]');
       if (w) { const u = w.dataset.egwin; this.winners.has(u) ? this.winners.delete(u) : this.winners.add(u); w.setAttribute('aria-pressed', String(this.winners.has(u))); return; }
       const d = e.target.closest('[data-egdrop]');
-      if (d) { const u = d.dataset.egdrop; this.drop.has(u) ? this.drop.delete(u) : this.drop.add(u); d.setAttribute('aria-pressed', String(this.drop.has(u))); d.textContent = this.drop.has(u) ? 'Da togliere' : 'Togli'; return; }
-      if (e.target.closest('#egTrash')) { if (confirm(`Spostare “${g.name}” nel cestino?`)) { await trashGame(gid); this.close(); } return; }
+      if (d) { const u = d.dataset.egdrop; this.drop.has(u) ? this.drop.delete(u) : this.drop.add(u); d.setAttribute('aria-pressed', String(this.drop.has(u))); d.textContent = this.drop.has(u) ? tr('tv.eg.dropping') : tr('tv.eg.drop'); return; }
+      if (e.target.closest('#egTrash')) { if (confirm(tr('tv.eg.trashConfirm', { name: g.name }))) { await trashGame(gid); this.close(); } return; }
       if (e.target.closest('#egSave')) this.save();
     });
     $('#egFile', el).addEventListener('change', async (e) => {
@@ -3587,7 +3776,7 @@ const EditGame = {
   },
   async save() {
     const name = cleanName($('#egName', this.el).value);
-    if (!name) { toast('Il nome del gioco non può essere vuoto.', 'warn'); return; }
+    if (!name) { toast(tr('tv.eg.errName'), 'warn'); return; }
     const patch = {
       [`games/${this.gid}/name`]: name,
       [`games/${this.gid}/image`]: this.image || null,
@@ -3595,10 +3784,10 @@ const EditGame = {
     };
     for (const u of this.drop) patch[`votes/${this.gid}/${u}`] = null;
     try {
-      await Save.snap(`Prima delle correzioni a ${S.games[this.gid]?.name || 'un gioco'}`);
+      await Save.snap(tr('tv.snap.beforeEdit', { name: S.games[this.gid]?.name || tr('tv.aGame') }));
       await update(roomRef(S.code, ''), patch);
       saveNight();
-      toast('Correzioni salvate');
+      toast(tr('tv.eg.saved'));
       this.close();
     } catch (err) { toast(explainError(err), 'error'); }
   },
@@ -3628,18 +3817,18 @@ const ProxyVote = {
     el.innerHTML = `
       <div class="card panel panel--proxy" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
         <div class="panel-head">
-          <h2 id="pvTitle">Voto di ${esc(p.name)} per ${esc(g.name)}</h2>
-          <button type="button" class="icon-btn" id="pvClose" aria-label="Chiudi">${ICONS.x}</button>
+          <h2 id="pvTitle">${tr('tv.pv.title', { name: esc(p.name), game: esc(g.name) })}</h2>
+          <button type="button" class="icon-btn" id="pvClose" aria-label="${tr('tv.close')}">${ICONS.x}</button>
         </div>
-        <p class="panel-note">Per quando il telefono di ${esc(p.name)} è fuori uso: fatti dire il voto e inseriscilo qui.</p>
-        <div class="pv-row"><span class="field-label">Voto generale</span><div class="pv-btns pv-btns--10">${btns('overall', 10)}</div></div>
+        <p class="panel-note">${tr('tv.pv.note', { name: esc(p.name) })}</p>
+        <div class="pv-row"><span class="field-label">${tr('tv.pv.overall')}</span><div class="pv-btns pv-btns--10">${btns('overall', 10)}</div></div>
         ${this.quick ? '' : CRITERIA.map((c) => `<div class="pv-row"><span class="field-label">${c.label}</span><div class="pv-btns" style="--cc:${c.color}">${btns(c.key, 5)}</div></div>`).join('')}
         ${others.length ? `<div class="pv-row"><span class="field-label">MVP</span><div class="pv-mvp">${others.map((o) => `
           <button type="button" class="pv-btn pv-av" data-k="mvp" data-v="${esc(o.uid)}" aria-pressed="false" title="${esc(o.name)}">${avatarHTML(o, '2.4rem')}<span>${esc(o.name)}</span></button>`).join('')}</div></div>` : ''}
         <p class="form-error" id="pvErr" role="alert"></p>
         <div class="claim-actions">
-          <button type="button" class="btn-sec" id="pvCancel">Annulla</button>
-          <button type="button" class="btn btn-big" id="pvSave">${ICONS.check}<span>Salva il voto</span></button>
+          <button type="button" class="btn-sec" id="pvCancel">${tr('tv.cancel')}</button>
+          <button type="button" class="btn btn-big" id="pvSave">${ICONS.check}<span>${tr('tv.pv.save')}</span></button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -3658,24 +3847,24 @@ const ProxyVote = {
   async save() {
     const v = this.v;
     const missing = [];
-    if (!v.overall) missing.push('voto generale');
+    if (!v.overall) missing.push(tr('tv.pv.overall').toLowerCase());
     if (!this.quick) for (const c of CRITERIA) if (!v[c.key]) missing.push(c.label.toLowerCase());
     if (this.needMvp && !v.mvp) missing.push('MVP');
-    if (missing.length) { $('#pvErr', this.el).textContent = `Manca: ${missing.join(', ')}.`; return; }
+    if (missing.length) { $('#pvErr', this.el).textContent = tr('tv.pv.missing', { list: missing.join(', ') }); return; }
     const data = { overall: v.overall, byHost: true, at: serverTimestamp() };
     if (!this.quick) Object.assign(data, { coinv: v.coinv, sempl: v.sempl, rigioc: v.rigioc });
     if (v.mvp) data.mvp = v.mvp;
-    const name = S.players[this.uid]?.name || 'Il giocatore';
+    const name = S.players[this.uid]?.name || tr('tv.pv.player');
     try {
       // Se nel frattempo ha votato dal telefono, il suo voto vero non va sovrascritto.
       const already = (await get(roomRef(S.code, `votes/${this.gid}/${this.uid}`))).val();
       if (already) {
-        toast(`${name} ha appena votato dal telefono: resta il suo voto.`, 'warn');
+        toast(tr('tv.pv.already', { name }), 'warn');
         this.close();
         return;
       }
       await set(roomRef(S.code, `votes/${this.gid}/${this.uid}`), data);
-      toast(`Voto di ${name} salvato`);
+      toast(tr('tv.pv.saved', { name }));
       this.close();
     } catch (err) {
       $('#pvErr', this.el).textContent = explainError(err);
@@ -3731,7 +3920,7 @@ async function runCommand(c) {
     case 'next': if (['reveal', 'board'].includes(phase)) await goNext(); break;
     case 'board': if (['reveal', 'idle'].includes(phase)) await setPhase('board'); break;
     case 'end':
-      if (['idle', 'board', 'reveal'].includes(phase) && buildBoard(S.games, S.votes).length) guarded('Prima della premiazione', () => toAwards(false));
+      if (['idle', 'board', 'reveal'].includes(phase) && buildBoard(S.games, S.votes).length) guarded(tr('tv.snap.beforeAwards'), () => toAwards(false));
       break;
     case 'lock': await setLocked(Boolean(a.on)); break;
     case 'kick': if (a.uid && S.players[a.uid]) await kickPlayer(a.uid, Boolean(a.all)); break;
@@ -3751,6 +3940,7 @@ async function runCommand(c) {
     case 'startPlay': if (phase === 'idle' && a.name) { await update(roomRef(S.code, 'state'), playState(cleanName(a.name), asList(a.spectators))); newGameSound(); } break;
     case 'interval': if (Interval.isOpen()) Interval.close(); else if (['idle', 'board'].includes(phase)) Interval.open(); break;
     case 'resume': await setPaused(false); break;
+    case 'ambient': await setAmbient(a.on === undefined ? !S.meta?.ambient : (a.on === true || a.on === '1')); break;
     default: break;
   }
 }
@@ -3762,7 +3952,7 @@ async function runCommand(c) {
 async function endNight() {
   if (S.ending || document.getElementById('endDialog')) return;
   const ph = S.state?.phase;
-  if (ph === 'awards') { toast('La serata è già terminata: la premiazione è sullo schermo.'); return; }
+  if (ph === 'awards') { toast(tr('tv.end.already')); return; }
   const board = buildBoard(S.games, S.votes);
   const gid = S.state?.gameId;
   const g = ph === 'voting' ? S.games?.[gid] : null;
@@ -3775,20 +3965,20 @@ async function endNight() {
     el.id = 'endDialog';
     el.innerHTML = `
       <div class="card panel end-dialog" role="dialog" aria-modal="true" aria-labelledby="edTitle">
-        <div class="panel-head"><h2 id="edTitle">🏁 Terminare la serata?</h2><button type="button" class="icon-btn" data-edno aria-label="Continua a giocare">${ICONS.x}</button></div>
+        <div class="panel-head"><h2 id="edTitle">${tr('tv.end.title')}</h2><button type="button" class="icon-btn" data-edno aria-label="${tr('tv.end.keep')}">${ICONS.x}</button></div>
         <ul class="end-list">
-          <li>${board.length ? `🏆 <b>${board.length} ${board.length === 1 ? 'gioco' : 'giochi'}</b> in classifica, con i voti ricevuti: si passa alla premiazione.` : '🏆 Nessun gioco votato: la premiazione sarà vuota, ma il resoconto della serata resta.'}</li>
-          ${g ? `<li>🗳️ La votazione di <b>${esc(g.name)}</b> è aperta: <b>${nv} ${nv === 1 ? 'voto' : 'voti'} su ${total}</b>. Scegli qui sotto se contarla con i voti già arrivati o lasciarla fuori (va nel cestino, si può ripristinare).</li>` : ''}
-          ${playing ? `<li>⏱️ La partita a <b>${esc(playing)}</b> non è stata votata: non entra in classifica.</li>` : ''}
-          ${ph === 'poll' ? '<li>📱 La votazione del prossimo gioco viene chiusa senza scegliere.</li>' : ''}
-          <li>🧮 Segnapunti, pronostici e quiz restano come sono; nessun dato viene cancellato.</li>
-          <li>📋 Dopo, il <b>resoconto della serata</b> si apre dalla premiazione e dalla home di ogni telefono.</li>
-          <li>↩️ Per qualche secondo compare <b>Annulla</b> per tornare indietro.</li>
+          <li>${board.length ? tr('tv.end.board', { n: board.length }) : tr('tv.end.noBoard')}</li>
+          ${g ? `<li>${tr('tv.end.voting', { name: esc(g.name), votes: tr('tv.end.votesOf', { n: nv, total }) })}</li>` : ''}
+          ${playing ? `<li>${tr('tv.end.playing', { name: esc(playing) })}</li>` : ''}
+          ${ph === 'poll' ? `<li>${tr('tv.end.poll')}</li>` : ''}
+          <li>${tr('tv.end.scores')}</li>
+          <li>${tr('tv.end.report')}</li>
+          <li>${tr('tv.end.undo')}</li>
         </ul>
         <div class="end-acts">
-          ${g && nv ? `<button type="button" class="btn" data-edgo="count">Termina e conta ${nv === 1 ? 'l’unico voto' : `i ${nv} voti`} di ${esc(g.name)}</button>` : ''}
-          <button type="button" class="${g && nv ? 'btn-sec' : 'btn'}" data-edgo="${g ? 'drop' : 'end'}">${g ? `Termina senza ${esc(g.name)}` : 'Termina la serata'}</button>
-          <button type="button" class="btn-sec" data-edno>Continua a giocare</button>
+          ${g && nv ? `<button type="button" class="btn" data-edgo="count">${tr('tv.end.count', { n: nv, name: esc(g.name) })}</button>` : ''}
+          <button type="button" class="${g && nv ? 'btn-sec' : 'btn'}" data-edgo="${g ? 'drop' : 'end'}">${g ? tr('tv.end.without', { name: esc(g.name) }) : tr('tv.end.end')}</button>
+          <button type="button" class="btn-sec" data-edno>${tr('tv.end.keep')}</button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -3805,7 +3995,7 @@ async function endNight() {
   if (!choice || S.ending || S.state?.phase === 'awards') return;
   S.ending = true;
   try {
-    await guarded('Prima della fine anticipata della serata', async () => {
+    await guarded(tr('tv.end.guard'), async () => {
       if (g) {
         if (choice === 'count' && nv) await update(roomRef(S.code, `games/${gid}`), { status: 'revealed', revealedAt: serverTimestamp(), closedEarly: true });
         else await trashGame(gid);
@@ -3820,10 +4010,10 @@ async function endNight() {
 async function toAwards(withUndo = false) {
   if (S.state?.phase === 'awards') return;
   const back = S.state?.phase === 'board' ? 'board' : 'idle';
-  await Save.snap('Prima della premiazione', 'phase');
+  await Save.snap(tr('tv.snap.beforeAwards'), 'phase');
   saveNight();
   await setPhase('awards');
-  if (withUndo) toastUndo('Serata terminata', () => setPhase(back));
+  if (withUndo) toastUndo(tr('tv.end.done'), () => setPhase(back));
   if (autoGroupBackup()) setTimeout(() => groupBackup(false).catch(() => {}), 2500);
 }
 
@@ -3841,7 +4031,7 @@ function libOk(it, n) {
 
 /** "Prestato a Luca", "Venduto"... */
 function awayLabel(it) {
-  return it.status === 'prestato' && it.loanTo ? `Prestato a ${it.loanTo}` : (GAME_STATUS[it.status] || it.status || '');
+  return it.status === 'prestato' && it.loanTo ? tr('tv.lib.lentTo', { name: it.loanTo }) : (GAME_STATUS[it.status] || it.status || '');
 }
 
 function libraryItems() {
@@ -3867,7 +4057,7 @@ function poolLibrary() {
 /** I desideri dei telefoni ("voglio giocare a…") alzano il punteggio dei consigli. */
 function boostWishes(list) {
   const w = wishes();
-  return list.map((r) => (w[r.id] ? { ...r, score: Math.min(99, r.score + 8 * w[r.id]), reasons: [`⭐ ${w[r.id]} ${w[r.id] === 1 ? 'lo vuole' : 'lo vogliono'}`, ...r.reasons] } : r)).sort((a, b) => b.score - a.score);
+  return list.map((r) => (w[r.id] ? { ...r, score: Math.min(99, r.score + 8 * w[r.id]), reasons: [tr('tv.lib.wish', { n: w[r.id] }), ...r.reasons] } : r)).sort((a, b) => b.score - a.score);
 }
 
 function findLibrary(name) {
@@ -3914,8 +4104,8 @@ function playersOptions(selected, emptyLabel) {
 }
 
 function durationOptions(selected) {
-  return '<option value="">Durata: —</option>' + DURATIONS
-    .map((d) => `<option value="${d}" ${Number(selected) === d ? 'selected' : ''}>${d} min${d === 180 ? ' o più' : ''}</option>`).join('');
+  return `<option value="">${tr('tv.lib.durNone')}</option>` + DURATIONS
+    .map((d) => `<option value="${d}" ${Number(selected) === d ? 'selected' : ''}>${d} min${d === 180 ? tr('tv.lib.orMore') : ''}</option>`).join('');
 }
 
 /** Salva il riassunto della serata nel gruppo, per la classifica di sempre. */
@@ -3992,53 +4182,53 @@ const LibPanel = {
     const el = document.createElement('div');
     el.className = this.inline ? 'armadio-inline' : 'overlay';
     el.innerHTML = `
-      <div class="card panel panel--wide armadio" role="${this.inline ? 'region' : 'dialog'}" ${this.inline ? '' : 'aria-modal="true"'} aria-labelledby="lpTitle">
+      <div class="card panel panel--wide ${'armadio'}" role="${this.inline ? 'region' : 'dialog'}" ${this.inline ? '' : 'aria-modal="true"'} aria-labelledby="lpTitle">
         <div class="panel-head">
-          <h2 id="lpTitle">📦 Armadio dei giochi</h2>
-          ${inRoom() && ['lobby', 'idle'].includes(S.state?.phase) ? '<button type="button" class="btn-sec btn-sec--sm" id="lpSwitchBtn" aria-expanded="false" aria-controls="lpSwitch">🔁 <span>Cambia armadio</span></button>' : ''}
-          ${this.inline ? '' : `<button type="button" class="icon-btn" id="lpClose" aria-label="Chiudi">${ICONS.x}</button>`}
+          <h2 id="lpTitle">${tr('tv.create.armTitle')}</h2>
+          ${inRoom() && ['lobby', 'idle'].includes(S.state?.phase) ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSwitchBtn" aria-expanded="false" aria-controls="lpSwitch">🔁 <span>${tr('tv.lib.switch')}</span></button>` : ''}
+          ${this.inline ? '' : `<button type="button" class="icon-btn" id="lpClose" aria-label="${tr('tv.close')}">${ICONS.x}</button>`}
         </div>
         <div class="arm-switch" id="lpSwitch" hidden></div>
-        ${armReadOnly() ? '<p class="arm-ro">🧪 <b>Serata di prova:</b> i giochi di questo armadio si usano ma non si modificano. Le stelline ⭐ valgono solo per questa prova.</p>' : ''}
-        <p class="arm-ro arm-missing" id="lpMissing" hidden>⚠️ Questo armadio non esiste più (forse è stato cancellato). Scegline un altro con <b>Cambia armadio</b>.</p>
-        <p class="panel-note"><b>${esc(armadioName())}</b>: i vostri giochi, conservati per tutte le serate e per qualsiasi gruppo. Conviene caricarli <b>prima</b> della serata (si possono aggiungere anche durante): la foto viene messa sempre nello stesso formato.
-          ${S.meta.armadioId ? `Codice dell’armadio: <span class="code-chip code-chip--sm">${esc(S.meta.armadioId)}</span> (con il codice anche un’altra TV lo consulta)` : `Codice del gruppo: <span class="code-chip code-chip--sm">${esc(S.meta.groupId)}</span>`}</p>
+        ${armReadOnly() ? `<p class="arm-ro">${tr('tv.lib.demo')}</p>` : ''}
+        <p class="arm-ro arm-missing" id="lpMissing" hidden>${tr('tv.lib.missing')}</p>
+        <p class="panel-note">${tr('tv.lib.note', { name: esc(armadioName()) })}
+          ${S.meta.armadioId ? tr('tv.lib.armCode', { code: esc(S.meta.armadioId) }) : tr('tv.lib.groupCode', { code: esc(S.meta.groupId) })}</p>
         <div class="arm-key" id="lpKey"></div>
         <div class="arm-tools">
-          <button type="button" class="btn-sec btn-sec--sm" id="lpPhone">📱 <span>Aggiungi dal telefono</span></button>
-          <button type="button" class="btn-sec btn-sec--sm" id="lpQr">🔎 <span>Sfoglia sul telefono</span></button>
-          ${S.meta.armadioId && !armReadOnly() ? `<a class="btn-sec btn-sec--sm" id="lpFull" href="armadio.html?a=${esc(S.meta.armadioId)}" target="_blank" rel="noopener">🗂️ <span>Gestione completa</span></a>` : ''}
-          <button type="button" class="btn-sec btn-sec--sm" id="lpCsv" title="Su boardgamegeek.com: Collezione › Esporta (CSV). Va bene anche un CSV con la colonna “nome”.">📥 <span>Importa da BoardGameGeek (CSV)</span></button>
+          <button type="button" class="btn-sec btn-sec--sm" id="lpPhone">📱 <span>${tr('tv.lib.phoneAdd')}</span></button>
+          <button type="button" class="btn-sec btn-sec--sm" id="lpQr">🔎 <span>${tr('tv.lib.phoneBrowse')}</span></button>
+          ${S.meta.armadioId && !armReadOnly() ? `<a class="btn-sec btn-sec--sm" id="lpFull" href="${'armadio.html'}?a=${esc(S.meta.armadioId)}" target="_blank" rel="noopener">🗂️ <span>${tr('tv.lib.full')}</span></a>` : ''}
+          <button type="button" class="btn-sec btn-sec--sm" id="lpCsv" title="${tr('tv.lib.csvTitle')}">📥 <span>${tr('tv.lib.csv')}</span></button>
           <input type="file" id="lpCsvFile" accept=".csv,text/csv" hidden>
         </div>
         <form class="lib-add" id="lpForm" novalidate>
-          <button type="button" class="lib-add-img" id="lpPick" aria-label="Scegli una foto (oppure incollala con Ctrl+V o trascinala qui)">${ICONS.image}</button>
-          <label class="sr-only" for="lpName">Nome del gioco</label>
-          <input class="input" id="lpName" maxlength="40" autocomplete="off" placeholder="Nome del gioco da aggiungere">
-          <button type="submit" class="btn" id="lpSubmit">${ICONS.plus}<span>Aggiungi</span></button>
+          <button type="button" class="lib-add-img" id="lpPick" aria-label="${tr('tv.lib.pick')}">${ICONS.image}</button>
+          <label class="sr-only" for="lpName">${tr('tv.eg.name')}</label>
+          <input class="input" id="lpName" maxlength="40" autocomplete="off" placeholder="${tr('tv.lib.namePh')}">
+          <button type="submit" class="btn" id="lpSubmit">${ICONS.plus}<span>${tr('tv.lib.add')}</span></button>
           <div class="lib-add-more">
-            <span class="field-label" id="lpPlLabel">Giocatori</span>
-            <label class="sr-only" for="lpMin">Minimo giocatori</label>
-            <select class="input select select--sm" id="lpMin">${playersOptions('', 'da —')}</select>
-            <label class="sr-only" for="lpMax">Massimo giocatori</label>
-            <select class="input select select--sm" id="lpMax">${playersOptions('', 'a —')}</select>
-            <label class="sr-only" for="lpDur">Durata</label>
+            <span class="field-label" id="lpPlLabel">${tr('tv.players')}</span>
+            <label class="sr-only" for="lpMin">${tr('tv.lib.min')}</label>
+            <select class="input select select--sm" id="lpMin">${playersOptions('', tr('tv.lib.minOpt'))}</select>
+            <label class="sr-only" for="lpMax">${tr('tv.lib.max')}</label>
+            <select class="input select select--sm" id="lpMax">${playersOptions('', tr('tv.lib.maxOpt'))}</select>
+            <label class="sr-only" for="lpDur">${tr('tv.gs.dur')}</label>
             <select class="input select select--sm" id="lpDur">${durationOptions('')}</select>
-            <label class="quick-toggle"><input type="checkbox" id="lpSel" checked><span>⭐ Per stasera</span></label>
-            <button type="button" class="link-btn" id="lpCancel" hidden>Annulla modifica</button>
+            <label class="quick-toggle"><input type="checkbox" id="lpSel" checked><span>${tr('tv.lib.tonight')}</span></label>
+            <button type="button" class="link-btn" id="lpCancel" hidden>${tr('tv.lib.cancelEdit')}</button>
           </div>
           <div class="lib-add-url">
-            <label class="sr-only" for="lpUrl">Link della foto</label>
-            <input class="input input--sm" id="lpUrl" type="url" inputmode="url" placeholder="🔗 Oppure incolla il link di una foto (https://…)">
-            <button type="button" class="btn-sec btn-sec--sm" id="lpUrlOk">Usa link</button>
+            <label class="sr-only" for="lpUrl">${tr('tv.lib.url')}</label>
+            <input class="input input--sm" id="lpUrl" type="url" inputmode="url" placeholder="${tr('tv.lib.urlPh')}">
+            <button type="button" class="btn-sec btn-sec--sm" id="lpUrlOk">${tr('tv.lib.urlOk')}</button>
           </div>
           <input type="file" id="lpFile" accept="image/*" hidden>
         </form>
         <p class="form-error" id="lpErr" role="alert"></p>
         <div class="arm-sel" id="lpSelBar"></div>
         <div class="lib-search">
-          <label class="sr-only" for="lpSearch">Cerca nell’armadio</label>
-          <input class="input" id="lpSearch" type="search" autocomplete="off" placeholder="Cerca o chiedi: per 5 persone, massimo 45 minuti, che Andrea non odia">
+          <label class="sr-only" for="lpSearch">${tr('tv.lib.search')}</label>
+          <input class="input" id="lpSearch" type="search" autocomplete="off" placeholder="${tr('tv.lib.searchPh')}">
           <div class="lib-chips-row" id="lpChips"></div>
         </div>
         <ul class="lib-grid" id="lpList"></ul>
@@ -4053,15 +4243,15 @@ const LibPanel = {
       if (!f) return;
       try {
         const r = await importGamesCSV(f);
-        if (r) toast(`Armadio: ${r.added} ${r.added === 1 ? 'gioco aggiunto' : 'giochi aggiunti'}${r.updated ? `, ${r.updated} completati` : ''}`);
+        if (r) toast(`${tr('tv.lib.csvDone', { n: r.added })}${r.updated ? tr('tv.lib.csvUpdated', { n: r.updated }) : ''}`);
       } catch (err) { toast(err.message || explainError(err), 'error'); }
     });
     el.addEventListener('click', (e) => {
       if ((!this.inline && e.target === el) || e.target.closest('#lpClose')) { this.close(); return; }
       if (e.target.closest('#lpPick')) { file.click(); return; }
       if (e.target.closest('#lpCsv')) { $('#lpCsvFile', el).click(); return; }
-      if (e.target.closest('#lpQr')) { QrPanel.open('L’armadio sul telefono', libraryUrl(), 'Inquadra il QR per sfogliare e cercare i giochi del gruppo dal telefono: categorie, durata, peso, prestiti e statistiche.'); return; }
-      if (e.target.closest('#lpPhone')) { QrPanel.open('Aggiungi giochi dal telefono', armadioPhoneUrl(), 'Inquadra il QR: dal telefono scatti la foto alla scatola, scrivi il nome e il gioco entra nell’armadio. Il QR contiene la chiave del gruppo: mostralo solo a chi vuoi.'); return; }
+      if (e.target.closest('#lpQr')) { QrPanel.open(tr('tv.lib.qrBrowse'), libraryUrl(), tr('tv.lib.qrBrowseText')); return; }
+      if (e.target.closest('#lpPhone')) { QrPanel.open(tr('tv.lib.qrAdd'), armadioPhoneUrl(), tr('tv.lib.qrAddText')); return; }
       if (e.target.closest('#lpUrlOk')) { this.useUrl(); return; }
       if (e.target.closest('#lpCancel')) { this.resetForm(); return; }
       if (e.target.closest('#lpSelClear')) { this.clearSel(); return; }
@@ -4111,7 +4301,7 @@ const LibPanel = {
       b.classList.add('has-img');
       $('#lpUrl', this.el).value = '';
       err.textContent = '';
-      if (!r.copied) toast('Foto collegata dal link (il sito non permette di copiarla: se il link sparisce, sparisce anche la foto).', 'warn');
+      if (!r.copied) toast(tr('tv.lib.urlLinked'), 'warn');
     } catch (e) { err.textContent = e.message; }
   },
 
@@ -4120,8 +4310,8 @@ const LibPanel = {
     const v = $('#lpKeyIn', this.el)?.value || '';
     if (!aid) return;
     const ok = await ensureArmadioAdmin(aid, v).catch(() => false);
-    if (ok) { S.armAdmin = true; registerMembers(); toast('Computer autorizzato: ora puoi modificare l’armadio'); }
-    else toast('Chiave dell’armadio sbagliata.', 'error');
+    if (ok) { S.armAdmin = true; registerMembers(); toast(tr('tv.lib.keyOk')); }
+    else toast(tr('tv.lib.keyWrong'), 'error');
     this.sig = '';
     this.update();
   },
@@ -4133,10 +4323,10 @@ const LibPanel = {
     const aid = S.meta?.armadioId;
     let html = '';
     if (aid && S.armAdmin === false) {
-      html = `<span>🔒 Questo computer può solo <b>consultare</b> l’armadio. Per aggiungere o modificare giochi scrivi la chiave dell’armadio (la vede chi l’ha creato, qui sotto il nome).</span>
-        <span class="gk-row"><label class="sr-only" for="lpKeyIn">Chiave dell’armadio</label><input class="input code-input code-input--8" id="lpKeyIn" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX"><button type="button" class="btn-sec btn-sec--sm" id="lpKeyGo">Conferma</button></span>`;
+      html = `<span>${tr('tv.lib.readOnly')}</span>
+        <span class="gk-row"><label class="sr-only" for="lpKeyIn">${tr('tv.lib.key')}</label><input class="input code-input code-input--8" id="lpKeyIn" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX"><button type="button" class="btn-sec btn-sec--sm" id="lpKeyGo">${tr('tv.gk.confirm')}</button></span>`;
     } else if (aid && S.armAdmin && armadioKey(aid)) {
-      html = `<span>🔑 Chiave dell’armadio <b class="code-chip code-chip--sm">${esc(prettyKey(armadioKey(aid)))}</b>: serve per modificarlo da un’altra TV. Tienila per te.</span>`;
+      html = `<span>${tr('tv.lib.keyShow', { key: esc(prettyKey(armadioKey(aid))) })}</span>`;
     }
     if (kb.dataset.sig !== html) { kb.dataset.sig = html; kb.innerHTML = html; kb.hidden = !html; }
   },
@@ -4151,14 +4341,14 @@ const LibPanel = {
     if (box.hidden) return;
     const list = recentArmadi().filter((a) => a.id !== S.meta?.armadioId);
     box.innerHTML = `
-      <p class="muted small">La serata usa i giochi dell’armadio scelto (sempre aggiornati). Le stelline ⭐ di stasera ripartono da quelle preparate nel nuovo armadio.</p>
+      <p class="muted small">${tr('tv.lib.switchText')}</p>
       ${list.length ? `<div class="arm-list">${list.map((a) => `<button type="button" class="arm-open-btn" data-armswitch="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('')}</div>` : ''}
-      <div class="arm-inline"><label class="sr-only" for="lpSwitchIn">Codice dell’armadio</label><input class="input input--sm" id="lpSwitchIn" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="Codice di un altro armadio (6 caratteri)"><button type="button" class="btn-sec btn-sec--sm" id="lpSwitchGo">Usa</button></div>
+      <div class="arm-inline"><label class="sr-only" for="lpSwitchIn">${tr('tv.create.armCodeLabel')}</label><input class="input input--sm" id="lpSwitchIn" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${tr('tv.lib.switchPh')}"><button type="button" class="btn-sec btn-sec--sm" id="lpSwitchGo">${tr('tv.lib.use')}</button></div>
       <p class="form-error" id="lpSwitchErr" role="alert"></p>`;
   },
   async doSwitch(id) {
     const err = $('#lpSwitchErr', this.el);
-    if (!/^[A-Z0-9]{6}$/.test(id || '')) { if (err) err.textContent = 'Il codice dell’armadio ha 6 caratteri.'; return; }
+    if (!/^[A-Z0-9]{6}$/.test(id || '')) { if (err) err.textContent = tr('tv.arm.codeLen'); return; }
     if (id === S.meta?.armadioId) return;
     try {
       await switchArmadio(id);
@@ -4174,7 +4364,7 @@ const LibPanel = {
 
   clearSel() {
     const ids = selectedIds();
-    if (!ids.length || !confirm('Togliere la stellina “Stasera” a tutti i giochi?')) return;
+    if (!ids.length || !confirm(tr('tv.lib.clearConfirm'))) return;
     writeSel(Object.fromEntries(ids.map((id) => [id, null]))).catch((e) => toast(explainError(e), 'error'));
   },
 
@@ -4209,7 +4399,7 @@ const LibPanel = {
     $('#lpDur', this.el).value = '';
     $('#lpSel', this.el).checked = true;
     $('#lpSel', this.el).closest('label').hidden = false;
-    $('#lpSubmit', this.el).innerHTML = `${ICONS.plus}<span>Aggiungi</span>`;
+    $('#lpSubmit', this.el).innerHTML = `${ICONS.plus}<span>${tr('tv.lib.add')}</span>`;
     $('#lpCancel', this.el).hidden = true;
     $('#lpErr', this.el).textContent = '';
     $('#lpName', this.el).focus();
@@ -4228,7 +4418,7 @@ const LibPanel = {
     const b = $('#lpPick', this.el);
     const shown = it.image || it.thumb;
     if (shown) { b.innerHTML = `<img src="${esc(shown)}" alt="">`; b.classList.add('has-img'); } else this.resetPick();
-    $('#lpSubmit', this.el).innerHTML = `${ICONS.check}<span>Salva</span>`;
+    $('#lpSubmit', this.el).innerHTML = `${ICONS.check}<span>${tr('tv.save')}</span>`;
     $('#lpCancel', this.el).hidden = false;
     $('#lpErr', this.el).textContent = '';
     $('#lpName', this.el).focus();
@@ -4257,24 +4447,24 @@ const LibPanel = {
     const err = $('#lpErr', this.el);
     const name = cleanName(input.value);
     const extra = this.extra();
-    if (!name) { err.textContent = 'Scrivi il nome del gioco.'; input.focus(); return; }
+    if (!name) { err.textContent = tr('tv.lib.needName'); input.focus(); return; }
     if (extra.minPlayers && extra.maxPlayers && extra.minPlayers > extra.maxPlayers) {
-      err.textContent = 'Il minimo di giocatori è più alto del massimo.';
+      err.textContent = tr('tv.gs.errMinMax');
       return;
     }
     const same = findLibrary(name);
     try {
       if (this.editId) {
-        if (same && same.id !== this.editId) { err.textContent = 'C’è già un altro gioco con questo nome.'; return; }
+        if (same && same.id !== this.editId) { err.textContent = tr('tv.gs.errDup'); return; }
         const patch = { name, ...extra };
         if (S.meta?.armadioId) await saveGame(S.meta.armadioId, this.editId, patch, this.img ? { full: this.img } : {});
         else { if (this.img) patch.image = this.img; await update(libRef(this.editId), patch); }
-        toast(`${name} aggiornato`);
+        toast(tr('tv.gs.saved', { name }));
       } else {
-        if (same && !this.img && !Object.values(extra).some(Boolean)) { err.textContent = 'Questo gioco è già nell’armadio: premi la matita per modificarlo.'; return; }
+        if (same && !this.img && !Object.values(extra).some(Boolean)) { err.textContent = tr('tv.lib.already'); return; }
         const id = await addToLibrary(name, this.img, 'TV', extra);
         if (id && $('#lpSel', this.el).checked) await writeSel({ [id]: true });
-        toast(`${name} nell’armadio${$('#lpSel', this.el).checked ? ' ⭐ per stasera' : ''}`);
+        toast(`${tr('tv.lib.added', { name })}${$('#lpSel', this.el).checked ? tr('tv.lib.addedTonight') : ''}`);
       }
       this.resetForm();
     } catch (e) {
@@ -4284,8 +4474,8 @@ const LibPanel = {
 
   removeItem(id) {
     const it = S.library?.[id];
-    if (!it || !confirm(`Togliere “${it.name}” dall’armadio? Finisce nel cestino dell’armadio, da cui si può ripristinare.`)) return;
-    if (S.meta?.armadioId) armTrash(S.meta.armadioId, id, it, 'TV').then(() => toast(`${it.name} nel cestino dell’armadio`)).catch((e) => toast(explainError(e), 'error'));
+    if (!it || !confirm(tr('tv.lib.delConfirm', { name: it.name }))) return;
+    if (S.meta?.armadioId) armTrash(S.meta.armadioId, id, it, 'TV').then(() => toast(tr('tv.lib.deleted', { name: it.name }))).catch((e) => toast(explainError(e), 'error'));
     else remove(libRef(id)).catch((e) => toast(explainError(e), 'error'));
   },
 
@@ -4308,31 +4498,31 @@ const LibPanel = {
     if (q && !structured) f.text = q;
     const ids = new Set(searchLibrary(S.library, f, S.nights).map((x) => x.id));
     const items = all.filter((it) => ids.has(it.id));
-    $('#lpChips', this.el).innerHTML = q ? `${filterChips(f).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}<span class="muted">${items.length} su ${all.length}</span>` : '';
+    $('#lpChips', this.el).innerHTML = q ? `${filterChips(f).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}<span class="muted">${tr('tv.lib.found', { n: String(items.length), total: String(all.length) })}</span>` : '';
     const baseName = (id) => S.library?.[id]?.name;
     const nSel = all.filter((it) => isSel(it)).length;
     $('#lpSelBar', this.el).innerHTML = all.length ? `
-      <span class="arm-sel-n">⭐ <b>${nSel}</b> ${nSel === 1 ? 'gioco scelto' : 'giochi scelti'} per stasera</span>
-      <span class="muted small">${nSel >= 2 ? 'Ruota, “A caso”, consigli e votazione scelgono tra questi (e mai uno già giocato).' : 'Tocca ⭐ sui giochi che portate stasera: la scelta del prossimo gioco userà solo quelli.'}</span>
-      <span class="rg-row">${nSel < all.length ? '<button type="button" class="btn-sec btn-sec--sm" id="lpSelAll">Tutti</button>' : ''}${nSel ? '<button type="button" class="btn-sec btn-sec--sm" id="lpSelClear">Azzera</button>' : ''}</span>` : '';
+      <span class="arm-sel-n">${tr('tv.lib.selN', { n: nSel })}</span>
+      <span class="muted small">${nSel >= 2 ? tr('tv.lib.selMany') : tr('tv.lib.selFew')}</span>
+      <span class="rg-row">${nSel < all.length ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSelAll">${tr('tv.lib.selAll')}</button>` : ''}${nSel ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSelClear">${tr('tv.lib.selClear')}</button>` : ''}</span>` : '';
     $('#lpList', this.el).innerHTML = items.length ? items.map((it) => {
       const isPlayed = played.has(nameKey(it.name));
       const status = !isAvailable(it) ? esc(awayLabel(it)) : '';
-      const note = isPlayed ? 'Giocato stasera' : (it.owner ? `Di ${esc(it.owner)}` : it.addedBy && it.addedBy !== 'TV' ? `Portato da ${esc(it.addedBy)}` : '');
+      const note = isPlayed ? tr('tv.lib.played') : (it.owner ? tr('tv.lib.owner', { name: esc(it.owner) }) : it.addedBy && it.addedBy !== 'TV' ? tr('tv.lib.broughtBy', { name: esc(it.addedBy) }) : '');
       return `
         <li class="lib-tile ${isPlayed ? 'is-played' : ''} ${status ? 'is-away' : ''} ${isSel(it) ? 'is-sel' : ''}">
           ${gameImageHTML(it, 'game-img--lib')}
-          <button type="button" class="lib-sel" data-sel="${esc(it.id)}" aria-pressed="${isSel(it)}" title="${isSel(it) ? 'Scelto per stasera: tocca per toglierlo' : 'Scegli per stasera'}">${isSel(it) ? '✓' : '☆'}<span>Stasera</span></button>
+          <button type="button" class="lib-sel" data-sel="${esc(it.id)}" aria-pressed="${isSel(it)}" title="${isSel(it) ? tr('tv.lib.selOn') : tr('tv.lib.selOff')}">${isSel(it) ? '✓' : '☆'}<span>${tr('tv.int.tonight')}</span></button>
           ${status ? `<span class="lib-status">${status}</span>` : ''}
           <span class="lib-name">${esc(it.name)}</span>
-          ${it.baseId && baseName(it.baseId) ? `<span class="lib-exp">Espansione di ${esc(baseName(it.baseId))}</span>` : ''}
+          ${it.baseId && baseName(it.baseId) ? `<span class="lib-exp">${tr('tv.lib.expOf', { name: esc(baseName(it.baseId)) })}</span>` : ''}
           <span class="lib-info">${esc(libInfo(it)) || '&nbsp;'}</span>
-          ${tagsOf(it).length || it.mode || it.weight ? `<span class="lib-tags">${it.mode ? `<span>${esc(GAME_MODES[it.mode] || it.mode)}</span>` : ''}${it.weight ? `<span>peso ${String(it.weight).replace('.', ',')}</span>` : ''}${tagsOf(it).slice(0, 3).map((t) => `<span>#${esc(t)}</span>`).join('')}</span>` : ''}
+          ${tagsOf(it).length || it.mode || it.weight ? `<span class="lib-tags">${it.mode ? `<span>${esc(GAME_MODES[it.mode] || it.mode)}</span>` : ''}${it.weight ? `<span>${tr('tv.lib.weight', { n: it.weight })}</span>` : ''}${tagsOf(it).slice(0, 3).map((t) => `<span>#${esc(t)}</span>`).join('')}</span>` : ''}
           <span class="lib-meta">${note}</span>
-          <button type="button" class="lib-edit" data-edit="${esc(it.id)}" aria-label="Modifica ${esc(it.name)}">${ICONS.edit}</button>
-          <button type="button" class="lib-del" data-del="${esc(it.id)}" aria-label="Togli ${esc(it.name)} dall’armadio">${ICONS.x}</button>
+          <button type="button" class="lib-edit" data-edit="${esc(it.id)}" aria-label="${tr('tv.lib.edit', { name: esc(it.name) })}">${ICONS.edit}</button>
+          <button type="button" class="${'lib-del'}" data-${'del'}="${esc(it.id)}" aria-label="${tr('tv.lib.del', { name: esc(it.name) })}">${ICONS.x}</button>
         </li>`;
-    }).join('') : `<li class="lib-empty">${all.length ? 'Nessun gioco corrisponde alla ricerca.' : 'L’armadio è vuoto: aggiungete i giochi che avete portato.'}</li>`;
+    }).join('') : `<li class="lib-empty">${all.length ? tr('tv.lib.noMatch') : tr('tv.lib.empty')}</li>`;
   }
 };
 
@@ -4351,35 +4541,35 @@ SCREENS.lobby = {
           <h1 class="logo logo--xl">GameNight <span class="logo-tag">Show</span></h1>
           <div class="card qr-card tilt-left" id="lobbyQr">
             <div class="qr" id="qr"></div>
-            <p class="qr-title">Inquadra per entrare</p>
-            <p class="qr-code">Codice stanza <span class="code-chip">${esc(S.code)}</span></p>
+            <p class="qr-title">${tr('tv.lb.scan')}</p>
+            <p class="qr-code">${tr('tv.roomCode')} <span class="code-chip">${esc(S.code)}</span></p>
           </div>
           <div class="card qr-card qr-card--locked tilt-left" id="lobbyLocked" hidden>
             <p class="lock-big" aria-hidden="true">🔒</p>
-            <p class="qr-title">Stanza chiusa</p>
-            <p class="muted">Nessun nuovo ingresso. Chi era già in partita può rientrare dal suo telefono.</p>
+            <p class="qr-title">${tr('tv.hdr.locked')}</p>
+            <p class="muted">${tr('tv.lb.lockedText')}</p>
           </div>
           <p class="qr-url" id="lobbyUrl">${esc(joinUrl.replace(/^https?:\/\//, ''))}</p>
-          ${S.meta.groupName ? `<p class="lobby-group" id="lobbyIdentity">Gruppo: ${esc(S.meta.groupName)}</p>` : ''}
-          ${regiaCode() ? `<p class="lobby-regia">Codice regia <b>${esc(prettyRegia(regiaCode()))}</b> (fotografalo: serve se il PC si spegne)</p>` : ''}
+          ${S.meta.groupName ? `<p class="lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
+          ${regiaCode() ? `<p class="lobby-regia">${tr('tv.lb.regia', { code: esc(prettyRegia(regiaCode())) })}</p>` : ''}
         </div>
         <div class="lobby-right">
           <div class="lobby-head">
-            <h2>Chi c'è stasera</h2>
+            <h2>${tr('tv.lb.who')}</h2>
             <button type="button" class="btn-sec btn-sec--sm" id="lobbyLock"></button>
-            <div class="stepper" role="group" aria-label="Posti nella stanza">
-              <button type="button" class="step-btn" data-step="-1" aria-label="Un posto in meno">${ICONS.minus}</button>
+            <div class="stepper" role="group" aria-label="${tr('tv.lb.seats')}">
+              <button type="button" class="step-btn" data-step="-1" aria-label="${tr('tv.pl.seatMinus')}">${ICONS.minus}</button>
               <output id="lobbyCount" aria-live="polite"></output>
-              <button type="button" class="step-btn" data-step="1" aria-label="Un posto in più">${ICONS.plus}</button>
+              <button type="button" class="step-btn" data-step="1" aria-label="${tr('tv.pl.seatPlus')}">${ICONS.plus}</button>
             </div>
           </div>
           <div class="slots" id="slots"></div>
           <div class="prep" id="lobbyPrep"></div>
-          ${S.meta.demo ? '<p class="demo-note">🧪 <b>Modalità prova:</b> i giocatori finti entrano, pronosticano e votano da soli. Niente viene salvato in un gruppo. Puoi far entrare anche un telefono vero. <button type="button" class="btn-sec btn-sec--sm" id="addBot">+ Giocatore finto</button></p>' : ''}
+          ${S.meta.demo ? `<p class="demo-note">${tr('tv.lb.demo')} <button type="button" class="btn-sec btn-sec--sm" id="addBot">${tr('tv.lb.addBot')}</button></p>` : ''}
           <div class="lobby-foot">
             <p id="lobbyHint" class="hint-line"></p>
-            ${hasLib() ? `<button class="btn-sec" type="button" id="lobbyLib">${ICONS.books}<span id="lobbyLibTxt">Armadio</span></button>` : ''}
-            <button class="btn btn-big" type="button" id="startBtn">${ICONS.play}<span id="startLabel">Inizia la serata</span></button>
+            ${hasLib() ? `<button class="btn-sec" type="button" id="lobbyLib">${ICONS.books}<span id="lobbyLibTxt">${tr('tv.armadio')}</span></button>` : ''}
+            <button class="btn btn-big" type="button" id="startBtn">${ICONS.play}<span id="startLabel">${tr('tv.lb.start')}</span></button>
           </div>
         </div>
       </section>`;
@@ -4409,7 +4599,7 @@ SCREENS.lobby = {
     $('#lobbyQr').hidden = locked;
     $('#lobbyUrl').hidden = locked;
     $('#lobbyLocked').hidden = !locked;
-    $('#lobbyLock').innerHTML = locked ? '🔓 <span>Riapri la stanza</span>' : '🔒 <span>Chiudi la stanza</span>';
+    $('#lobbyLock').innerHTML = locked ? `🔓 <span>${tr('tv.pl.unlock')}</span>` : `🔒 <span>${tr('tv.tour.l3.t')}</span>`;
 
     const sig = JSON.stringify([max, ps.map((p) => [p.uid, p.name, p.style, p.seed, p.color, p.opts, (p.photo || '').length, p.motto, isOnline(p.uid)]), Object.keys(S.nights || {}).length]);
     if (sig !== this.sig) {
@@ -4421,45 +4611,45 @@ SCREENS.lobby = {
         const isNew = !this.known.has(p.uid);
         return `
           <div class="slot ${isNew ? 'is-new' : ''} ${isOnline(p.uid) ? '' : 'is-offline'}" style="--tilt:${TILTS[i % TILTS.length]}deg">
-            ${isOnline(p.uid) ? '' : `<span class="offline-badge" title="Telefono non collegato">${ICONS.wifiOff}</span>`}
+            ${isOnline(p.uid) ? '' : `<span class="offline-badge" title="${tr('tv.lb.offline')}">${ICONS.wifiOff}</span>`}
             <span class="slot-av">${avatarHTML(p, 'var(--slot-av)')}${trophyBadges(p)}</span>
             <span class="slot-name">${esc(p.name)} <small class="lv-badge">Lv ${progressFor(S.nights, personKey(p), S.library).level}</small></span>
             ${trophyTitle(p) ? `<span class="slot-title">${esc(trophyTitle(p))}</span>` : ''}
             ${p.motto ? `<span class="slot-motto">«${esc(p.motto)}»</span>` : ''}
-            <button type="button" class="kick" data-kick="${esc(p.uid)}" aria-label="Rimuovi ${esc(p.name)}">${ICONS.x}</button>
+            <button type="button" class="kick" data-kick="${esc(p.uid)}" aria-label="${tr('tv.lb.remove', { name: esc(p.name) })}">${ICONS.x}</button>
           </div>`;
       }).join('');
       const empty = Array.from({ length: Math.max(0, max - n) }, () => `
-          <div class="slot slot--empty"><span class="slot-q">?</span><span class="slot-name">In attesa…</span></div>`).join('');
+          <div class="slot slot--empty"><span class="slot-q">?</span><span class="slot-name">${tr('tv.lb.waiting')}</span></div>`).join('');
       slots.innerHTML = filled + empty;
       this.known = new Set(ps.map((p) => p.uid));
     }
 
     const idBox = $('#lobbyIdentity');
     if (idBox) {
-      const h = `${emblemHTML(S.identity, 'emblem--lobby')}<span>Gruppo: <b>${esc(S.meta.groupName)}</b>${S.identity?.motto ? `<br><i>«${esc(S.identity.motto)}»</i>` : ''}</span>`;
+      const h = `${emblemHTML(S.identity, 'emblem--lobby')}<span>${tr('tv.lb.group', { name: `<b>${esc(S.meta.groupName)}</b>` })}${S.identity?.motto ? `<br><i>«${esc(S.identity.motto)}»</i>` : ''}</span>`;
       if (idBox.innerHTML !== h) idBox.innerHTML = h;
     }
     const libTxt = $('#lobbyLibTxt');
     if (libTxt) {
       const nLib = libraryItems().length;
       const nSel = selectedIds().length;
-      libTxt.textContent = nLib ? `${armadioName()}: ${nLib} ${nLib === 1 ? 'gioco' : 'giochi'}${nSel ? ` · ⭐ ${nSel}` : ''}` : `${armadioName()}: vuoto, aggiungi i giochi`;
+      libTxt.textContent = nLib ? `${armadioName()}: ${tr('tv.ic.nGames', { n: nLib })}${nSel ? ` · ⭐ ${nSel}` : ''}` : tr('tv.lb.libEmpty', { name: armadioName() });
     }
     const hint = $('#lobbyHint');
     const btn = $('#startBtn');
     if (n < MIN_PLAYERS) {
-      hint.textContent = `Servono almeno ${MIN_PLAYERS} giocatori per iniziare.`;
+      hint.textContent = tr('tv.lb.needMin', { n: MIN_PLAYERS });
       btn.disabled = true;
-      $('#startLabel').textContent = 'Inizia la serata';
+      $('#startLabel').textContent = tr('tv.lb.start');
     } else if (n < max) {
-      hint.textContent = `${max - n === 1 ? 'Manca un giocatore' : `Mancano ${max - n} giocatori`}: chi arriva dopo può entrare anche a serata iniziata.`;
+      hint.textContent = tr('tv.lb.missing', { n: max - n });
       btn.disabled = false;
-      $('#startLabel').textContent = `Inizia con ${n}`;
+      $('#startLabel').textContent = tr('tv.lb.startWith', { n });
     } else {
-      hint.textContent = 'Tutti dentro? Si parte!';
+      hint.textContent = tr('tv.lb.allIn');
       btn.disabled = false;
-      $('#startLabel').textContent = 'Inizia la serata';
+      $('#startLabel').textContent = tr('tv.lb.start');
     }
   }
 };
@@ -4470,7 +4660,7 @@ SCREENS.lobby = {
 
 function miniBoardHTML(board) {
   if (!board.length) {
-    return `<div class="empty-board"><p class="empty-title">Ancora nessun gioco votato</p><p class="muted">Scrivete il nome del primo gioco e aprite la votazione.</p></div>`;
+    return `<div class="empty-board"><p class="empty-title">${tr('tv.idle.emptyTitle')}</p><p class="muted">${tr('tv.idle.emptyText')}</p></div>`;
   }
   return `<ol class="mini-board">${board.slice(0, 7).map((r) => `
     <li class="mini-row">
@@ -4479,7 +4669,7 @@ function miniBoardHTML(board) {
       <span class="mini-name">${esc(r.name)}</span>
       <span class="mini-avg">${fmt(r.stats.avg)}</span>
     </li>`).join('')}</ol>
-    ${board.length > 7 ? `<p class="muted">E altri ${board.length - 7}…</p>` : ''}`;
+    ${board.length > 7 ? `<p class="muted">${tr('tv.idle.more', { n: board.length - 7 })}</p>` : ''}`;
 }
 
 SCREENS.idle = {
@@ -4490,55 +4680,55 @@ SCREENS.idle = {
     el.innerHTML = `
       <section class="idle">
         <form class="card next-card" id="nextForm" novalidate>
-          <h1>Gioco ${number}</h1>
+          <h1>${tr('tv.idle.game', { n: String(number) })}</h1>
           <p class="play-timer" id="playTimer" hidden></p>
           <div class="live-box" id="liveBox"></div>
           <div class="lib-pick" id="libPick"></div>
-          <label class="field-label" for="gameName">Nome del gioco</label>
-          <input class="input input--xl" id="gameName" maxlength="40" autocomplete="off" placeholder="Es. Codenames" value="${esc(S.draft.name)}">
-          <p class="field-label photo-label">Foto del gioco <span class="muted">(facoltativa)</span></p>
+          <label class="field-label" for="gameName">${tr('tv.eg.name')}</label>
+          <input class="input input--xl" id="gameName" maxlength="40" autocomplete="off" placeholder="${tr('tv.idle.namePh')}" value="${esc(S.draft.name)}">
+          <p class="field-label photo-label">${tr('tv.idle.photo')}</p>
           <div class="photo-row">
             <div class="dropzone" id="dropzone"></div>
             <div class="img-actions">
-              <button type="button" class="btn-sec" id="pickFile">${ICONS.image}<span>Scegli file</span></button>
-              <button type="button" class="btn-sec" id="fromPhone" aria-pressed="false">${ICONS.phone}<span>Dal telefono</span></button>
-              <button type="button" class="btn-sec" id="fromUrl" aria-expanded="false" aria-controls="urlPanel">${ICONS.link}<span>Da un link</span></button>
+              <button type="button" class="btn-sec" id="pickFile">${ICONS.image}<span>${tr('tv.idle.file')}</span></button>
+              <button type="button" class="btn-sec" id="fromPhone" aria-pressed="false">${ICONS.phone}<span>${tr('tv.idle.phone')}</span></button>
+              <button type="button" class="btn-sec" id="fromUrl" aria-expanded="false" aria-controls="urlPanel">${ICONS.link}<span>${tr('tv.idle.link')}</span></button>
             </div>
           </div>
           <input type="file" id="fileInput" accept="image/*" hidden>
           <div class="url-panel" id="urlPanel" hidden>
-            <label class="sr-only" for="urlInput">Link dell'immagine</label>
-            <input class="input" id="urlInput" type="url" inputmode="url" placeholder="https://…/immagine.jpg">
-            <button type="button" class="btn-sec" id="urlOk">Usa link</button>
+            <label class="sr-only" for="urlInput">${tr('tv.idle.url')}</label>
+            <input class="input" id="urlInput" type="url" inputmode="url" placeholder="${tr('tv.idle.urlPh')}">
+            <button type="button" class="btn-sec" id="urlOk">${tr('tv.lib.urlOk')}</button>
           </div>
           <div class="win-pick">
             <div class="win-head">
-              <span class="field-label" id="winLabel">Chi ha giocato e chi ha vinto? <span class="muted">(tocca: vincitore, poi spettatore)</span></span>
-              <label class="quick-toggle" title="Solo voto generale e MVP: per i giochi brevi"><input type="checkbox" id="quickChk" ${S.draft.quick ? 'checked' : ''}><span>Voto veloce</span></label>
+              <span class="field-label" id="winLabel">${tr('tv.idle.winners')}</span>
+              <label class="quick-toggle" title="${tr('tv.idle.quickTitle')}"><input type="checkbox" id="quickChk" ${S.draft.quick ? 'checked' : ''}><span>${tr('tv.idle.quick')}</span></label>
             </div>
             <div class="win-avs" id="winAvs" role="group" aria-labelledby="winLabel"></div>
           </div>
           <p class="form-error" id="nextErr" role="alert"></p>
           <div class="ov-row">
-            <button class="btn-sec" type="button" id="openRules" title="Riassunto delle regole, chi lo conosce già e cronometro della spiegazione">📖 <span>Regole</span></button>
-            <button class="btn-sec" type="button" id="startPlay">${ICONS.clock}<span id="startPlayTxt">Inizia la partita</span></button>
-            <button class="btn btn-big" type="submit" id="openVote">${ICONS.lock}<span>Apri la votazione</span></button>
+            <button class="btn-sec" type="button" id="openRules" title="${tr('tv.idle.rulesTitle')}">📖 <span>${tr('tv.idle.rules')}</span></button>
+            <button class="btn-sec" type="button" id="startPlay">${ICONS.clock}<span id="startPlayTxt">${tr('tv.tour.i4.t')}</span></button>
+            <button class="btn btn-big" type="submit" id="openVote">${ICONS.lock}<span>${tr('tv.tour.i5.t')}</span></button>
           </div>
         </form>
         <aside class="side-board">
           <div class="side-head">
-            <h2>Classifica</h2>
-            ${board.length ? `<span class="muted">${board.length} ${board.length === 1 ? 'gioco' : 'giochi'}</span>` : ''}
+            <h2>${tr('tv.ic.board')}</h2>
+            ${board.length ? `<span class="muted">${tr('tv.ic.nGames', { n: board.length })}</span>` : ''}
           </div>
           ${miniBoardHTML(board)}
           <div class="side-actions">
-            ${board.length ? `<button type="button" class="btn-sec" id="showBoard">${ICONS.trophy}<span>Classifica a tutto schermo</span></button>` : ''}
-            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>Classifica di sempre</span></button>` : ''}
-            <button type="button" class="btn-sec" id="showInterval" title="Curiosità, foto e trivia a rotazione (tasto I)">☕ <span>Intervallo</span></button>
-            <button type="button" class="btn-sec" id="openTable" title="Chi inizia, squadre e clessidra (tasto T)">🎲 <span>Tavolo</span></button>
-            ${S.meta.groupId ? '<button type="button" class="btn-sec" id="openPlan" title="Ordine dei giochi per il tempo che avete">🗓️ <span>Scaletta</span></button>' : ''}
-            <button type="button" class="btn-sec" id="openQuiz" title="Quiz del gruppo dai telefoni (tasto Q)">🧠 <span>Quiz</span></button>
-            <button type="button" class="btn-sec" id="endNight">🏁 <span>Termina la serata</span></button>
+            ${board.length ? `<button type="button" class="btn-sec" id="showBoard">${ICONS.trophy}<span>${tr('tv.idle.fullBoard')}</span></button>` : ''}
+            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
+            <button type="button" class="btn-sec" id="showInterval" title="${tr('tv.idle.intTitle')}">☕ <span>${tr('tv.tl.interval')}</span></button>
+            <button type="button" class="btn-sec" id="openTable" title="${tr('tv.idle.tableTitle')}">🎲 <span>${tr('tv.idle.table')}</span></button>
+            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openPlan" title="${tr('tv.idle.planTitle')}">🗓️ <span>${tr('tv.idle.plan')}</span></button>` : ''}
+            <button type="button" class="btn-sec" id="openQuiz" title="${tr('tv.idle.quizTitle')}">🧠 <span>Quiz</span></button>
+            <button type="button" class="btn-sec" id="endNight">🏁 <span>${tr('tv.end.end')}</span></button>
           </div>
         </aside>
       </section>`;
@@ -4550,7 +4740,7 @@ SCREENS.idle = {
     $('#openPlan', el)?.addEventListener('click', () => PlanPanel.open());
     $('#openRules', el).addEventListener('click', () => {
       const it = findLibrary(cleanName($('#gameName').value));
-      if (!it) { this.error('Le regole si leggono dalla scheda dei giochi nell’armadio: scegline uno dalla lista.'); return; }
+      if (!it) { this.error(tr('tv.idle.rulesErr')); return; }
       RulesPanel.open(it.id);
     });
     $('#liveBox', el).addEventListener('click', (e) => { const b = e.target.closest('[data-score-edit]'); if (b) editScore(b.dataset.scoreEdit); });
@@ -4570,7 +4760,7 @@ SCREENS.idle = {
     $('#quickChk', el).addEventListener('change', (e) => { S.draft.quick = e.target.checked; saveDraft(); });
     $('#startPlay', el).addEventListener('click', () => {
       const name = cleanName($('#gameName').value);
-      if (!name) { this.error('Scrivi o scegli il gioco prima di iniziare.'); $('#gameName').focus(); return; }
+      if (!name) { this.error(tr('tv.idle.needGame')); $('#gameName').focus(); return; }
       update(roomRef(S.code, 'state'), playState(name, S.draft.spectators)).catch((err) => this.error(explainError(err)));
       newGameSound();
     });
@@ -4671,7 +4861,7 @@ SCREENS.idle = {
     const rec = recommend({ library: poolLibrary(), nights: S.nights, present: ps.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...playedTonight()].map((k) => dbKey(k))) });
     const r = boostWishes(rec.all)[0];
     if (!r) return '';
-    return `<button type="button" class="best-pick" data-lib="${esc(r.id)}"><span>💡 Consigliato: <b>${esc(r.item.name)}</b> ${r.score}%</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>`;
+    return `<button type="button" class="best-pick" data-lib="${esc(r.id)}"><span>${tr('tv.idle.best', { name: esc(r.item.name), score: String(r.score) })}</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>`;
   },
 
   /** Pulsanti "Chi ha vinto?": i giocatori presenti, si possono scegliere in più. */
@@ -4686,7 +4876,7 @@ SCREENS.idle = {
     this.winSig = sig;
     box.innerHTML = ps.map((p) => {
       const state = chosen.has(p.uid) ? 'winner' : specs.has(p.uid) ? 'spectator' : 'player';
-      const label = { winner: 'ha vinto', spectator: 'guardava', player: 'ha giocato' }[state];
+      const label = tr(`tv.idle.state.${state}`);
       return `
       <button type="button" class="win-av win-av--${state}" data-win="${esc(p.uid)}" aria-pressed="${state === 'winner'}" title="${esc(p.name)}: ${label}">
         ${state === 'winner' ? ICONS.crown : ''}${avatarHTML(p, '2.2rem')}<span>${esc(p.name)}</span>
@@ -4717,7 +4907,7 @@ SCREENS.idle = {
     const rest = fresh.filter((it) => !fit.includes(it));
     card.classList.toggle('has-lib', items.length > 0);
     if (!items.length) {
-      box.innerHTML = `<p class="lib-hint">${ICONS.books}<span>Armadio vuoto: caricate i vostri giochi con <button type="button" class="inline-link" id="openLib">l’armadio</button> (meglio prima della serata) o dal telefono.</span></p>`;
+      box.innerHTML = `<p class="lib-hint">${ICONS.books}<span>${tr('tv.idle.libEmpty', { btn: `<button type="button" class="inline-link" id="openLib">${tr('tv.idle.libEmptyBtn')}</button>` })}</span></p>`;
       return;
     }
     const onT = (it) => (table[it.id] ? 1 : 0);
@@ -4725,7 +4915,7 @@ SCREENS.idle = {
     const chip = (it) => {
       const isPlayed = played.has(nameKey(it.name));
       const isUnfit = !isPlayed && (!libOk(it, n) || !inPool(it));
-      const tip = isPlayed ? 'Già giocato stasera' : !isAvailable(it) ? awayLabel(it) : !libOk(it, n) ? `Non adatto a ${n} giocatori (${libInfo(it)})` : !inPool(it) ? 'Non è tra i giochi di stasera' : libInfo(it);
+      const tip = isPlayed ? tr('tv.idle.tipPlayed') : !isAvailable(it) ? awayLabel(it) : !libOk(it, n) ? tr('tv.idle.tipUnfit', { n: String(n), info: libInfo(it) }) : !inPool(it) ? tr('tv.idle.tipPool') : libInfo(it);
       return `
       <button type="button" class="lib-chip ${isPlayed ? 'is-played' : ''} ${isUnfit ? 'is-unfit' : ''}" data-lib="${esc(it.id)}" aria-pressed="${S.draft.libraryId === it.id}" ${tip ? `title="${esc(tip)}"` : ''}>
         ${gameImageHTML(it, 'game-img--chip')}<span>${table[it.id] ? '⭐ ' : ''}${esc(it.name)}${w[it.id] ? ` <em class="wish-n">♥${w[it.id]}</em>` : ''}</span>
@@ -4734,22 +4924,22 @@ SCREENS.idle = {
     const playedItems = items.filter((it) => played.has(nameKey(it.name)));
     box.innerHTML = `
       <div class="lib-pick-head">
-        <span class="field-label">Scegli il prossimo gioco <span class="muted">(${fit.length} ${fit.length === 1 ? 'disponibile' : 'disponibili'} in 📦 ${esc(armadioName())}, mai uno già giocato)</span></span>
-        ${nTable >= 2 ? `<span class="pool-switch" role="group" aria-label="Tra quali giochi scegliere">
-          <button type="button" class="pool-opt" data-pool="tonight" aria-pressed="${!S.poolAll}">⭐ Stasera (${nTable})</button>
-          <button type="button" class="pool-opt" data-pool="all" aria-pressed="${Boolean(S.poolAll)}">📦 Tutto l’armadio</button></span>` : ''}
+        <span class="field-label">${tr('tv.idle.pickNext')} <span class="muted">${tr('tv.idle.pickInfo', { n: fit.length, arm: esc(armadioName()) })}</span></span>
+        ${nTable >= 2 ? `<span class="pool-switch" role="group" aria-label="${tr('tv.idle.poolAria')}">
+          <button type="button" class="pool-opt" data-pool="tonight" aria-pressed="${!S.poolAll}">${tr('tv.idle.poolTonight', { n: String(nTable) })}</button>
+          <button type="button" class="pool-opt" data-pool="all" aria-pressed="${Boolean(S.poolAll)}">${tr('tv.idle.poolAll')}</button></span>` : ''}
       </div>
       <div class="pick-modes">
-        <button type="button" class="pick-mode" id="pickRandom" ${fit.length >= 2 ? '' : 'disabled'} title="Sceglie la TV, a caso">🎲<b>A caso</b></button>
-        <button type="button" class="pick-mode" id="openWheel" ${fit.length >= 2 ? '' : 'disabled'} title="La ruota della fortuna">🎡<b>Ruota</b></button>
-        <button type="button" class="pick-mode" id="startPoll" ${fit.length >= 2 ? '' : 'disabled'} title="Ognuno vota dal telefono">📱<b>Votazione</b></button>
-        <button type="button" class="pick-mode" id="openReco" title="I consigli in base ai gusti dei presenti">💡<b>Consigli</b></button>
-        <button type="button" class="pick-mode" id="openLib" title="Aggiungi o modifica i giochi (tasto L)">📦<b>Armadio</b></button>
+        <button type="button" class="pick-mode" id="pickRandom" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.randomTitle')}">🎲<b>${tr('tv.idle.random')}</b></button>
+        <button type="button" class="pick-mode" id="openWheel" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.wheelTitle')}">🎡<b>${tr('tv.idle.wheel')}</b></button>
+        <button type="button" class="pick-mode" id="startPoll" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.pollTitle')}">📱<b>${tr('tv.idle.poll')}</b></button>
+        <button type="button" class="pick-mode" id="openReco" title="${tr('tv.idle.recoTitle')}">💡<b>${tr('tv.idle.reco')}</b></button>
+        <button type="button" class="pick-mode" id="openLib" title="${tr('tv.idle.libTitle')}">📦<b>${tr('tv.armadio')}</b></button>
       </div>
       ${planNextHTML()}
       ${this.bestHTML(fit)}
       <div class="lib-chips">${[...fit.sort(byTable), ...rest.sort(byTable)].map(chip).join('')}</div>
-      ${playedItems.length ? `<details class="lib-played"><summary>Già giocati stasera (${playedItems.length})</summary><div class="lib-chips">${playedItems.map(chip).join('')}</div></details>` : ''}`;
+      ${playedItems.length ? `<details class="lib-played"><summary>${tr('tv.idle.playedList', { n: String(playedItems.length) })}</summary><div class="lib-chips">${playedItems.map(chip).join('')}</div></details>` : ''}`;
   },
 
   /** Tra i giochi adatti e non ancora giocati, sceglie la TV: i nomi lampeggiano e poi si ferma. */
@@ -4759,7 +4949,7 @@ SCREENS.idle = {
     const played = playedTonight();
     const pool = poolIds();
     const list = libraryItems().filter((it) => !played.has(nameKey(it.name)) && libOk(it, n) && (!pool || pool.has(it.id)));
-    if (list.length < 2) { toast('Servono almeno 2 giochi adatti e non ancora giocati.', 'warn'); return; }
+    if (list.length < 2) { toast(tr('tv.idle.randomNeed'), 'warn'); return; }
     this.rolling = true;
     const pick = list[Math.floor(Math.random() * list.length)];
     const chips = () => [...document.querySelectorAll('#libPick .lib-chips .lib-chip')].filter((c) => list.some((it) => it.id === c.dataset.lib));
@@ -4776,7 +4966,7 @@ SCREENS.idle = {
     this.rolling = false;
     this.pickLib(pick.id);
     ding();
-    toast(`🎲 La TV ha scelto: ${pick.name}!`);
+    toast(tr('tv.idle.randomDone', { name: pick.name }));
   },
 
   /** Mette nel modulo un gioco dell'armadio. */
@@ -4799,13 +4989,13 @@ SCREENS.idle = {
     const t = $('#playTimer');
     const start = Number(S.state?.playStart) || 0;
     const btn = $('#startPlayTxt');
-    if (btn) btn.textContent = start ? 'Riavvia il timer' : 'Inizia la partita';
+    if (btn) btn.textContent = start ? tr('tv.idle.restart') : tr('tv.tour.i4.t');
     if (!t) return;
     t.hidden = !start;
     const nb = Object.keys((S.state?.playId && S.bets?.[S.state.playId]) || {}).length;
     const betLeft = start ? start + 5 * 60000 - serverNow() : 0;
-    const betTxt = betLeft > 0 ? `🔮 Pronostici aperti ancora ${clockText(betLeft)}${nb ? ` · ${nb}` : ''}` : nb ? `🔮 ${nb} ${nb === 1 ? 'pronostico' : 'pronostici'} (chiusi)` : '';
-    if (start) t.innerHTML = `${ICONS.clock}<span>${esc(S.state.playName || 'Partita')} in corso da <b>${clockText(playElapsed())}</b></span>${betTxt ? `<span class="bet-count">${betTxt}</span>` : ''}`;
+    const betTxt = betLeft > 0 ? `${tr('tv.idle.betsOpen', { time: clockText(betLeft) })}${nb ? ` · ${nb}` : ''}` : nb ? tr('tv.idle.betsClosed', { n: nb }) : '';
+    if (start) t.innerHTML = `${ICONS.clock}<span>${tr('tv.idle.playing', { name: esc(S.state.playName || tr('tv.idle.match')), time: clockText(playElapsed()) })}</span>${betTxt ? `<span class="bet-count">${betTxt}</span>` : ''}`;
     // Segnapunti dal vivo e "sfida nella sfida" tra i giocatori della partita
     const box = $('#liveBox');
     if (box) {
@@ -4824,7 +5014,7 @@ SCREENS.idle = {
       S.draft.image = p.data;
       this.mode = 'drop';
       this.paintDrop();
-      toast('Foto ricevuta dal telefono');
+      toast(tr('tv.idle.photoIn'));
       remove(roomRef(S.code, 'pendingImage')).catch(() => {});
     }
   },
@@ -4859,19 +5049,19 @@ SCREENS.idle = {
     dz.classList.toggle('has-img', Boolean(S.draft.image) && this.mode === 'drop');
     dz.classList.toggle('is-phone', this.mode === 'phone');
     if (this.mode === 'phone') {
-      dz.innerHTML = `<div class="phone-drop"><div class="qr qr--sm" id="photoQr"></div><p>Inquadra con il telefono e scatta una foto alla scatola: comparirà qui.</p></div>`;
+      dz.innerHTML = `<div class="phone-drop"><div class="qr qr--sm" id="photoQr"></div><p>${tr('tv.idle.phoneDrop')}</p></div>`;
       renderQR($('#photoQr'), playUrl({ foto: '1' }));
     } else if (S.draft.image) {
-      dz.innerHTML = `<img src="${esc(S.draft.image)}" alt="Anteprima della foto"><button type="button" class="drop-clear" id="clearImg" aria-label="Rimuovi la foto">${ICONS.x}</button>`;
+      dz.innerHTML = `<img src="${esc(S.draft.image)}" alt="${tr('tv.idle.preview')}"><button type="button" class="drop-clear" id="clearImg" aria-label="${tr('tv.idle.clearImg')}">${ICONS.x}</button>`;
     } else {
-      dz.innerHTML = `<div class="drop-hint">${ICONS.image}<span>Trascina qui una foto o incollala con Ctrl+V</span></div>`;
+      dz.innerHTML = `<div class="drop-hint">${ICONS.image}<span>${tr('tv.idle.dropHint')}</span></div>`;
     }
   },
 
   async openVoting() {
     const name = cleanName($('#gameName').value);
     if (!name) {
-      this.error('Scrivi il nome del gioco.');
+      this.error(tr('tv.lib.needName'));
       $('#gameName').focus();
       return;
     }
@@ -4892,7 +5082,7 @@ SCREENS.idle = {
  */
 async function openVotingWith(d) {
   const name = cleanName(d.name);
-  if (!name) throw userError('Manca il nome del gioco.');
+  if (!name) throw userError(tr('tv.idle.noName'));
   const lib = (d.libraryId && S.library?.[d.libraryId]) ? { id: d.libraryId, ...S.library[d.libraryId] } : findLibrary(name);
   let image = d.image || lib?.image || null;
   // Dall'armadio arriva la miniatura: per la TV serve la foto grande (scaricata solo adesso).
@@ -5016,30 +5206,34 @@ function chaosEvent() {
   const fresh = items.filter((it) => !played.has(nameKey(it.name)) && libOk(it, n));
   const seen = lastPlayed(S.nights);
   const names = (list) => namesList(list.slice(0, 4).map((it) => it.name));
+  // Per il testo italiano salvato nel database: "a, b e c" come nelle versioni precedenti.
+  const namesIt = (list) => { const l = list.slice(0, 4).map((it) => it.name); return l.length <= 1 ? (l[0] || '') : `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}`; };
   const events = [];
   const chosen = new Set(asList(S.meta?.chaosChosen));
   const notChosen = ps.filter((p) => !chosen.has(p.uid));
-  if (notChosen.length) { const p = pick(notChosen); events.push({ title: `Sceglie ${p.name}`, text: 'Non ha ancora scelto un gioco stasera: la parola a lui… o a lei!', chooser: p.uid }); }
+  // L'evento finisce nel database (state/event): titolo e testo restano in italiano come prima (i telefoni
+  // delle versioni precedenti li mostrano così); "k" e "p" (codice e parametri) servono a mostrarlo nella lingua scelta.
+  if (notChosen.length) { const p = pick(notChosen); events.push({ k: 'chooser', p: { name: p.name }, title: `Sceglie ${p.name}`, text: 'Non ha ancora scelto un gioco stasera: la parola a lui… o a lei!', chooser: p.uid }); } // i18n-ok
   const wins = winsTonight();
   const fewest = Math.min(...ps.map((p) => wins[p.uid] || 0));
   const losers = ps.filter((p) => (wins[p.uid] || 0) === fewest);
-  if (Object.keys(wins).length) { const p = pick(losers); events.push({ title: `Sceglie ${p.name}`, text: 'Chi ha vinto meno stasera sceglie il prossimo gioco.' }); }
+  if (Object.keys(wins).length) { const p = pick(losers); events.push({ k: 'loser', p: { name: p.name }, title: `Sceglie ${p.name}`, text: 'Chi ha vinto meno stasera sceglie il prossimo gioco.' }); } // i18n-ok
   const last = Object.values(S.games || {}).filter((g) => g?.status === 'revealed').sort((a, b) => (b.order || 0) - (a.order || 0))[0];
   const lastWin = last && Object.keys(last.winners || {}).map((uid) => S.players[uid]).filter((p) => p && !p.away);
-  if (lastWin?.length) events.push({ title: `Sceglie ${pick(lastWin).name}`, text: `Il vincitore di ${last.name} sceglie il prossimo gioco.` });
-  if (fresh.length) { const it = pick(fresh); events.push({ title: `Sorteggio: ${it.name}!`, text: 'Il destino ha deciso.', libraryId: it.id }); }
+  if (lastWin?.length) { const p = pick(lastWin); events.push({ k: 'lastWin', p: { name: p.name, game: last.name }, title: `Sceglie ${p.name}`, text: `Il vincitore di ${last.name} sceglie il prossimo gioco.` }); } // i18n-ok
+  if (fresh.length) { const it = pick(fresh); events.push({ k: 'draw', p: { name: it.name }, title: `Sorteggio: ${it.name}!`, text: 'Il destino ha deciso.', libraryId: it.id }); } // i18n-ok
   const never = fresh.filter((it) => !(dbKey(it.name) in seen));
-  if (never.length >= 2) events.push({ title: 'Solo giochi mai giocati', text: `Scegliete tra: ${names(never)}.` });
+  if (never.length >= 2) events.push({ k: 'never', p: { list: names(never) }, title: 'Solo giochi mai giocati', text: `Scegliete tra: ${namesIt(never)}.` }); // i18n-ok
   const short = fresh.filter((it) => durationOf(it) && durationOf(it) <= 30);
-  if (short.length >= 2) events.push({ title: 'Solo giochi sotto i 30 minuti', text: `Scegliete tra: ${names(short)}.` });
+  if (short.length >= 2) events.push({ k: 'short', p: { list: names(short) }, title: 'Solo giochi sotto i 30 minuti', text: `Scegliete tra: ${namesIt(short)}.` }); // i18n-ok
   const oldest = [...fresh].filter((it) => it.addedAt).sort((a, b) => Number(a.addedAt) - Number(b.addedAt))[0];
-  if (oldest) events.push({ title: `Si gioca a ${oldest.name}`, text: 'È il gioco più vecchio dell’armadio: tocca a lui.', libraryId: oldest.id });
+  if (oldest) events.push({ k: 'oldest', p: { name: oldest.name }, title: `Si gioca a ${oldest.name}`, text: 'È il gioco più vecchio dell’armadio: tocca a lui.', libraryId: oldest.id }); // i18n-ok
   const flops = buildAllTime(S.nights, S.library).games.filter((g) => g.avg < 6);
   const flop = fresh.find((it) => flops.some((g) => g.key === dbKey(it.name)));
-  if (flop) events.push({ title: `Seconda chance: ${flop.name}`, text: 'Aveva preso meno di 6: dategli un’altra possibilità.', libraryId: flop.id });
+  if (flop) events.push({ k: 'flop', p: { name: flop.name }, title: `Seconda chance: ${flop.name}`, text: 'Aveva preso meno di 6: dategli un’altra possibilità.', libraryId: flop.id }); // i18n-ok
   const rec = recommend({ library: S.library, nights: S.nights, present: ps.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...played].map((k) => dbKey(k))) });
-  if (rec.all[0]) events.push({ title: `La TV decide: ${rec.all[0].item.name}`, text: `Compatibilità con i presenti: ${rec.all[0].score}%.`, libraryId: rec.all[0].id });
-  events.push({ title: 'Scambio di posti!', text: 'Ognuno si sposta di due posti a sinistra prima della prossima partita.' });
+  if (rec.all[0]) events.push({ k: 'reco', p: { name: rec.all[0].item.name, score: String(rec.all[0].score) }, title: `La TV decide: ${rec.all[0].item.name}`, text: `Compatibilità con i presenti: ${rec.all[0].score}%.`, libraryId: rec.all[0].id }); // i18n-ok
+  events.push({ k: 'swap', p: {}, title: 'Scambio di posti!', text: 'Ognuno si sposta di due posti a sinistra prima della prossima partita.' }); // i18n-ok
   const ev = pick(events);
   return { id: Math.random().toString(36).slice(2, 9), ...ev };
 }
@@ -5074,12 +5268,12 @@ function paintEvent() {
   const it = ev.libraryId ? S.library?.[ev.libraryId] : null;
   el.innerHTML = `
     <div class="card panel event-card" role="alertdialog" aria-modal="true" aria-labelledby="evTitle">
-      <p class="event-kicker">Evento casuale!</p>
+      <p class="event-kicker">${tr('tv.ev.kicker')}</p>
       ${it ? gameImageHTML(it, 'game-img--event tilt-left') : '<div class="event-dice" aria-hidden="true">🎲</div>'}
-      <h2 id="evTitle">${esc(ev.title)}</h2>
-      <p class="lead-line">${esc(ev.text)}</p>
+      <h2 id="evTitle">${esc(evText(ev, 't'))}</h2>
+      <p class="lead-line">${esc(evText(ev, 'x'))}</p>
       <div class="claim-actions">
-        ${it ? `<button type="button" class="btn-sec" id="evOk">Ignora</button><button type="button" class="btn btn-big" id="evUse">Prepara ${esc(it.name)}</button>` : '<button type="button" class="btn btn-big" id="evOk">Va bene!</button>'}
+        ${it ? `<button type="button" class="btn-sec" id="evOk">${tr('tv.safe.ignore')}</button><button type="button" class="btn btn-big" id="evUse">${tr('tv.ev.use', { name: esc(it.name) })}</button>` : `<button type="button" class="btn btn-big" id="evOk">${tr('tv.ev.ok')}</button>`}
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -5087,6 +5281,23 @@ function paintEvent() {
   const close = () => { S.eventSeen = ev.id; el.remove(); };
   $('#evOk', el)?.addEventListener('click', close);
   $('#evUse', el)?.addEventListener('click', () => { useLibraryGame(ev.libraryId); close(); });
+}
+
+/** Titolo ('t') o testo ('x') dell'evento casuale nella lingua della TV (gli eventi vecchi hanno solo l'italiano). */
+function evText(ev, part) {
+  const k = `tv.chaos.${ev?.k}.${part}`;
+  if (ev?.k && trHas(k)) return tr(k, Object.fromEntries(Object.entries(ev.p || {}).map(([a, b]) => [a, String(b ?? '')])));
+  return (part === 't' ? ev?.title : ev?.text) || '';
+}
+
+/** Motivo della pausa nella lingua di questa TV (codice neutro pauseK/pauseP; i vecchi stati hanno solo il testo). */
+function pauseText(st) {
+  if (st?.pauseK === 'timeout' && st.pauseP) {
+    const r = String(st.pauseP.why || '');
+    const why = r ? (trHas(`timeout.${r}`) ? tr(`timeout.${r}`) : r) : '';
+    return why ? tr('tv.pause.timeoutWhy', { name: String(st.pauseP.name || ''), why }) : tr('tv.pause.timeoutBy', { name: String(st.pauseP.name || '') });
+  }
+  return st?.pauseReason || '';
 }
 
 /** Time-out chiamato da un telefono: fischio e pausa. */
@@ -5097,10 +5308,11 @@ function processBuzz() {
     doneBuzz.add(id);
     remove(roomRef(S.code, `buzz/${id}`)).catch(() => {});
     if (Number(b?.at) && Date.now() - Number(b.at) > 60000) continue;
-    const who = S.players[b?.by]?.name || 'Qualcuno';
+    const who = S.players[b?.by]?.name || tr('tv.someone');
     whistle();
     const why = b?.reason ? (trHas(`timeout.${b.reason}`) ? tr(`timeout.${b.reason}`) : String(b.reason).slice(0, 40)) : '';
-    setPaused(true, `Time-out chiamato da ${who}${why ? `: ${why}` : ''}`).catch(() => {});
+    // Il motivo della pausa va nel database (state/pauseReason) e lo leggono anche i telefoni.
+    setPaused(true, `Time-out chiamato da ${who}${why ? `: ${why}` : ''}`, { k: 'timeout', p: { name: who, why: b?.reason ? String(b.reason).slice(0, 40) : '' } }).catch(() => {}); // i18n-ok: testo per le versioni vecchie
   }
 }
 
@@ -5108,17 +5320,27 @@ function processBuzz() {
 const RecoPanel = {
   el: null,
   max: null,
+  weight: '',
+  mode: '',
   isOpen() { return Boolean(this.el); },
   open() {
     if (this.el || !hasLib()) return;
     const el = document.createElement('div');
     el.className = 'overlay';
+    const seg = (id, key, list) => `<div class="seg" id="${id}">${list.map(([v, l]) => `<button type="button" data-${key}="${v ?? ''}" aria-pressed="${String(this[key === 'max' ? 'max' : key] ?? '') === String(v ?? '')}">${esc(l)}</button>`).join('')}</div>`;
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="rcTitle">
-        <div class="panel-head"><h2 id="rcTitle">Cosa giochiamo stasera?</h2><button type="button" class="icon-btn" id="rcClose" aria-label="Chiudi">${ICONS.x}</button></div>
-        <div class="rc-filter"><span class="field-label">Tempo a disposizione</span>
-          <div class="seg" id="rcTime">${[[null, 'Qualsiasi'], [30, '30 min'], [45, '45 min'], [60, '1 ora'], [90, '1 ora e ½']].map(([v, l]) => `<button type="button" data-max="${v ?? ''}" aria-pressed="${this.max === v}">${l}</button>`).join('')}</div></div>
+        <div class="panel-head"><h2 id="rcTitle">${esc(tr('rec.title'))}</h2><button type="button" class="icon-btn" id="rcClose" aria-label="${esc(tr('common.close'))}">${ICONS.x}</button></div>
+        <div class="rc-filters">
+          <div class="rc-filter"><span class="field-label">${esc(tr('rec.time'))}</span>
+            ${seg('rcTime', 'max', [[null, tr('rec.timeAny')], [30, '30 min'], [45, '45 min'], [60, '60 min'], [90, '90 min']])}</div>
+          <div class="rc-filter"><span class="field-label">${esc(tr('rec.weight'))}</span>
+            ${seg('rcWeight', 'weight', [['', tr('rec.weightAny')], ['light', tr('rec.weightLight')], ['mid', tr('rec.weightMid')], ['heavy', tr('rec.weightHeavy')]])}</div>
+          <div class="rc-filter"><span class="field-label">${esc(tr('rec.mode'))}</span>
+            <select class="input select select--sm" id="rcMode"><option value="">${esc(tr('rec.modeAny'))}</option>${Object.entries(GAME_MODES).map(([k, l]) => `<option value="${esc(k)}" ${this.mode === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        </div>
         <div id="rcBody"></div>
+        <p class="muted small">${esc(tr('rec.honest'))}</p>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -5126,29 +5348,39 @@ const RecoPanel = {
       if (e.target === el || e.target.closest('#rcClose')) { this.close(); return; }
       const m = e.target.closest('[data-max]');
       if (m) { this.max = m.dataset.max ? Number(m.dataset.max) : null; el.querySelectorAll('[data-max]').forEach((b) => b.setAttribute('aria-pressed', String(b === m))); this.paint(); return; }
+      const w = e.target.closest('[data-weight]');
+      if (w) { this.weight = w.dataset.weight; el.querySelectorAll('[data-weight]').forEach((b) => b.setAttribute('aria-pressed', String(b === w))); this.paint(); return; }
       const u = e.target.closest('[data-use]');
       if (u) { useLibraryGame(u.dataset.use); this.close(); }
     });
+    el.addEventListener('change', (e) => { if (e.target.id === 'rcMode') { this.mode = e.target.value; this.paint(); } });
     this.paint();
   },
   paint() {
     const ps = activePlayers(S.players);
+    const W = { light: [null, 2], mid: [null, 3], heavy: [3, null] }[this.weight] || [null, null];
+    const aid = S.meta?.armadioId;
+    const favs = aid ? Favs.ids(aid) : new Set();
     const rec = recommend({
-      library: poolLibrary(), nights: S.nights, maxMinutes: this.max,
+      library: poolLibrary(), nights: S.nights, maxMinutes: this.max, weightMin: W[0], weightMax: W[1], mode: this.mode || null,
       present: ps.map((p) => ({ key: personKey(p), name: p.name })),
-      playedTonight: new Set([...playedTonight()].map((k) => dbKey(k)))
+      playedTonight: new Set([...playedTonight()].map((k) => dbKey(k))),
+      favs, onTable: new Set(Object.keys(onTable()))
     });
     const card = (r) => `
       <li class="rc-item">
         ${gameImageHTML(r.item, 'game-img--thumb')}
-        <div class="rc-text"><b>${esc(r.item.name)}</b><span class="muted">${esc(r.reasons.join(' · '))}</span></div>
+        <div class="rc-text"><b>${r.fav ? '❤️ ' : ''}${esc(r.item.name)}</b><span class="muted">${esc(r.reasons.join(' · '))}</span></div>
         <span class="rc-score">${r.score}%</span>
-        <button type="button" class="btn-sec btn-sec--sm" data-use="${esc(r.id)}">Scegli</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-use="${esc(r.id)}">${esc(tr('rec.choose'))}</button>
       </li>`;
-    const sec = (title, list) => list.length ? `<section class="rc-sec"><h3>${title}</h3><ol class="rc-list">${list.map(card).join('')}</ol></section>` : '';
+    const sec = (title, list) => list.length ? `<section class="rc-sec"><h3>${esc(title)}</h3><ol class="rc-list">${list.map(card).join('')}</ol></section>` : '';
     rec.top = boostWishes(rec.top);
-    const body = (poolIds() ? '<p class="muted">Scelgo tra i giochi <b>sul tavolo stasera</b>.</p>' : '') + sec('🔥 Consigliati', rec.top) + sec('🎲 Potreste provare', rec.tryNew) + sec('🕰️ Da rispolverare', rec.dusty.filter((d) => !rec.top.slice(0, 3).includes(d)));
-    $('#rcBody', this.el).innerHTML = body || `<p class="muted">Nessun gioco nell’armadio adatto a ${ps.length} giocatori${this.max ? ` e a ${this.max} minuti` : ''}.</p>`;
+    const shown = new Set(rec.top.slice(0, 3).map((r) => r.id));
+    const off = rec.favUnavailable.length ? `<section class="rc-sec rc-sec--off"><h3>${esc(tr('rec.secFavOff'))}</h3><ul class="rc-off">${rec.favUnavailable.map((f) => `<li>${esc(f.item.name)} <span class="muted">· ${esc(tr(f.why === 'loan' ? 'rec.offLoan' : 'rec.offStatus'))}</span></li>`).join('')}</ul></section>` : '';
+    const body = (poolIds() ? `<p class="muted">${esc(tr('rec.pool'))}</p>` : '') + sec(tr('rec.secTop'), rec.top) + sec(tr('rec.secFavs'), rec.favs.filter((r) => !shown.has(r.id)).slice(0, 4))
+      + sec(tr('rec.secNew'), rec.tryNew) + sec(tr('rec.secDusty'), rec.dusty.filter((d) => !shown.has(d.id))) + off;
+    $('#rcBody', this.el).innerHTML = body || `<p class="muted">${esc(tr('rec.none', { n: ps.length }))}</p>`;
   },
   close() { this.el?.remove(); this.el = null; }
 };
@@ -5161,20 +5393,20 @@ const VotingPanel = {
     if (this.el || !S.meta) return;
     const v = S.meta.voting || {};
     const custom = asList(v.custom);
-    const sugg = ['Lo consiglieresti?', 'Quanto ti ha fatto ridere?', 'È durato il giusto?', 'Quanta tensione?', 'Lo rigiocheresti subito?'];
+    const sugg = [1, 2, 3, 4, 5].map((i) => tr(`tv.vp.sugg${i}`));
     const el = document.createElement('div');
     el.className = 'overlay';
     el.innerHTML = `
       <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="vpTitle">
-        <div class="panel-head"><h2 id="vpTitle">Domande della serata</h2><button type="button" class="icon-btn" id="vpClose" aria-label="Chiudi">${ICONS.x}</button></div>
-        <p class="panel-note">Il voto generale (1–10) e l’MVP ci sono sempre. Scegli quali domande da 1 a 5 fare stasera; ognuno può sempre rispondere "Non giudico".</p>
+        <div class="panel-head"><h2 id="vpTitle">${tr('tv.tl.questions')}</h2><button type="button" class="icon-btn" id="vpClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
+        <p class="panel-note">${tr('tv.vp.note')}</p>
         <div class="vp-list">${CRITERIA.map((c) => `<label class="quick-toggle"><input type="checkbox" data-crit="${c.key}" ${v[c.key] !== false ? 'checked' : ''}><span>${c.label}</span></label>`).join('')}</div>
-        <span class="field-label">Domande personalizzate (fino a due)</span>
-        <input class="input" id="vpC1" maxlength="40" placeholder="Es. Lo consiglieresti?" value="${esc(custom[0]?.label || '')}">
-        <input class="input" id="vpC2" maxlength="40" placeholder="Es. Quanto ti ha fatto ridere?" value="${esc(custom[1]?.label || '')}">
+        <span class="field-label">${tr('tv.vp.custom')}</span>
+        <input class="input" id="vpC1" maxlength="40" placeholder="${tr('tv.vp.ph', { q: sugg[0] })}" value="${esc(custom[0]?.label || '')}">
+        <input class="input" id="vpC2" maxlength="40" placeholder="${tr('tv.vp.ph', { q: sugg[1] })}" value="${esc(custom[1]?.label || '')}">
         <div class="rg-chips">${sugg.map((q) => `<button type="button" class="lib-chip" data-sugg="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-        <label class="quick-toggle chaos-toggle"><input type="checkbox" id="vpChaos" ${S.meta.chaos ? 'checked' : ''}><span>Modalità Chaos: un evento casuale prima di ogni gioco</span></label>
-        <div class="claim-actions"><button type="button" class="btn btn-big" id="vpSave">${ICONS.check}<span>Salva</span></button></div>
+        <label class="quick-toggle chaos-toggle"><input type="checkbox" id="vpChaos" ${S.meta.chaos ? 'checked' : ''}><span>${tr('tv.vp.chaos')}</span></label>
+        <div class="claim-actions"><button type="button" class="btn btn-big" id="vpSave">${ICONS.check}<span>${tr('tv.save')}</span></button></div>
       </div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -5189,7 +5421,7 @@ const VotingPanel = {
         if (!voting.custom.length) voting.custom = null;
         try {
           await update(roomRef(S.code, 'meta'), { voting, chaos: $('#vpChaos', el).checked || null });
-          toast('Domande della serata salvate');
+          toast(tr('tv.vp.saved'));
           this.close();
         } catch (err) { toast(explainError(err), 'error'); }
       }
@@ -5221,16 +5453,13 @@ function clockText(ms) {
 
 /** Durata della partita in corso, senza il tempo passato in pausa. */
 function playElapsed(start = Number(S.state?.playStart) || 0) {
-  if (!start) return 0;
-  const pausedFor = Number(S.state?.playPaused) || 0;
-  const now = S.state?.paused && S.state?.pausedAt ? Number(S.state.pausedAt) : Date.now();
-  return Math.max(0, now - start - pausedFor);
+  return start ? elapsedOf({ ...S.state, playStart: start }, serverNow()) : 0;
 }
 
 /** Riapre la votazione di un gioco già svelato, per chi non aveva fatto in tempo. */
 async function reopenVoting(gameId) {
   if (!S.games[gameId]) return;
-  await Save.snap(`Prima di riaprire il voto di ${S.games[gameId].name}`);
+  await Save.snap(tr('tv.snap.beforeReopen', { name: S.games[gameId].name }));
   await update(roomRef(S.code, `games/${gameId}`), { status: 'voting' });
   await setPhase('voting', gameId);
 }
@@ -5241,7 +5470,7 @@ async function reopenVoting(gameId) {
 
 async function revealGame(gameId) {
   try {
-    await Save.snap(`Prima del reveal di ${S.games[gameId]?.name || 'un gioco'}`, 'phase');
+    await Save.snap(tr('tv.snap.beforeReveal', { name: S.games[gameId]?.name || tr('tv.aGame') }), 'phase');
     await update(roomRef(S.code, `games/${gameId}`), { status: 'revealed', revealedAt: serverTimestamp() });
     await setPhase('reveal', gameId);
     saveNight();
@@ -5263,29 +5492,29 @@ SCREENS.voting = {
     el.innerHTML = `
       <section class="voting">
         <div class="voting-game">
-          <span class="chip chip--tomato">Gioco ${g.order || ''}</span>
+          <span class="chip chip--tomato">${tr('tv.idle.game', { n: String(g.order || '') })}</span>
           ${gameImageHTML(g, 'game-img--hero tilt-left')}
           <h1 class="game-title">${esc(g.name)}</h1>
         </div>
         <div class="voting-status">
           <div class="voting-head">
-            <h2 class="voting-title">Votate dal telefono</h2>
+            <h2 class="voting-title">${tr('tv.vo.title')}</h2>
             <div class="vtimer" id="vTimer" hidden role="timer" aria-live="off">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle class="vt-track" cx="60" cy="60" r="52"/>
                 <circle class="vt-arc" id="vtArc" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="0"/>
                 <circle class="vt-spark" id="vtSpark" cx="60" cy="8" r="5.5"/>
               </svg>
-              <b id="vtNum">0</b><small id="vtLbl">secondi</small>
+              <b id="vtNum">0</b><small id="vtLbl">${tr('tv.vo.secs')}</small>
             </div>
           </div>
-          <p class="secret-line">${ICONS.lock}<span>I voti restano segreti fino al reveal. Telefono fuori uso? Tocca il suo personaggio per votare dalla TV.</span></p>
+          <p class="secret-line">${ICONS.lock}<span>${tr('tv.vo.secret')}</span></p>
           <div class="voters" id="voters"></div>
           <p class="vote-count" id="voteCount" aria-live="polite"></p>
           <div class="vote-note" id="voteNote"></div>
           <div class="voting-actions">
-            <button type="button" class="btn-sec" id="cancelGame">Annulla gioco</button>
-            <button type="button" class="btn btn-big" id="revealBtn">Rivela i voti</button>
+            <button type="button" class="btn-sec" id="cancelGame">${tr('tv.vo.cancel')}</button>
+            <button type="button" class="btn btn-big" id="revealBtn">${tr('tv.tour.v2.t')}</button>
           </div>
         </div>
       </section>`;
@@ -5302,12 +5531,12 @@ SCREENS.voting = {
     });
     $('#revealBtn', el).addEventListener('click', () => {
       const { voted, total } = this.counts();
-      if (voted < total && !confirm(`${total - voted === 1 ? 'Manca un voto' : `Mancano ${total - voted} voti`}. Rivelare comunque?`)) return;
+      if (voted < total && !confirm(tr('tv.vo.revealConfirm', { n: total - voted }))) return;
       clearTimeout(this.timer);
       revealGame(id);
     });
     $('#cancelGame', el).addEventListener('click', async () => {
-      if (!confirm(`Annullare “${g.name}”? Il gioco e i voti finiscono nel cestino (Strumenti), da dove si possono ripristinare.`)) return;
+      if (!confirm(tr('tv.vo.cancelConfirm', { name: g.name }))) return;
       clearTimeout(this.timer);
       try {
         await setPhase('idle');
@@ -5341,9 +5570,9 @@ SCREENS.voting = {
         const has = Boolean(votes[p.uid]);
         const fresh = has && !this.votedBefore.has(p.uid);
         return `
-          <${has ? 'div' : 'button type="button"'} class="voter ${has ? 'is-voted' : 'voter-btn'} ${fresh ? 'is-fresh' : ''} ${!has && !isOnline(p.uid) ? 'is-offline' : ''}" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : '#FFC93C'}; --i:${ps.indexOf(p)}" ${has ? '' : `data-proxy="${esc(p.uid)}" title="Vota dalla TV per conto di ${esc(p.name)}"`}>
+          <${has ? 'div' : 'button type="button"'} class="voter ${has ? 'is-voted' : 'voter-btn'} ${fresh ? 'is-fresh' : ''} ${!has && !isOnline(p.uid) ? 'is-offline' : ''}" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : '#FFC93C'}; --i:${ps.indexOf(p)}" ${has ? '' : `data-proxy="${esc(p.uid)}" title="${tr('tv.vo.proxy', { name: esc(p.name) })}"`}>
             <span class="voter-av">${avatarHTML(p, 'var(--voter-av)')}${has ? `<span class="voter-badge">${ICONS.check}</span>` : ''}${!has && !isOnline(p.uid) ? `<span class="voter-badge voter-badge--off">${ICONS.wifiOff}</span>` : ''}${!has && isOnline(p.uid) ? '<span class="voter-think" aria-hidden="true"><i></i><i></i><i></i></span>' : ''}${fresh ? '<span class="voter-flash" aria-hidden="true"></span>' : ''}</span>
-            <span class="voter-name">${esc(p.name)}</span>${S.games[S.state.gameId]?.players && !S.games[S.state.gameId].players[p.uid] ? '<small class="voter-aud">pubblico</small>' : ''}
+            <span class="voter-name">${esc(p.name)}</span>${S.games[S.state.gameId]?.players && !S.games[S.state.gameId].players[p.uid] ? `<small class="voter-aud">${tr('tv.vo.audience')}</small>` : ''}
           </${has ? 'div' : 'button'}>`;
       }).join('');
       if (ps.some((p) => votes[p.uid] && !this.votedBefore.has(p.uid)) && this.started) ding();
@@ -5352,15 +5581,15 @@ SCREENS.voting = {
     }
 
     const all = total > 0 && voted === total;
-    $('#voteCount').textContent = all ? 'Tutti hanno votato!' : `${voted} / ${total} hanno votato`;
+    $('#voteCount').textContent = all ? tr('tv.vo.all') : tr('tv.vo.count', { n: `${voted} / ${total}` });
     const missing = ps.filter((p) => !votes[p.uid] && !isOnline(p.uid));
     const waiting = missing.filter((p) => graceLeft(p.uid) > 0);
     const gone = missing.filter((p) => graceLeft(p.uid) === 0).map((p) => p.name);
     const lines = waiting.map((p) => `
-      <p class="vote-wait">${ICONS.wifiOff}<span>Il telefono di ${esc(p.name)} si è scollegato: lo aspetto ancora <b>${Math.ceil(graceLeft(p.uid) / 1000)} s</b></span>
-        <button type="button" class="btn-sec btn-sec--sm" data-skip="${esc(p.uid)}">Non aspettare</button></p>`);
+      <p class="vote-wait">${ICONS.wifiOff}<span>${tr('tv.vo.wait', { name: esc(p.name), s: String(Math.ceil(graceLeft(p.uid) / 1000)) })}</span>
+        <button type="button" class="btn-sec btn-sec--sm" data-skip="${esc(p.uid)}">${tr('tv.vo.skip')}</button></p>`);
     if (gone.length) {
-      lines.push(`<p>${gone.length === 1 ? `Il telefono di ${esc(gone[0])} è scollegato` : `I telefoni di ${esc(namesList(gone))} sono scollegati`}: non ${gone.length === 1 ? 'viene aspettato' : 'vengono aspettati'}.</p>`);
+      lines.push(`<p>${tr('tv.vo.gone', { n: gone.length, names: esc(namesList(gone)) })}</p>`);
     }
     const noteSig = lines.join('');
     if (noteSig !== this.noteSig) { this.noteSig = noteSig; $('#voteNote').innerHTML = noteSig; }
@@ -5399,8 +5628,8 @@ SCREENS.voting = {
     box.classList.toggle('is-hot', !t.over && !t.paused && t.sec <= 10 && !done);
     box.classList.toggle('is-over', t.over && !done);
     box.classList.toggle('is-paused', t.paused);
-    $('#vtNum').textContent = t.over ? 'Tempo!' : t.paused ? '❚❚' : t.sec >= 60 ? `${Math.floor(t.sec / 60)}:${String(t.sec % 60).padStart(2, '0')}` : String(t.sec);
-    $('#vtLbl').textContent = t.over ? '' : t.paused ? 'in pausa' : t.sec >= 60 ? 'minuti' : t.sec === 1 ? 'secondo' : 'secondi';
+    $('#vtNum').textContent = t.over ? tr('tv.vo.over') : t.paused ? '❚❚' : t.sec >= 60 ? `${Math.floor(t.sec / 60)}:${String(t.sec % 60).padStart(2, '0')}` : String(t.sec);
+    $('#vtLbl').textContent = t.over ? '' : t.paused ? tr('tv.vo.paused') : t.sec >= 60 ? tr('tv.vo.mins') : t.sec === 1 ? tr('tv.vo.sec') : tr('tv.vo.secs');
     $('#voters')?.classList.toggle('voters--late', t.over);
     // Tic negli ultimi 10 secondi, poi la sirena una volta sola.
     if (!t.paused && !done && t.sec !== this.lastSec) {
@@ -5445,7 +5674,7 @@ function critTile(c, value) {
 function mvpTile(st) {
   const winners = st.mvp.winners.map(playerOrGhost);
   if (!winners.length) {
-    return `<div class="mvp-tile"><div><span class="mvp-label">MVP</span><b class="mvp-name">Nessuno</b></div></div>`;
+    return `<div class="mvp-tile"><div><span class="mvp-label">MVP</span><b class="mvp-name">${tr('tv.rv.nobody')}</b></div></div>`;
   }
   const avs = winners.slice(0, 3).map((p) => `<span class="crowned">${ICONS.crown}${avatarHTML(p, 'var(--mvp-av)')}</span>`).join('');
   return `
@@ -5454,7 +5683,7 @@ function mvpTile(st) {
       <div class="mvp-text">
         <span class="mvp-label">MVP</span>
         <b class="mvp-name">${esc(namesList(winners.map((w) => w.name)))}</b>
-        <span class="mvp-votes">${st.mvp.top} ${st.mvp.top === 1 ? 'voto' : 'voti'}</span>
+        <span class="mvp-votes">${tr('tv.rv.nVotes', { n: st.mvp.top })}</span>
       </div>
     </div>`;
 }
@@ -5523,7 +5752,7 @@ SCREENS.reveal = {
               <div class="vcard-who">${avatarHTML(p, 'var(--vc-av)')}<span>${esc(p.name)}</span></div>
               <b class="vcard-num">${v.overall}</b>
               ${v.comment ? `<span class="vcard-quote">«${esc(v.comment)}»</span>` : ''}
-              <span class="vcard-tag">${v.aud ? 'Pubblico' : top ? 'Il più alto' : low ? 'Il più basso' : ''}</span>
+              <span class="vcard-tag">${v.aud ? tr('tv.rv.audience') : top ? tr('tv.rv.top') : low ? tr('tv.rv.low') : ''}</span>
             </div>
           </div>
         </div>`;
@@ -5533,38 +5762,38 @@ SCREENS.reveal = {
       <section class="reveal ${cine ? 'reveal--cine' : ''}" style="--after:${after.toFixed(2)}s">
         ${cine ? '<div class="cine-dim" aria-hidden="true"></div>' : ''}
         <div class="reveal-left">
-          <span class="chip chip--tomato">Gioco ${g.order || ''}: il verdetto</span>
+          <span class="chip chip--tomato">${tr('tv.rv.verdict', { n: String(g.order || '') })}</span>
           <div class="reveal-photo">
             ${gameImageHTML(g, 'game-img--hero tilt-left')}
-            <div class="avg-badge"><span>Media</span><b>${fmt(st.avg)}</b></div>
+            <div class="avg-badge"><span>${tr('tv.rv.avg')}</span><b>${fmt(st.avg)}</b></div>
           </div>
           <h1 class="game-title">${esc(g.name)}</h1>
           <p class="verdict-chip">${esc(verdict(st))}</p>
-          ${g.winners ? `<p class="win-chip">${ICONS.trophy}<span>Ha vinto ${esc(namesList(Object.keys(g.winners).map((uid) => playerOrGhost(uid).name)))}</span></p>` : ''}
+          ${g.winners ? `<p class="win-chip">${ICONS.trophy}<span>${tr('tv.rv.won', { names: esc(namesList(Object.keys(g.winners).map((uid) => playerOrGhost(uid).name))) })}</span></p>` : ''}
           <div class="reveal-chips">
-          ${st.audience.n ? `<p class="aud-chip">Voto del pubblico: <b>${fmt(st.audience.avg)}</b> (${st.audience.n} ${st.audience.n === 1 ? 'voto' : 'voti'}, fuori dalla media)</p>` : ''}
-          ${matchNumber(g) > 1 ? `<p class="aud-chip">${matchNumber(g)}ª partita a ${esc(g.name)} stasera</p>` : ''}
-          ${st.consensus !== null ? `<p class="aud-chip">Consenso del gruppo: <b>${st.consensus}%</b></p>` : ''}
-          ${g.winners && br.total ? `<p class="bet-chip"><span aria-hidden="true">🔮</span><span>${br.hits.length ? `Pronostico azzeccato da ${esc(namesList(br.hits.map((u) => playerOrGhost(u).name)))} (${br.hits.length} su ${br.total})` : `Nessuno dei ${br.total} ${br.total === 1 ? 'pronostico era giusto' : 'pronostici era giusto'}`}</span></p>` : ''}
+          ${st.audience.n ? `<p class="aud-chip">${tr('tv.rv.audVote', { avg: fmt(st.audience.avg), votes: tr('tv.rv.nVotes', { n: st.audience.n }) })}</p>` : ''}
+          ${matchNumber(g) > 1 ? `<p class="aud-chip">${tr('tv.rv.match', { n: String(matchNumber(g)), name: esc(g.name) })}</p>` : ''}
+          ${st.consensus !== null ? `<p class="aud-chip">${tr('tv.rv.consensus', { n: String(st.consensus) })}</p>` : ''}
+          ${g.winners && br.total ? `<p class="bet-chip"><span aria-hidden="true">🔮</span><span>${br.hits.length ? tr('tv.rv.betHit', { names: esc(namesList(br.hits.map((u) => playerOrGhost(u).name))), hits: String(br.hits.length), total: String(br.total) }) : tr('tv.rv.betNone', { n: br.total })}</span></p>` : ''}
           ${g.scores ? `<p class="aud-chip score-chip">🧮 <span>${esc(Object.entries(g.scores).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([u, v]) => `${playerOrGhost(u).name} ${v}`).join(' · '))}</span></p>` : ''}
           ${st.oracle ? `<p class="oracle-chip">${ICONS.star}<span>${st.oracle.winners.length === 1
-            ? `Media indovinata da ${esc(playerOrGhost(st.oracle.winners[0].uid).name)} (aveva detto ${fmt(st.oracle.winners[0].guess)})`
-            : `Media indovinata da ${esc(namesList(st.oracle.winners.map((w) => playerOrGhost(w.uid).name)))}`}</span></p>` : ''}
+            ? tr('tv.rv.oracle1', { name: esc(playerOrGhost(st.oracle.winners[0].uid).name), guess: fmt(st.oracle.winners[0].guess) })
+            : tr('tv.rv.oracle', { names: esc(namesList(st.oracle.winners.map((w) => playerOrGhost(w.uid).name))) })}</span></p>` : ''}
           </div>
           <p class="rank-line">${esc(rankLine(board, id))}</p>
         </div>
         <div class="reveal-right">
-          <div class="reveal-head"><h2>I voti</h2><span class="muted">${n} ${n === 1 ? 'voto' : 'voti'}</span></div>
-          <div class="vcards ${cols === 6 ? 'vcards--dense' : n <= 4 ? 'vcards--one' : ''}" style="--cols:${cols}">${cards || '<p class="muted">Nessun voto ricevuto.</p>'}</div>
+          <div class="reveal-head"><h2>${tr('tv.rv.votes')}</h2><span class="muted">${tr('tv.rv.nVotes', { n })}</span></div>
+          <div class="vcards ${cols === 6 ? 'vcards--dense' : n <= 4 ? 'vcards--one' : ''}" style="--cols:${cols}">${cards || `<p class="muted">${tr('tv.rv.noVotes')}</p>`}</div>
           <div class="crit-row ${g.quick ? 'crit-row--quick' : ''}" style="${g.quick ? '' : `grid-template-columns: repeat(${activeCriteria(S.meta.voting).length + 1}, minmax(0, 1fr))`}">
-            ${g.quick ? '<div class="quick-note">Voto veloce: solo voto generale e MVP</div>' : activeCriteria(S.meta.voting).map((c) => critTile(c, st.crit[c.key])).join('')}
+            ${g.quick ? `<div class="quick-note">${tr('tv.rv.quick')}</div>` : activeCriteria(S.meta.voting).map((c) => critTile(c, st.crit[c.key])).join('')}
             ${mvpTile(st)}
           </div>
           <div class="reveal-actions">
-            <button type="button" class="btn-sec" id="reopenVote" title="Per chi non ha fatto in tempo a votare">Riapri la votazione</button>
-            <button type="button" class="btn-sec" id="rematchBtn" title="Rigiocate subito lo stesso gioco">Rivincita</button>
-            <button type="button" class="btn-sec" id="toBoard">${ICONS.trophy}<span>Classifica</span></button>
-            <button type="button" class="btn btn-big" id="nextGame">Prossimo gioco</button>
+            <button type="button" class="btn-sec" id="reopenVote" title="${tr('tv.rv.reopenTitle')}">${tr('tv.rv.reopen')}</button>
+            <button type="button" class="btn-sec" id="rematchBtn" title="${tr('tv.rv.rematchTitle')}">${tr('tv.rv.rematch')}</button>
+            <button type="button" class="btn-sec" id="toBoard">${ICONS.trophy}<span>${tr('tv.ic.board')}</span></button>
+            <button type="button" class="btn btn-big" id="nextGame">${tr('tv.rv.next')}</button>
           </div>
         </div>
       </section>`;
@@ -5573,7 +5802,7 @@ SCREENS.reveal = {
     $('#nextGame', el).addEventListener('click', () => goNext());
     $('#rematchBtn', el).addEventListener('click', () => rematch(id).catch((err) => toast(explainError(err), 'error')));
     $('#reopenVote', el).addEventListener('click', () => {
-      if (confirm(`Riaprire la votazione di “${g.name}”? I voti già dati restano.`)) reopenVoting(id).catch((err) => toast(explainError(err), 'error'));
+      if (confirm(tr('tv.rv.reopenConfirm', { name: g.name }))) reopenVoting(id).catch((err) => toast(explainError(err), 'error'));
     });
     if (st.avg >= 8.5) {
       this.timer = setTimeout(() => {
@@ -5624,24 +5853,24 @@ SCREENS.board = {
         <span class="bcrit">${CRITERIA.map((c) => `<span class="bcrit-item" style="--cc:${c.color}" title="${c.label}">${c.short} ${fmt(r.stats.crit[c.key])}</span>`).join('')}</span>
         <span class="bavg">${fmt(r.stats.avg)}</span>
         <span class="brow-tools">
-          <button type="button" class="brow-reopen" data-edit-game="${esc(r.id)}" title="Correggi ${esc(r.name)}">Modifica</button>
-          <button type="button" class="brow-reopen" data-reopen="${esc(r.id)}" title="Riapri la votazione di ${esc(r.name)}">Riapri</button>
+          <button type="button" class="brow-reopen" data-edit-game="${esc(r.id)}" title="${tr('tv.bd.editTitle', { name: esc(r.name) })}">${tr('tv.bd.edit')}</button>
+          <button type="button" class="brow-reopen" data-reopen="${esc(r.id)}" title="${tr('tv.bd.reopenTitle', { name: esc(r.name) })}">${tr('tv.bd.reopen')}</button>
         </span>
       </li>`).join('');
 
     el.innerHTML = `
       <section class="board">
         <div class="board-head">
-          <h1>Classifica</h1>
-          <span class="muted">${board.length} ${board.length === 1 ? 'gioco votato' : 'giochi votati'}</span>
+          <h1>${tr('tv.ic.board')}</h1>
+          <span class="muted">${tr('tv.rec.games', { n: board.length })}</span>
         </div>
         ${board.length
           ? `<ol class="board-list ${two ? 'board-list--two' : ''}" style="--rows:${Math.ceil(board.length / 2)}">${rows}</ol>`
-          : '<div class="empty-board"><p class="empty-title">Ancora nessun gioco votato</p></div>'}
+          : `<div class="empty-board"><p class="empty-title">${tr('tv.idle.emptyTitle')}</p></div>`}
         <div class="board-actions">
-          ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>Classifica di sempre</span></button>` : ''}
-          ${board.length ? '<button type="button" class="btn-sec" id="endNight">Termina la serata</button>' : ''}
-          <button type="button" class="btn btn-big" id="nextGame">Prossimo gioco</button>
+          ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
+          ${board.length ? `<button type="button" class="btn-sec" id="endNight">${tr('tv.end.end')}</button>` : ''}
+          <button type="button" class="btn btn-big" id="nextGame">${tr('tv.rv.next')}</button>
         </div>
       </section>`;
     $('#endNight', el)?.addEventListener('click', endNight);
@@ -5652,7 +5881,7 @@ SCREENS.board = {
       if (ed) { EditGame.open(ed.dataset.editGame); return; }
       const b = e.target.closest('[data-reopen]');
       const g = b && S.games[b.dataset.reopen];
-      if (g && confirm(`Riaprire la votazione di “${g.name}”? I voti già dati restano.`)) reopenVoting(b.dataset.reopen).catch((err) => toast(explainError(err), 'error'));
+      if (g && confirm(tr('tv.rv.reopenConfirm', { name: g.name }))) reopenVoting(b.dataset.reopen).catch((err) => toast(explainError(err), 'error'));
     });
   }
 };
@@ -5697,9 +5926,9 @@ SCREENS.awards = {
     if (!this.board.length) {
       el.innerHTML = `
         <section class="awards awards--empty">
-          <h1>Premiazione</h1>
-          <div class="empty-board"><p class="empty-title">Nessun gioco votato stasera</p><p class="muted">Tornate alla serata e votate almeno un gioco.</p></div>
-          <div class="awards-actions"><button type="button" class="btn btn-big" id="backIdle">Torna alla serata</button></div>
+          <h1>${tr('tv.aw.title')}</h1>
+          <div class="empty-board"><p class="empty-title">${tr('tv.aw.emptyTitle')}</p><p class="muted">${tr('tv.aw.emptyText')}</p></div>
+          <div class="awards-actions"><button type="button" class="btn btn-big" id="backIdle">${tr('tv.aw.back')}</button></div>
         </section>`;
       $('#backIdle', el).addEventListener('click', () => setPhase('idle'));
       return;
@@ -5724,14 +5953,14 @@ SCREENS.awards = {
       const c = this.champs[i];
       if (!c) return '<div class="champ champ--none" aria-hidden="true"></div>';
       const p = playerOrGhost(c.uid);
-      const bits = [c.wins ? `${c.wins} ${c.wins === 1 ? 'vittoria' : 'vittorie'}` : '', c.mvp ? `${c.mvp} MVP` : '', c.seer ? `${c.seer} ${c.seer === 1 ? 'pronostico' : 'pronostici'}` : '', c.oracle ? `${c.oracle} ${c.oracle === 1 ? 'media indovinata' : 'medie indovinate'}` : ''].filter(Boolean);
+      const bits = [c.wins ? tr('tv.aw.wins', { n: c.wins }) : '', c.mvp ? `${c.mvp} MVP` : '', c.seer ? tr('tv.aw.seer', { n: c.seer }) : '', c.oracle ? tr('tv.aw.oracle', { n: c.oracle }) : ''].filter(Boolean);
       return `
         <div class="champ champ--${i + 1}" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : '#FFC93C'}">
           <div class="champ-who is-hidden" data-champ="${i}">
             <span class="champ-trophy" aria-hidden="true">${medals[c.rank - 1] || '🏅'}</span>
             <span class="champ-av">${avatarHTML(p, i === 0 ? '8.4rem' : '6.6rem')}</span>
             <b class="champ-name">${esc(p.name)}</b>
-            <span class="champ-pts">${c.points} ${c.points === 1 ? 'punto' : 'punti'}</span>
+            <span class="champ-pts">${tr('tv.aw.points', { n: c.points })}</span>
             <small class="champ-why">${esc(bits.join(' · '))}</small>
           </div>
           <div class="champ-base champ-base--r${Math.min(c.rank, 3)}"><span>${c.rank}</span></div>
@@ -5764,17 +5993,17 @@ SCREENS.awards = {
     el.innerHTML = `
       <section class="awards stage-podium" id="awSec">
         <div class="awards-head">
-          <div class="awards-title"><h1 id="awTitle">Premiazione</h1><div id="awStages"></div></div>
+          <div class="awards-title"><h1 id="awTitle">${tr('tv.aw.title')}</h1><div id="awStages"></div></div>
           <div class="awards-actions" id="awardsActions"></div>
         </div>
         <div class="podium">${[1, 0, 2].map(podCol).join('')}</div>
         ${this.champs.length ? `<div class="champions" id="awChamps">${[1, 0, 2].map(champCol).join('')}</div>
-        <p class="champ-rule">Vittoria 3 punti · ogni voto MVP 1 · pronostico azzeccato 1 · media indovinata 1</p>` : ''}
+        <p class="champ-rule">${tr('tv.aw.rule')}</p>` : ''}
         ${this.seasonHTML ? `<div class="season-wrap">${this.seasonHTML}</div>` : ''}
         <div class="prizes ${this.achAwards.length ? 'prizes--dense' : ''}">
-          ${row('Ai giochi', this.gameAwards)}
-          ${row('Ai giocatori', this.playerAwards)}
-          ${row('Traguardi sbloccati stasera', this.achAwards.slice(0, 8))}
+          ${row(tr('tv.aw.toGames'), this.gameAwards)}
+          ${row(tr('tv.aw.toPlayers'), this.playerAwards)}
+          ${row(tr('tv.aw.ach'), this.achAwards.slice(0, 8))}
         </div>
       </section>`;
     this.stage = 'podium';
@@ -5792,7 +6021,7 @@ SCREENS.awards = {
     sec.classList.toggle('stage-players', stage === 'players');
     sec.classList.toggle('stage-season', stage === 'season');
     sec.classList.toggle('stage-prizes', stage === 'prizes');
-    $('#awTitle', this.el).textContent = stage === 'prizes' ? 'Premi speciali' : stage === 'players' ? 'Campioni della serata' : stage === 'season' ? 'Stagione' : 'Premiazione';
+    $('#awTitle', this.el).textContent = stage === 'prizes' ? tr('tv.aw.prizes') : stage === 'players' ? tr('tv.aw.champs') : stage === 'season' ? tr('tv.aw.season') : tr('tv.aw.title');
     this.stage = stage;
   },
 
@@ -5803,26 +6032,26 @@ SCREENS.awards = {
     if (stagesBox) stagesBox.innerHTML = '';
     if (this.step < this.steps.length) {
       const nextStep = this.steps[this.step];
-      const label = this.step === 0 ? 'Svela il podio' : nextStep.type === 'stage' ? 'Premi speciali' : nextStep.type === 'pstage' ? 'Campioni della serata' : nextStep.type === 'sstage' ? 'Classifica di stagione' : 'Avanti';
-      box.innerHTML = `<span class="muted key-hint">Barra spaziatrice per andare avanti</span><button type="button" class="btn btn-big" id="stepBtn">${label}</button>`;
+      const label = this.step === 0 ? tr('tv.aw.podium') : nextStep.type === 'stage' ? tr('tv.aw.prizes') : nextStep.type === 'pstage' ? tr('tv.aw.champs') : nextStep.type === 'sstage' ? tr('tv.aw.seasonBoard') : tr('tv.aw.next');
+      box.innerHTML = `<span class="muted key-hint">${tr('tv.aw.space')}</span><button type="button" class="btn btn-big" id="stepBtn">${label}</button>`;
       $('#stepBtn', box).addEventListener('click', () => this.next());
       $('#stepBtn', box).focus();
       return;
     }
-    const stages = [['podium', 'Podio'], ...(this.champs.length ? [['players', 'Campioni']] : []), ...(this.seasonHTML ? [['season', 'Stagione']] : []), ...(this.awards.length ? [['prizes', 'Premi speciali']] : [])];
-    if (stagesBox && stages.length > 1) stagesBox.innerHTML = `<div class="seg seg--stage" role="group" aria-label="Cosa mostrare">${stages.map(([k, l]) => `<button type="button" data-stage="${k}" aria-pressed="${this.stage === k}">${l}</button>`).join('')}</div>`;
+    const stages = [['podium', tr('tv.aw.stPodium')], ...(this.champs.length ? [['players', tr('tv.aw.stChamps')]] : []), ...(this.seasonHTML ? [['season', tr('tv.aw.season')]] : []), ...(this.awards.length ? [['prizes', tr('tv.aw.prizes')]] : [])];
+    if (stagesBox && stages.length > 1) stagesBox.innerHTML = `<div class="seg seg--stage" role="group" aria-label="${tr('tv.aw.stAria')}">${stages.map(([k, l]) => `<button type="button" data-stage="${k}" aria-pressed="${this.stage === k}">${l}</button>`).join('')}</div>`;
     box.innerHTML = `
-      <button type="button" class="btn-sec" id="shareImg">${ICONS.share}<span>Condividi</span></button>
-      <button type="button" class="btn-sec" id="recapBtn" title="Il commentatore legge il riassunto della serata">🎙️ <span>Commento</span></button>
-      <a class="btn-sec" id="reportLink" href="resoconto.html?room=${esc(S.code)}${S.meta.groupId ? `&g=${esc(S.meta.groupId)}` : ''}" target="_blank" rel="noopener" title="Giochi, voti, vincitori e premi: si può riaprire anche dopo">📋 <span>Resoconto</span></a>
+      <button type="button" class="btn-sec" id="shareImg">${ICONS.share}<span>${tr('tv.aw.share')}</span></button>
+      <button type="button" class="btn-sec" id="recapBtn" title="${tr('tv.aw.recapTitle')}">🎙️ <span>${tr('tv.aw.recap')}</span></button>
+      <a class="btn-sec" id="reportLink" href="resoconto.html?room=${esc(S.code)}${S.meta.groupId ? `&g=${esc(S.meta.groupId)}` : ''}" target="_blank" rel="noopener" title="${tr('tv.aw.reportTitle')}">📋 <span>${tr('tv.aw.report')}</span></a>
       ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openAlbum">📸 <span>Album${photoList(S.photos).length ? ` (${photoList(S.photos).length})` : ''}</span></button>` : ''}
-      ${S.meta.groupId ? `<button type="button" class="btn-sec" id="toAllTime">${ICONS.star}<span>Di sempre</span></button>` : ''}
-      <button type="button" class="btn" id="newNight2">Nuova serata</button>`;
+      ${S.meta.groupId ? `<button type="button" class="btn-sec" id="toAllTime">${ICONS.star}<span>${tr('tv.aw.allTime')}</span></button>` : ''}
+      <button type="button" class="btn" id="newNight2">${tr('tv.create.title')}</button>`;
     stagesBox?.querySelectorAll('[data-stage]').forEach((b) => b.addEventListener('click', () => { this.setStage(b.dataset.stage); this.paintActions(); }));
     $('#shareImg', box).addEventListener('click', () => ExportPanel.open(this.board, this.awards));
     $('#recapBtn', box).addEventListener('click', () => {
       const mode = commentatorMode() === 'off' ? 'festa' : commentatorMode();
-      if (isMuted()) toast('La TV è in modalità silenziosa: leggo solo i sottotitoli.', 'warn');
+      if (isMuted()) toast(tr('tv.aw.muted'), 'warn');
       speak(nightRecap(recapData(this.board, this.awards), mode), { captions: true });
     });
     $('#openAlbum', box)?.addEventListener('click', () => AlbumPanel.open());
@@ -5863,7 +6092,7 @@ SCREENS.awards = {
           }, 950);
           [1.8, 2.3, 2.9, 3.4, 4].forEach((d) => fireworkSound(d));
           const mode = commentatorMode();
-          if (mode !== 'off' && !isMuted()) setTimeout(() => speak(`Campione della serata: ${playerOrGhost(this.champs[0].uid).name}, con ${this.champs[0].points} punti!`), 2600);
+          if (mode !== 'off' && !isMuted()) setTimeout(() => speak(tr('tv.aw.champSpeak', { name: playerOrGhost(this.champs[0].uid).name, n: this.champs[0].points })), 2600);
         } else pop(0.95);
       }
     } else if (s.type === 'sstage') {
@@ -5917,8 +6146,8 @@ async function startPoll() {
   const options = fresh.filter((it) => libOk(it, n)).slice(0, 12).map((it) => it.id);
   if (options.length < 2) {
     toast(fresh.length >= 2
-      ? `Servono almeno 2 giochi adatti a ${n} giocatori e non ancora giocati stasera.`
-      : 'Servono almeno 2 giochi nell’armadio non ancora giocati stasera.', 'warn');
+      ? tr('tv.po.needFit', { n: String(n) })
+      : tr('tv.po.needLib'), 'warn');
     return;
   }
   try {
@@ -5961,8 +6190,8 @@ SCREENS.poll = {
       <section class="poll" id="pollBox">
         <div class="poll-head">
           <div>
-            <h1>Cosa giochiamo adesso?</h1>
-            <p class="lead-line" id="pollLead">Scegliete dal telefono: vince il gioco più votato.</p>
+            <h1>${tr('tv.po.title')}</h1>
+            <p class="lead-line" id="pollLead">${tr('tv.po.lead')}</p>
             <div class="poll-max" id="pollMax"></div>
             <p class="muted poll-excluded" id="pollExcluded"></p>
           </div>
@@ -5970,8 +6199,8 @@ SCREENS.poll = {
         </div>
         <div class="poll-grid ${n > 8 ? 'poll-grid--dense' : ''}" id="pollGrid" style="--cols:${cols}"></div>
         <div class="poll-actions">
-          <button type="button" class="btn-sec" id="pollCancel">Annulla</button>
-          <button type="button" class="btn btn-big" id="pollClose">Chiudi la scelta</button>
+          <button type="button" class="btn-sec" id="pollCancel">${tr('tv.cancel')}</button>
+          <button type="button" class="btn btn-big" id="pollClose">${tr('tv.po.close')}</button>
         </div>
       </section>
       <section class="poll-win" id="pollWin" hidden></section>`;
@@ -6002,8 +6231,8 @@ SCREENS.poll = {
     const pmSig = JSON.stringify([pm, cast > 0, limit]);
     if ($('#pollMax').dataset.sig !== pmSig) {
       $('#pollMax').dataset.sig = pmSig;
-      $('#pollMax').innerHTML = limit >= 2 ? `<span class="field-label">Voti a testa</span><span class="seg" role="group" aria-label="Voti a testa">${Array.from({ length: limit }, (_, i) => i + 1).map((v) => `<button type="button" data-pmax="${v}" aria-pressed="${pm === v}" ${cast > 0 && pm !== v ? 'disabled' : ''}>${v}</button>`).join('')}</span>${cast > 0 ? '<small class="muted">(si cambia solo prima dei voti)</small>' : ''}` : '';
-      $('#pollLead').textContent = pm > 1 ? `Ognuno sceglie fino a ${pm} giochi dal telefono: vince il gioco con più voti.` : 'Scegliete dal telefono: vince il gioco più votato.';
+      $('#pollMax').innerHTML = limit >= 2 ? `<span class="field-label">${tr('tv.po.perHead')}</span><span class="seg" role="group" aria-label="${tr('tv.po.perHead')}">${Array.from({ length: limit }, (_, i) => i + 1).map((v) => `<button type="button" data-pmax="${v}" aria-pressed="${pm === v}" ${cast > 0 && pm !== v ? 'disabled' : ''}>${v}</button>`).join('')}</span>${cast > 0 ? `<small class="muted">${tr('tv.po.locked')}</small>` : ''}` : '';
+      $('#pollLead').textContent = pm > 1 ? tr('tv.po.leadMulti', { n: String(pm) }) : tr('tv.po.lead');
     }
     const sig = JSON.stringify([opts, tally, opts.map((id) => (S.library[id].image || '').length)]);
     if (sig !== this.sig) {
@@ -6014,7 +6243,7 @@ SCREENS.poll = {
         return `
           <div class="poll-card ${c && c === max ? 'is-lead' : ''}">
             ${gameImageHTML(it, 'game-img--poll')}
-            <div class="poll-info"><span class="poll-text"><b class="poll-name">${esc(it.name)}</b>${libInfo(it) ? `<span class="poll-meta">${esc(libInfo(it))}</span>` : ''}${freshnessLabel(it, lastPlayed(S.nights)) ? `<span class="poll-fresh">${esc(freshnessLabel(it, lastPlayed(S.nights)))}</span>` : ''}</span><span class="poll-votes" aria-label="${c} voti">${c}</span></div>
+            <div class="poll-info"><span class="poll-text"><b class="poll-name">${esc(it.name)}</b>${libInfo(it) ? `<span class="poll-meta">${esc(libInfo(it))}</span>` : ''}${freshnessLabel(it, lastPlayed(S.nights)) ? `<span class="poll-fresh">${esc(freshnessLabel(it, lastPlayed(S.nights)))}</span>` : ''}</span><span class="poll-votes" aria-label="${tr('tv.ic.nVotes', { n: String(c) })}">${c}</span></div>
             <span class="poll-bar" aria-hidden="true"><i style="width:${max ? Math.round((c / max) * 100) : 0}%"></i></span>
           </div>`;
       }).join('');
@@ -6022,9 +6251,9 @@ SCREENS.poll = {
     const n = activePlayers(S.players).length;
     const played = playedTonight();
     const out = libraryItems().filter((it) => !played.has(nameKey(it.name)) && isAvailable(it) && !libFits(it, n)).map((it) => it.name);
-    $('#pollExcluded').textContent = out.length ? `Non proposti perché non adatti a ${n} giocatori: ${namesList(out)}.` : '';
+    $('#pollExcluded').textContent = out.length ? tr('tv.po.excluded', { n: String(n), list: namesList(out) }) : '';
     const all = total > 0 && voted === total;
-    $('#pollCount').textContent = all ? 'Hanno scelto tutti!' : `${voted} / ${total} hanno scelto`;
+    $('#pollCount').textContent = all ? tr('tv.po.all') : tr('tv.po.count', { n: `${voted} / ${total}` });
     $('#pollClose').disabled = voted === 0;
     if (all && !S.state?.paused) {
       if (!this.timer) this.timer = setTimeout(() => this.close(), 2000);
@@ -6053,17 +6282,17 @@ SCREENS.poll = {
     this.shown = true;
     clearTimeout(this.timer);
     const poll = S.poll;
-    const it = S.library?.[poll.winner] || { name: 'il gioco scelto' };
+    const it = S.library?.[poll.winner] || { name: tr('tv.po.chosen') };
     $('#pollBox').hidden = true;
     const box = $('#pollWin');
     box.hidden = false;
     box.innerHTML = `
       <div class="poll-win-art">${gameImageHTML(it, 'game-img--win tilt-left')}</div>
       <div class="poll-win-text">
-        <span class="chip chip--tomato">${poll.tie ? 'Pareggio: ha deciso la sorte' : 'Avete scelto'}</span>
-        <h1 class="win-title">Si gioca a ${esc(it.name)}!</h1>
-        <p class="lead-line">Buona partita. Alla fine aprite la votazione.</p>
-        <button type="button" class="btn btn-big" id="pollGo">${ICONS.play}<span>Pronti, si gioca</span></button>
+        <span class="chip chip--tomato">${poll.tie ? tr('tv.po.tie') : tr('tv.po.youChose')}</span>
+        <h1 class="win-title">${tr('tv.po.winTitle', { name: esc(it.name) })}</h1>
+        <p class="lead-line">${tr('tv.po.winLead')}</p>
+        <button type="button" class="btn btn-big" id="pollGo">${ICONS.play}<span>${tr('tv.po.go')}</span></button>
       </div>`;
     confetti(110);
     fanfare();
@@ -6097,7 +6326,7 @@ function playerByName(name) {
 }
 
 SCREENS.alltime = {
-  TABS: [['rank', 'Classifica'], ['season', 'Stagione'], ['rivals', 'Rivalità'], ['cards', 'Figurine'], ['stats', 'Statistiche'], ['pairs', 'Coppie'], ['hof', 'Hall of Fame'], ['memories', 'Ricordi'], ['wrapped', 'Wrapped'], ['calendar', 'Calendario']],
+  TABS: ['rank', 'season', 'rivals', 'cards', 'stats', 'pairs', 'hof', 'memories', 'wrapped', 'calendar'],
 
   mount(el) {
     this.sig = '';
@@ -6121,15 +6350,17 @@ SCREENS.alltime = {
       if (y) { go({ year: Number(y.dataset.year), slide: 0 }); return; }
       const s = e.target.closest('[data-slide]');
       if (s) { go({ slide: this.slide + Number(s.dataset.slide) }); return; }
+      const ys = e.target.closest('[data-yearshare]');
+      if (ys) { this.shareYear(Number(ys.dataset.yearshare), ys); return; }
       const al = e.target.closest('[data-album]');
-      if (al) { AlbumPanel.open(al.dataset.album, al.dataset.title || 'Album'); return; }
+      if (al) { AlbumPanel.open(al.dataset.album, al.dataset.title || tr('tv.tl.album')); return; }
       if (e.target.closest('#nxIcs')) { downloadICS(S.next, S.meta.groupName || 'Game Night', libraryUrl()); return; }
-      if (e.target.closest('#nxClear')) { if (confirm('Cancellare la prossima serata?')) remove(groupRef(S.meta.groupId, 'next')).catch((err) => toast(explainError(err), 'error')); }
+      if (e.target.closest('#nxClear')) { if (confirm(tr('tv.nx.clearConfirm'))) remove(groupRef(S.meta.groupId, 'next')).catch((err) => toast(explainError(err), 'error')); }
     });
     box.addEventListener('submit', async (e) => {
       if (e.target.id !== 'nxForm') return;
       e.preventDefault();
-      try { await saveNextNight($('#nxAt').value, $('#nxPlace').value); toast('Prossima serata fissata'); } catch (err) { toast(explainError(err), 'error'); }
+      try { await saveNextNight($('#nxAt').value, $('#nxPlace').value); toast(tr('tv.nx.saved')); } catch (err) { toast(explainError(err), 'error'); }
     });
   },
 
@@ -6144,9 +6375,9 @@ SCREENS.alltime = {
     return `
       <div class="alltime-head">
         <div><h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div>
-        <button type="button" class="btn btn-big" id="atBack">Torna alla serata</button>
+        <button type="button" class="btn btn-big" id="atBack">${tr('tv.aw.back')}</button>
       </div>
-      <nav class="at-tabs" aria-label="Sezioni">${this.TABS.map(([k, l]) => `<button type="button" data-view="${k}" aria-pressed="${k === active}">${l}</button>`).join('')}</nav>`;
+      <nav class="at-tabs" aria-label="${tr('tv.at.sections')}">${this.TABS.map((k) => `<button type="button" data-view="${k}" aria-pressed="${k === active}">${tr(`tv.at.tab.${k}`)}</button>`).join('')}</nav>`;
   },
 
   update() {
@@ -6157,12 +6388,12 @@ SCREENS.alltime = {
     paint.call(this);
   },
 
-  paintSeason() { $('#atBox').innerHTML = `${this.head('Stagione', `${this.groupLabel()}: una classifica ogni tre mesi, con il trofeo al campione`)}${seasonTabHTML()}`; },
-  paintRivals() { $('#atBox').innerHTML = `${this.head('Rivalità', 'Testa a testa: chi vince quando due giocano la stessa partita')}${rivalsTabHTML()}`; },
-  paintCards() { $('#atBox').innerHTML = `${this.head('Figurine', this.groupLabel())}${cardsTabHTML()}`; bindCards($('#atBox')); },
+  paintSeason() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.season'), tr('tv.at.seasonSub', { group: this.groupLabel() }))}${seasonTabHTML()}`; },
+  paintRivals() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.rivals'), tr('tv.at.rivalsSub'))}${rivalsTabHTML()}`; },
+  paintCards() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.cards'), this.groupLabel())}${cardsTabHTML()}`; bindCards($('#atBox')); },
 
   groupLabel() {
-    return `${S.identity?.emblem && !S.identity?.logo ? `${esc(S.identity.emblem)} ` : ''}${esc(S.meta.groupName || 'Il vostro gruppo')}`;
+    return `${S.identity?.emblem && !S.identity?.logo ? `${esc(S.identity.emblem)} ` : ''}${esc(S.meta.groupName || tr('tv.create.group'))}`;
   },
 
   paintRank() {
@@ -6172,24 +6403,24 @@ SCREENS.alltime = {
       <li class="brow brow--at brow--r${Math.min(g.rank, 4)}" style="--i:${i}">
         <span class="brank">${g.rank}</span>
         ${gameImageHTML(g, 'game-img--thumb')}
-        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${g.n} ${g.n === 1 ? 'voto' : 'voti'} in ${g.nights} ${g.nights === 1 ? 'serata' : 'serate'}</span></span>
+        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${tr('tv.at.votesIn', { votes: tr('tv.rv.nVotes', { n: g.n }), nights: tr('tv.at.nNights', { n: g.nights }) })}</span></span>
         <span class="bavg">${fmt(g.avg)}</span>
       </li>`).join('');
     const row = (i, name, val) => `<li class="at-row"><span class="at-pos">${i + 1}</span>${avatarHTML(playerByName(name), '2.6rem')}<span class="at-name">${esc(name)}</span><span class="at-val">${val}</span></li>`;
-    const wins = at.wins.slice(0, 3).map((w, i) => row(i, w.name, `${w.wins} ${w.wins === 1 ? 'vittoria' : 'vittorie'}`)).join('');
-    const mvp = at.mvp.slice(0, 3).map((m, i) => row(i, m.name, `${m.votes} ${m.votes === 1 ? 'voto' : 'voti'}`)).join('');
-    const most = at.mostPlayed.slice(0, 3).map((g) => `<li class="at-row"><span class="at-name">${esc(g.name)}</span><span class="at-val">${g.nights} serate</span></li>`).join('');
+    const wins = at.wins.slice(0, 3).map((w, i) => row(i, w.name, tr('tv.aw.wins', { n: w.wins }))).join('');
+    const mvp = at.mvp.slice(0, 3).map((m, i) => row(i, m.name, tr('tv.rv.nVotes', { n: m.votes }))).join('');
+    const most = at.mostPlayed.slice(0, 3).map((g) => `<li class="at-row"><span class="at-name">${esc(g.name)}</span><span class="at-val">${tr('tv.nNights', { n: g.nights })}</span></li>`).join('');
     $('#atBox').innerHTML = `
-      ${this.head('Classifica di sempre', `${this.groupLabel()}: ${at.nights} ${at.nights === 1 ? 'serata' : 'serate'}, ${at.games.length} ${at.games.length === 1 ? 'gioco votato' : 'giochi votati'}`)}
+      ${this.head(tr('tv.idle.allTime'), tr('tv.at.rankSub', { group: this.groupLabel(), nights: tr('tv.at.nNights', { n: at.nights }), games: tr('tv.rec.games', { n: at.games.length }) }))}
       ${at.games.length ? `
         <div class="alltime-body">
-          <div class="alltime-main"><ol class="board-list">${rows}</ol>${at.games.length > games.length ? `<p class="muted">E altri ${at.games.length - games.length}…</p>` : ''}</div>
+          <div class="alltime-main"><ol class="board-list">${rows}</ol>${at.games.length > games.length ? `<p class="muted">${tr('tv.idle.more', { n: at.games.length - games.length })}</p>` : ''}</div>
           <aside class="card alltime-side">
-            <h2>MVP di sempre</h2>${mvp ? `<ol class="at-list">${mvp}</ol>` : '<p class="muted">Ancora nessun MVP.</p>'}
-            ${wins ? `<h2>Chi vince di più</h2><ol class="at-list">${wins}</ol>` : ''}
-            ${most ? `<h2>I più giocati</h2><ol class="at-list">${most}</ol>` : ''}
+            <h2>${tr('tv.pl.mvpEver')}</h2>${mvp ? `<ol class="at-list">${mvp}</ol>` : `<p class="muted">${tr('tv.at.noMvp')}</p>`}
+            ${wins ? `<h2>${tr('tv.at.mostWins')}</h2><ol class="at-list">${wins}</ol>` : ''}
+            ${most ? `<h2>${tr('tv.at.mostPlayed')}</h2><ol class="at-list">${most}</ol>` : ''}
           </aside>
-        </div>` : '<div class="empty-board"><p class="empty-title">Ancora nessuna serata salvata</p><p class="muted">La classifica di sempre si riempie da sola a ogni gioco votato.</p></div>'}`;
+        </div>` : `<div class="empty-board"><p class="empty-title">${tr('tv.at.noNights')}</p><p class="muted">${tr('tv.at.noNightsText')}</p></div>`}`;
   },
 
   /** Andamento della serata e statistiche del gruppo su tutte le serate. */
@@ -6198,30 +6429,30 @@ SCREENS.alltime = {
     const W = 560, H = 210, P = 34;
     const pts = board.map((r, i) => ({ x: board.length > 1 ? P + (i * (W - 2 * P)) / (board.length - 1) : W / 2, y: H - P - ((r.stats.avg - 1) / 9) * (H - 2 * P), r }));
     const chart = board.length ? `
-      <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="Media dei giochi nell'ordine in cui sono stati giocati">
+      <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('tv.at.trendAria')}">
         ${[2, 4, 6, 8, 10].map((v) => { const y = H - P - ((v - 1) / 9) * (H - 2 * P); return `<line x1="${P}" x2="${W - P}" y1="${y}" y2="${y}" class="trend-grid"/><text x="${P - 8}" y="${y + 4}" class="trend-axis" text-anchor="end">${v}</text>`; }).join('')}
         <polyline points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}" class="trend-line"/>
         ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="7" class="trend-dot"/><text x="${p.x}" y="${p.y - 14}" text-anchor="middle" class="trend-val">${fmt(p.r.stats.avg)}</text><text x="${p.x}" y="${H - 8}" text-anchor="middle" class="trend-axis">${esc(p.r.name.length > 12 ? p.r.name.slice(0, 11) + '…' : p.r.name)}</text>`).join('')}
-      </svg>` : '<p class="muted">Ancora nessun gioco votato stasera.</p>';
+      </svg>` : `<p class="muted">${tr('tv.at.noGamesTonight')}</p>`;
     const ins = groupInsights(S.nights, S.library);
     const played = lastPlayed(S.nights);
     const dusty = libraryItems().map((it) => ({ name: it.name, label: freshnessLabel(it, played), n: played[dbKey(it.name)] ?? 999 })).filter((x) => x.label).sort((a, b) => b.n - a.n).slice(0, 3);
     const card = (title, list, val, empty) => `<section class="card stat-card stat-card--sm"><h2>${title}</h2>${list.length ? `<ol class="at-list">${list.map((g) => `<li class="at-row"><span class="at-name">${esc(g.name)}</span><span class="at-val">${val(g)}</span></li>`).join('')}</ol>` : `<p class="muted">${empty}</p>`}</section>`;
-    const few = 'Servono più serate.';
+    const few = tr('tv.st.few');
     $('#atBox').innerHTML = `
-      ${this.head('Statistiche', this.groupLabel())}
+      ${this.head(tr('tv.at.tab.stats'), this.groupLabel())}
       <div class="stats-body stats-body--grid">
-        <section class="card stat-card stat-card--chart"><h2>Andamento della serata</h2>${chart}</section>
-        ${card('❤️ I più amati', ins.loved, (g) => fmt(g.avg), few)}
-        ${card('🤝 Piacciono a tutti', ins.everyone, (g) => `nessun voto sotto il ${g.minVote}`, 'Nessun gioco con tutti voti da 7 in su.')}
-        ${card('⚡ Dividono il gruppo', ins.divisive, (g) => `consenso ${g.consensus}%`, 'Su tutto siete abbastanza d’accordo.')}
-        ${card('🎈 Sopravvalutati', ins.overrated, () => 'bei voti, poca voglia di rigiocarlo', few)}
-        ${card('💎 Sottovalutati', ins.underrated, () => 'voti tiepidi, ma lo rigiochereste', few)}
-        ${card('⏳ Durano più del previsto', ins.longer, (g) => `${Math.round(g.realMin)} min invece di ${g.declared}`, 'Le durate dichiarate sono rispettate.')}
-        ${card('🚀 Divertimento al minuto', ins.perMinute, (g) => `${fmt(g.avg)} in ${Math.round(g.realMin)} min`, 'Usate "Inizia la partita" per misurare le durate.')}
-        ${card('🙈 Mai più', ins.never, (g) => fmt(g.avg), 'Nessun gioco bocciato.')}
-        ${card('🔁 Quando lo rigiochiamo?', ins.replay, (g) => `fermo da ${g.ago} serate`, 'I giochi amati li fate spesso.')}
-        ${card('🕰️ Da rispolverare', dusty, (g) => esc(g.label), 'Avete giocato tutto di recente!')}
+        <section class="card stat-card stat-card--chart"><h2>${tr('tv.st.trend')}</h2>${chart}</section>
+        ${card(tr('tv.st.loved'), ins.loved, (g) => fmt(g.avg), few)}
+        ${card(tr('tv.st.everyone'), ins.everyone, (g) => tr('tv.st.everyoneVal', { n: String(g.minVote) }), tr('tv.st.everyoneNone'))}
+        ${card(tr('tv.st.divisive'), ins.divisive, (g) => tr('tv.st.consensus', { n: String(g.consensus) }), tr('tv.st.divisiveNone'))}
+        ${card(tr('tv.st.overrated'), ins.overrated, () => tr('tv.st.overratedVal'), few)}
+        ${card(tr('tv.st.underrated'), ins.underrated, () => tr('tv.st.underratedVal'), few)}
+        ${card(tr('tv.st.longer'), ins.longer, (g) => tr('tv.st.longerVal', { real: String(Math.round(g.realMin)), declared: String(g.declared) }), tr('tv.st.longerNone'))}
+        ${card(tr('tv.st.perMinute'), ins.perMinute, (g) => tr('tv.st.perMinuteVal', { avg: fmt(g.avg), min: String(Math.round(g.realMin)) }), tr('tv.st.perMinuteNone'))}
+        ${card(tr('tv.st.never'), ins.never, (g) => fmt(g.avg), tr('tv.st.neverNone'))}
+        ${card(tr('tv.st.replay'), ins.replay, (g) => tr('tv.st.replayVal', { n: g.ago }), tr('tv.st.replayNone'))}
+        ${card(tr('tv.st.dusty'), dusty, (g) => esc(g.label), tr('tv.st.dustyNone'))}
       </div>`;
   },
 
@@ -6230,16 +6461,16 @@ SCREENS.alltime = {
     const pm = pairsMap(S.nights);
     const people = pm.people.slice(0, 9);
     const find = (a, b) => pm.pairs.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
-    const hl = (icon, title, p, text) => `<button type="button" class="card pair-hl" ${p ? `data-pair="${esc(p.a)}|${esc(p.b)}"` : 'disabled'}><span class="pair-ico">${icon}</span><b>${title}</b>${p ? `<span>${esc(p.aName)} + ${esc(p.bName)}</span><small>${text(p)}</small>` : '<small>Servono più partite insieme.</small>'}</button>`;
+    const hl = (icon, title, p, text) => `<button type="button" class="card pair-hl" ${p ? `data-pair="${esc(p.a)}|${esc(p.b)}"` : 'disabled'}><span class="pair-ico">${icon}</span><b>${title}</b>${p ? `<span>${esc(p.aName)} + ${esc(p.bName)}</span><small>${text(p)}</small>` : `<small>${tr('tv.pr.few')}</small>`}</button>`;
     const heat = (c) => (c === null ? 'transparent' : `hsl(${Math.round((c / 100) * 130)}, 70%, 62%)`);
     const matrix = people.length >= 2 ? `
       <table class="pair-matrix"><thead><tr><th></th>${people.map((p) => `<th>${avatarHTML(playerByName(p.name), '2rem')}<span>${esc(p.name)}</span></th>`).join('')}</tr></thead>
       <tbody>${people.map((r) => `<tr><th>${esc(r.name)}</th>${people.map((c) => {
         if (r.key === c.key) return '<td class="is-self"></td>';
         const p = find(r.key, c.key);
-        return `<td><button type="button" class="${p?.compat === null || p?.compat === undefined ? 'is-na' : ''}" data-pair="${esc(r.key)}|${esc(c.key)}" style="--h:${heat(p?.compat ?? null)}" aria-label="${esc(r.name)} e ${esc(c.name)}">${p?.compat ?? '—'}${p?.compat !== null && p?.compat !== undefined ? '%' : ''}</button></td>`;
-      }).join('')}</tr>`).join('')}</tbody></table>` : '<p class="muted">Servono almeno due persone con dei voti.</p>';
-    let detail = '<p class="muted">Tocca una casella per il dettaglio della coppia.</p>';
+        return `<td><button type="button" class="${p?.compat === null || p?.compat === undefined ? 'is-na' : ''}" data-pair="${esc(r.key)}|${esc(c.key)}" style="--h:${heat(p?.compat ?? null)}" aria-label="${esc(namesList([r.name, c.name]))}">${p?.compat ?? '—'}${p?.compat !== null && p?.compat !== undefined ? '%' : ''}</button></td>`;
+      }).join('')}</tr>`).join('')}</tbody></table>` : `<p class="muted">${tr('tv.pr.needTwo')}</p>`;
+    let detail = `<p class="muted">${tr('tv.pr.tap')}</p>`;
     if (this.pair) {
       const [a, b] = this.pair.split('|');
       const p = find(a, b);
@@ -6248,23 +6479,23 @@ SCREENS.alltime = {
         const gname = (k) => S.library && libraryItems().find((it) => dbKey(it.name) === k)?.name || k;
         detail = `
           <h2>${esc(x.n1)} + ${esc(x.n2)}</h2>
-          <p class="pair-compat">${p.compat !== null && p.compat !== undefined ? `Compatibilità ludica <b>${p.compat}%</b>` : 'Compatibilità: servono più voti in comune'}</p>
+          <p class="pair-compat">${p.compat !== null && p.compat !== undefined ? tr('tv.pr.compat', { n: String(p.compat) }) : tr('tv.pr.compatNone')}</p>
           <ul class="pair-facts">
-            <li><b>${p.together}</b> partite giocate insieme</li>
-            <li>Scontri diretti: <b>${esc(x.n1)} ${x.w1}</b> – <b>${x.w2} ${esc(x.n2)}</b></li>
-            <li><b>${p.both}</b> vittorie insieme (a squadre o a pari merito)</li>
-            ${p.lovedBoth?.length ? `<li>Amati da entrambi: ${esc(p.lovedBoth.slice(0, 4).map(gname).join(', '))}</li>` : ''}
-            ${p.opposite?.length ? `<li>Opinioni opposte: ${esc(p.opposite.slice(0, 4).map(gname).join(', '))}</li>` : ''}
+            <li>${tr('tv.pr.together', { n: String(p.together) })}</li>
+            <li>${tr('tv.pr.h2h', { a: `<b>${esc(x.n1)} ${x.w1}</b>`, b: `<b>${x.w2} ${esc(x.n2)}</b>` })}</li>
+            <li>${tr('tv.pr.both', { n: String(p.both) })}</li>
+            ${p.lovedBoth?.length ? `<li>${tr('tv.pr.loved', { list: esc(p.lovedBoth.slice(0, 4).map(gname).join(', ')) })}</li>` : ''}
+            ${p.opposite?.length ? `<li>${tr('tv.pr.opposite', { list: esc(p.opposite.slice(0, 4).map(gname).join(', ')) })}</li>` : ''}
           </ul>`;
       }
     }
     $('#atBox').innerHTML = `
-      ${this.head('Coppie', this.groupLabel())}
+      ${this.head(tr('tv.at.tab.pairs'), this.groupLabel())}
       <div class="pairs-hl">
-        ${hl('🔥', 'Duo imbattibile', pm.duo, (p) => `${p.both} vittorie insieme`)}
-        ${hl('⚔️', 'Rivalità storica', pm.rivalry, (p) => `${p.aWins} a ${p.bWins} negli scontri diretti`)}
-        ${hl('❤️', 'Anime ludiche', pm.souls, (p) => `compatibilità ${p.compat}%`)}
-        ${hl('💀', 'Nemici giurati', pm.enemies, (p) => `compatibilità ${p.compat}%`)}
+        ${hl('🔥', tr('tv.pr.duo'), pm.duo, (p) => tr('tv.pr.duoVal', { n: String(p.both) }))}
+        ${hl('⚔️', tr('tv.pr.rivalry'), pm.rivalry, (p) => tr('tv.pr.rivalryVal', { a: String(p.aWins), b: String(p.bWins) }))}
+        ${hl('❤️', tr('tv.pr.souls'), pm.souls, (p) => tr('tv.pr.compatVal', { n: String(p.compat) }))}
+        ${hl('💀', tr('tv.pr.enemies'), pm.enemies, (p) => tr('tv.pr.compatVal', { n: String(p.compat) }))}
       </div>
       <div class="pairs-body"><div class="card stat-card pair-matrix-wrap">${matrix}</div><div class="card stat-card">${detail}</div></div>`;
   },
@@ -6277,17 +6508,17 @@ SCREENS.alltime = {
     for (const n of Object.values(S.nights || {})) for (const [k, pp] of Object.entries(n?.people || {})) people[k] = pp.name || people[k];
     const rows = Object.entries(people).map(([k, name]) => ({ k, name, pr: progressFor(S.nights, k, S.library) })).sort((a, b) => b.pr.xp - a.pr.xp).slice(0, 8);
     $('#atBox').innerHTML = `
-      ${this.head('Hall of Fame', `${this.groupLabel()}: livello ${gl.level} · ${gl.nights} ${gl.nights === 1 ? 'serata' : 'serate'} · ${gl.games} partite`)}
+      ${this.head('Hall of Fame', tr('tv.hof.sub', { group: this.groupLabel(), level: String(gl.level), nights: tr('tv.at.nNights', { n: gl.nights }), games: String(gl.games) }))}
       <div class="stats-body stats-body--hof">
-        <section class="card stat-card stat-card--wide"><h2>Livelli</h2>${rows.length ? `<ol class="hof-list">${rows.map((r, i) => `
+        <section class="card stat-card stat-card--wide"><h2>${tr('tv.hof.levels')}</h2>${rows.length ? `<ol class="hof-list">${rows.map((r, i) => `
           <li class="hof-row">
             <span class="at-pos">${i + 1}</span>
             ${avatarHTML(playerByName(r.name), '2.8rem')}
-            <span class="hof-who"><b>${esc(r.name)}</b><small>Livello ${r.pr.level} · ${esc(r.pr.levelName)} · ${r.pr.xp} XP</small>
+            <span class="hof-who"><b>${esc(r.name)}</b><small>${tr('tv.hof.level', { n: String(r.pr.level) })} · ${esc(r.pr.levelName)} · ${r.pr.xp} XP</small>
               <span class="xp-bar" aria-hidden="true"><i style="width:${Math.round(r.pr.levelProgress * 100)}%"></i></span></span>
-            <span class="hof-ach" title="Traguardi sbloccati">${r.pr.achievements.filter((a) => a.got).map((a) => a.icon).join(' ')}</span>
-          </li>`).join('')}</ol>` : '<p class="muted">Ancora nessuna serata salvata.</p>'}</section>
-        <section class="card stat-card"><h2>Record</h2>${rec.length ? `<ol class="at-list">${rec.map((r) => `<li class="at-row at-row--stack"><span class="muted">${esc(r.title)}</span><b>${esc(r.value)}</b></li>`).join('')}</ol>` : '<p class="muted">I record arrivano con le prime serate.</p>'}</section>
+            <span class="hof-ach" title="${tr('tv.hof.ach')}">${r.pr.achievements.filter((a) => a.got).map((a) => a.icon).join(' ')}</span>
+          </li>`).join('')}</ol>` : `<p class="muted">${tr('tv.at.noNights')}.</p>`}</section>
+        <section class="card stat-card"><h2>${tr('tv.hof.records')}</h2>${rec.length ? `<ol class="at-list">${rec.map((r) => `<li class="at-row at-row--stack"><span class="muted">${esc(r.title)}</span><b>${esc(r.value)}</b></li>`).join('')}</ol>` : `<p class="muted">${tr('tv.hof.noRecords')}</p>`}</section>
       </div>`;
   },
 
@@ -6295,20 +6526,20 @@ SCREENS.alltime = {
   paintMemories() {
     const list = nightsList(S.nights).reverse();
     const otd = onThisDay(S.nights);
-    const date = (at) => new Date(Number(at)).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-    const banner = otd ? `<div class="otd">${otd.anniversary ? `🎂 <b>${otd.anniversary.years} ${otd.anniversary.years === 1 ? 'anno' : 'anni'}</b> dalla prima serata del gruppo (${esc(date(otd.anniversary.at))})!` : ''}${otd.yearAgo ? ` 📸 Un anno fa, ${esc(date(otd.yearAgo.at))}, giocavate a <b>${esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', '))}</b>.` : ''}</div>` : '';
+    const date = (at) => fmtDateL(Number(at), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    const banner = otd ? `<div class="otd">${otd.anniversary ? tr('tv.mem.anniv', { years: tr('tv.mem.years', { n: otd.anniversary.years }), date: esc(date(otd.anniversary.at)) }) : ''}${otd.yearAgo ? tr('tv.mem.yearAgo', { date: esc(date(otd.yearAgo.at)), games: esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', ')) }) : ''}</div>` : '';
     $('#atBox').innerHTML = `
-      ${this.head('Ricordi', `${this.groupLabel()}: ${list.length} ${list.length === 1 ? 'serata' : 'serate'}`)}
+      ${this.head(tr('tv.at.tab.memories'), `${this.groupLabel()}: ${tr('tv.at.nNights', { n: list.length })}`)}
       ${banner}
       ${list.length ? `<div class="mem-grid">${list.slice(0, 12).map((n) => `
         <button type="button" class="card mem-card" data-night="${esc(n.room)}">
-          <span class="mem-num">Game Night #${n.number}${n.room === S.code ? ' · stasera' : ''}</span>
+          <span class="mem-num">Game Night #${n.number}${n.room === S.code ? tr('tv.mem.tonight') : ''}</span>
           <b class="mem-date">${esc(date(n.at))}</b>
           <span class="mem-facts">${nightFacts(n)}</span>
           ${n.topGame ? `<span>⭐ ${esc(n.topGame.name)} ${fmt(n.topGame.avg)}</span>` : ''}
           ${n.winners.length ? `<span>🏆 ${esc(namesList(n.winners))}</span>` : ''}
           ${n.mvpNames.length ? `<span>👑 MVP ${esc(namesList(n.mvpNames))}</span>` : ''}
-        </button>`).join('')}</div>` : '<div class="empty-board"><p class="empty-title">Ancora nessuna serata</p><p class="muted">Ogni serata finisce qui, con giochi, premi, commenti e foto.</p></div>'}`;
+        </button>`).join('')}</div>` : `<div class="empty-board"><p class="empty-title">${tr('tv.mem.none')}</p><p class="muted">${tr('tv.mem.noneText')}</p></div>`}`;
   },
 
   /** Pagina di una serata. */
@@ -6324,65 +6555,79 @@ SCREENS.alltime = {
       <li class="brow brow--at brow--r${Math.min(i + 1, 4)}">
         <span class="brank">${i + 1}</span>
         ${gameImageHTML(imgByKey[g.key] || g, 'game-img--thumb')}
-        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${g.n} voti${g.playedMin ? ` · ${g.playedMin} min` : ''}${(g.w || []).length ? ` · 🏆 ${esc(namesList((Array.isArray(g.w) ? g.w : Object.values(g.w)).map((k) => names[k] || k)))}` : ''}</span></span>
+        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${tr('tv.ic.nVotes', { n: String(g.n) })}${g.playedMin ? ` · ${g.playedMin} min` : ''}${(g.w || []).length ? ` · 🏆 ${esc(namesList((Array.isArray(g.w) ? g.w : Object.values(g.w)).map((k) => names[k] || k)))}` : ''}</span></span>
         <span class="bavg">${g.n ? fmt(g.sum / g.n) : '—'}</span>
       </li>`).join('');
     const photos = n.room === S.code ? photoList(S.photos).length : null;
     $('#atBox').innerHTML = `
-      ${this.head(`Game Night #${n.number}`, `${esc(new Date(Number(n.at)).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${nightFacts(n)}`)}
+      ${this.head(`Game Night #${n.number}`, `${esc(fmtDateL(Number(n.at), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${nightFacts(n)}`)}
       <div class="alltime-body">
         <div class="alltime-main"><ol class="board-list">${games}</ol></div>
         <aside class="card alltime-side night-side">
-          ${n.topGame ? `<p>⭐ Partita più divertente: <b>${esc(n.topGame.name)}</b> (${fmt(n.topGame.avg)})</p>` : ''}
+          ${n.topGame ? `<p>${tr('tv.ng.top', { name: esc(n.topGame.name), avg: fmt(n.topGame.avg) })}</p>` : ''}
           ${n.mvpNames.length ? `<p>👑 MVP: <b>${esc(namesList(n.mvpNames))}</b></p>` : ''}
-          ${n.winners.length ? `<p>🏆 Vincitore della serata: <b>${esc(namesList(n.winners))}</b></p>` : ''}
-          ${Object.keys(titles).length ? `<h2>Premi</h2><ul class="at-list">${Object.entries(titles).map(([tt, ns]) => `<li class="at-row at-row--stack"><span class="muted">${esc(tt)}</span><b>${esc(namesList(ns))}</b></li>`).join('')}</ul>` : ''}
-          ${(n.quotes || []).length ? `<h2>💬 Commenti</h2><ul class="quote-list">${(Array.isArray(n.quotes) ? n.quotes : Object.values(n.quotes)).slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
-          <button type="button" class="btn-sec" data-album="${esc(n.room)}" data-title="Album · Game Night #${n.number}">📸 Album della serata${photos !== null ? ` (${photos})` : ''}</button>
-          <button type="button" class="link-btn" data-view="memories">← Tutti i ricordi</button>
+          ${n.winners.length ? `<p>${tr('tv.ng.winner', { names: esc(namesList(n.winners)) })}</p>` : ''}
+          ${Object.keys(titles).length ? `<h2>${tr('tv.ng.awards')}</h2><ul class="at-list">${Object.entries(titles).map(([tt, ns]) => `<li class="at-row at-row--stack"><span class="muted">${esc(tt)}</span><b>${esc(namesList(ns))}</b></li>`).join('')}</ul>` : ''}
+          ${(n.quotes || []).length ? `<h2>${tr('tv.ng.quotes')}</h2><ul class="quote-list">${(Array.isArray(n.quotes) ? n.quotes : Object.values(n.quotes)).slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
+          <button type="button" class="btn-sec" data-album="${esc(n.room)}" data-title="Album · Game Night #${n.number}">📸 ${tr('tv.al.title')}${photos !== null ? ` (${photos})` : ''}</button>
+          <button type="button" class="link-btn" data-view="memories">${tr('tv.ng.allMem')}</button>
         </aside>
       </div>`;
   },
 
-  /** Recap dell'anno, una scheda alla volta (frecce ← →). */
+  /** "Il vostro anno": recap una scheda alla volta (frecce ← →) e immagine da condividere. Solo dati veri. */
   paintWrapped() {
     const years = yearsOf(S.nights);
-    if (!years.length) { $('#atBox').innerHTML = `${this.head('Wrapped')}<div class="empty-board"><p class="empty-title">Il recap arriva con le prime serate</p></div>`; return; }
+    if (!years.length) { $('#atBox').innerHTML = `${this.head(tr('year.title'))}<div class="empty-board"><p class="empty-title">${esc(tr('year.empty'))}</p></div>`; return; }
     const year = years.includes(this.year) ? this.year : years[0];
     const w = wrapped(S.nights, year);
+    const day = (ts) => fmtDateL(Number(ts), { day: 'numeric', month: 'long' });
     const slides = [
-      { k: `Il vostro ${year}`, big: `${w.nights} ${w.nights === 1 ? 'serata' : 'serate'}`, small: `${w.matches} partite, ${w.distinctGames} giochi diversi${w.hours ? `, ${String(w.hours).replace('.', ',')} ore di gioco` : ''}, ${w.players} giocatori.` },
-      w.mostPlayed && { k: 'Il gioco più intavolato', big: w.mostPlayed.name, small: `${w.mostPlayed.matches} partite quest’anno.` },
-      w.loved && { k: 'Il più amato', big: w.loved.name, small: `Media ${fmt(w.loved.avg)}.` },
-      w.longestMatch && { k: 'La partita più lunga', big: w.longestMatch.name, small: `${w.longestMatch.minutes} minuti senza fiatare.` },
-      w.longestNight && { k: 'La serata più lunga', big: `${Math.floor(w.longestNight.minutes / 60)} h ${w.longestNight.minutes % 60} min`, small: new Date(Number(w.longestNight.at)).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }) },
-      w.deadliest && { k: 'Il più letale', big: w.deadliest.name, small: `${w.deadliest.wins} vittorie.` },
-      w.mostPresent && { k: 'Sempre presente', big: w.mostPresent.name, small: `${w.mostPresent.nights} serate su ${w.nights}.` },
-      w.mvp && { k: 'MVP dell’anno', big: w.mvp.name, small: `${w.mvp.mvp} voti MVP.` },
-      w.oracle && { k: 'L’oracolo dell’anno', big: w.oracle.name, small: `Ha indovinato la media ${w.oracle.oracle} volte.` },
-      w.seer && { k: 'Il veggente dell’anno', big: w.seer.name, small: `${w.seer.seer} ${w.seer.seer === 1 ? 'vincitore pronosticato' : 'vincitori pronosticati'}.` },
-      w.critic && { k: 'Il più severo', big: w.critic.name, small: `Media dei voti dati ${fmt(w.critic.sum / w.critic.n)}.` },
-      w.generous && { k: 'Il più generoso', big: w.generous.name, small: `Media dei voti dati ${fmt(w.generous.sum / w.generous.n)}.` },
-      w.bestMonth && { k: 'Il mese più giocato', big: w.bestMonth.name, small: `${w.bestMonth.nights} ${w.bestMonth.nights === 1 ? 'serata' : 'serate'}.` },
-      { k: 'Grazie per aver giocato!', big: S.meta.groupName || 'Il vostro gruppo', small: `Alla prossima serata${S.next?.at ? `: ${new Date(Number(S.next.at)).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}` : ''}.` }
+      { k: tr('year.k.intro', { year: String(year) }), big: tr('year.nights', { n: w.nights }), small: [tr('year.matches', { n: w.matches }), tr('year.games', { n: w.distinctGames }), w.hours ? tr('year.hours', { n: w.hours }) : '', tr('year.players', { n: w.players })].filter(Boolean).join(' · ') + (w.inProgress ? ` (${tr('year.soFar')})` : '') },
+      w.topGames.length > 1 && { k: tr('year.k.top'), list: w.topGames.map((g) => `${g.name} · ${tr('year.matchesShort', { n: g.matches })}${g.avg !== null ? ` · ⭐ ${fmt(g.avg)}` : ''}`) },
+      w.mostPlayed && w.topGames.length <= 1 && { k: tr('year.k.mostPlayed'), big: w.mostPlayed.name, small: tr('year.matches', { n: w.mostPlayed.matches }) },
+      w.loved && { k: tr('year.k.loved'), big: w.loved.name, small: tr('year.avg', { avg: fmt(w.loved.avg) }) },
+      w.newGames && { k: tr('year.k.new'), big: String(w.newGames), small: tr('year.newGames', { n: w.newGames }) },
+      w.longestMatch && { k: tr('year.k.longestMatch'), big: w.longestMatch.name, small: tr('year.minutes', { n: w.longestMatch.minutes }) },
+      w.longestNight && { k: tr('year.k.longestNight'), big: tr('year.hm', { h: Math.floor(w.longestNight.minutes / 60), m: w.longestNight.minutes % 60 }), small: day(w.longestNight.at) },
+      w.deadliest && { k: tr('year.k.deadliest'), big: w.deadliest.name, small: tr('year.wins', { n: w.deadliest.wins }) },
+      w.mostPresent && { k: tr('year.k.present'), big: w.mostPresent.name, small: tr('year.presence', { n: w.mostPresent.nights, total: w.nights }) },
+      w.mvp && { k: tr('year.k.mvp'), big: w.mvp.name, small: tr('year.mvpVotes', { n: w.mvp.mvp }) },
+      w.oracle && { k: tr('year.k.oracle'), big: w.oracle.name, small: tr('year.oracle', { n: w.oracle.oracle }) },
+      w.seer && { k: tr('year.k.seer'), big: w.seer.name, small: tr('year.seer', { n: w.seer.seer }) },
+      w.critic && { k: tr('year.k.critic'), big: w.critic.name, small: tr('year.given', { avg: fmt(w.critic.sum / w.critic.n) }) },
+      w.generous && { k: tr('year.k.generous'), big: w.generous.name, small: tr('year.given', { avg: fmt(w.generous.sum / w.generous.n) }) },
+      w.bestMonth && { k: tr('year.k.month'), big: w.bestMonth.name, small: tr('year.nights', { n: w.bestMonth.nights }) },
+      { k: tr('year.k.thanks'), big: S.meta.groupName || tr('year.yourGroup'), small: S.next?.at ? tr('year.nextOn', { date: day(S.next.at) }) : tr('year.next') }
     ].filter(Boolean);
     const i = Math.max(0, Math.min(this.slide, slides.length - 1));
     this.slide = i;
-    const s = slides[i];
+    const sl = slides[i];
     const colors = ['#FF5A4E', '#2EC4B6', '#7B5CFA', '#FFC93C', '#FF8FB1', '#4D96FF', '#8AC926', '#FF924C'];
     $('#atBox').innerHTML = `
-      ${this.head(`Wrapped ${year}`, this.groupLabel())}
-      ${years.length > 1 ? `<div class="rg-row">${years.map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('')}</div>` : ''}
+      ${this.head(tr('year.titleN', { year: String(year) }), this.groupLabel())}
+      <div class="rg-row">${years.length > 1 ? years.map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('') : ''}
+        <button type="button" class="btn-sec btn-sec--sm" data-yearshare="${year}">📤 <span>${esc(tr('year.share'))}</span></button></div>
+      ${w.nights < 3 ? `<p class="muted small">${esc(tr('year.few'))}</p>` : ''}
       <div class="wrapped">
-        <button type="button" class="wr-nav" data-slide="-1" aria-label="Indietro" ${i === 0 ? 'disabled' : ''}>‹</button>
+        <button type="button" class="wr-nav" data-slide="-1" aria-label="${esc(tr('year.prev'))}" ${i === 0 ? 'disabled' : ''}>‹</button>
         <article class="wr-slide" style="--wc:${colors[i % colors.length]}">
-          <p class="wr-k">${esc(s.k)}</p>
-          <h2 class="wr-big">${esc(s.big)}</h2>
-          <p class="wr-small">${esc(s.small)}</p>
+          <p class="wr-k">${esc(sl.k)}</p>
+          ${sl.list ? `<ol class="wr-list">${sl.list.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : `<h2 class="wr-big">${esc(sl.big)}</h2><p class="wr-small">${esc(sl.small)}</p>`}
           <p class="wr-dots">${slides.map((_, j) => `<span class="${j === i ? 'on' : ''}"></span>`).join('')}</p>
         </article>
-        <button type="button" class="wr-nav" data-slide="1" aria-label="Avanti" ${i === slides.length - 1 ? 'disabled' : ''}>›</button>
+        <button type="button" class="wr-nav" data-slide="1" aria-label="${esc(tr('year.next'))}" ${i === slides.length - 1 ? 'disabled' : ''}>›</button>
       </div>`;
+  },
+
+  async shareYear(year, btn) {
+    const w = wrapped(S.nights, year);
+    if (!w) return;
+    if (btn) btn.disabled = true;
+    try {
+      const blob = await renderYearImage(w, { group: S.meta?.groupName || '', emblem: S.identity?.emblem || '', color: S.identity?.color || undefined });
+      await shareOrDownload(blob, `gamenight_anno_${year}.png`, tr('year.shareText', { year: String(year) }));
+    } catch (err) { toast(explainError(err), 'error'); } finally { if (btn) btn.disabled = false; }
   },
 
   /** Calendario: prossima serata con presenze, serate per mese, ricorrenze. */
@@ -6390,20 +6635,20 @@ SCREENS.alltime = {
     const years = yearsOf(S.nights);
     const year = this.year || new Date().getFullYear();
     const months = nightsByMonth(S.nights, year);
-    const MONTHS = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    const MONTHS = Array.from({ length: 12 }, (_, i) => { const m = fmtDateL(new Date(2020, i, 1), { month: 'short' }).replace('.', ''); return m.charAt(0).toUpperCase() + m.slice(1); });
     const now = new Date();
     const thisMonth = nightsByMonth(S.nights, now.getFullYear())[now.getMonth()].length;
     const otd = onThisDay(S.nights);
     $('#atBox').innerHTML = `
-      ${this.head('Calendario', this.groupLabel())}
+      ${this.head(tr('tv.at.tab.calendar'), this.groupLabel())}
       <div class="cal-body">
         ${nextNightHTML(true)}
         <section class="card stat-card">
-          <div class="cal-head"><h2>Serate del ${year}</h2>${[...new Set([now.getFullYear(), ...years])].sort((a, b) => b - a).map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('')}</div>
+          <div class="cal-head"><h2>${tr('tv.cal.title', { year: String(year) })}</h2>${[...new Set([now.getFullYear(), ...years])].sort((a, b) => b - a).map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('')}</div>
           <div class="cal-grid">${months.map((m, i) => `<div class="cal-month ${m.length ? 'has' : ''}"><b>${MONTHS[i]}</b><span class="cal-dots">${m.map((n) => `<button type="button" class="cal-dot" data-night="${esc(n.room)}" title="Game Night #${n.number}, ${new Date(Number(n.at)).getDate()} ${MONTHS[i]}">${new Date(Number(n.at)).getDate()}</button>`).join('')}</span></div>`).join('')}</div>
-          <p class="muted">Questo mese: <b>${thisMonth}</b> ${thisMonth === 1 ? 'serata' : 'serate'} · in tutto il ${year}: <b>${months.flat().length}</b>.</p>
-          ${otd?.anniversary ? `<p>🎂 ${otd.anniversary.years} ${otd.anniversary.years === 1 ? 'anno' : 'anni'} dalla prima serata!</p>` : ''}
-          ${otd?.yearAgo ? `<p>📸 Un anno fa giocavate a <b>${esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', '))}</b>.</p>` : ''}
+          <p class="muted">${tr('tv.cal.month', { n: thisMonth, year: String(year), total: String(months.flat().length) })}</p>
+          ${otd?.anniversary ? `<p>${tr('tv.cal.anniv', { years: tr('tv.cal.years', { n: otd.anniversary.years }) })}</p>` : ''}
+          ${otd?.yearAgo ? `<p>${tr('tv.cal.yearAgo', { games: esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', ')) })}</p>` : ''}
         </section>
       </div>`;
   }
