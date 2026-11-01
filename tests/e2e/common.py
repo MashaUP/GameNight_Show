@@ -7,12 +7,17 @@ BASE = os.environ.get('GN_BASE', 'http://localhost:8765')
 try:
     from playwright.async_api import Browser as _Browser
     _nc, _np = _Browser.new_context, _Browser.new_page
+    _FF = os.environ.get('GN_BROWSER', '') == 'firefox'
+    def _opts(kw):
+        kw.setdefault('locale', 'it-IT')
+        # Firefox non conosce is_mobile (Playwright: "not supported in Firefox"): resta il tocco e la finestra stretta
+        if _FF and kw.pop('is_mobile', False):
+            kw.setdefault('has_touch', True)
+        return kw
     async def _new_context(self, *a, **kw):
-        kw.setdefault('locale', 'it-IT')
-        return await _nc(self, *a, **kw)
+        return await _nc(self, *a, **_opts(kw))
     async def _new_page(self, *a, **kw):
-        kw.setdefault('locale', 'it-IT')
-        return await _np(self, *a, **kw)
+        return await _np(self, *a, **_opts(kw))
     _Browser.new_context, _Browser.new_page = _new_context, _new_page
 except Exception:  # Playwright non installato: i test non partono comunque
     pass
@@ -31,9 +36,13 @@ errs = []
 NO_TOURS = True
 
 
+# Errori di rete attesi (offline simulato, servizi finti): il testo cambia da browser a browser
+_NET = ('Failed to fetch', 'ERR_INTERNET', 'NetworkError when attempting to fetch', 'Load failed', 'ERR_NAME_NOT_RESOLVED')
+
+
 def watch(pg, n):
     pg.on('pageerror', lambda e: errs.append(f'[{n}] {e}'))
-    pg.on('console', lambda m: errs.append(f'[{n}] {m.text}') if m.type == 'error' and 'Failed to fetch' not in m.text and 'ERR_INTERNET' not in m.text else None)
+    pg.on('console', lambda m: errs.append(f'[{n}] {m.text}') if m.type == 'error' and not any(x in m.text for x in _NET) else None)
     pg.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
 
 

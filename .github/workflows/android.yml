@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Solo release con un tag di versione (v1.5.0, v1.5), pubblicate dal proprietario del repository.
     if: startsWith(github.event.release.tag_name, 'v') && github.actor == github.repository_owner
     steps:
@@ -65,7 +65,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      # L'Android SDK è già installato sui server di GitHub (ubuntu-latest): basta dirlo a Gradle.
+      # L'Android SDK è già installato sui server di GitHub (ubuntu-24.04): basta dirlo a Gradle.
       - name: Android SDK
         run: |
           sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"

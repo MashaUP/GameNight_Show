@@ -44,7 +44,8 @@
 - `sounds.js`: bus per voce, segnali e atmosfere; abbassamento con più motivi. `fx.js`: quantità di effetti per scena. `atmo.js`: scena "pack".
 - Regole: `nights/$room/games/*` e `fixes` (creatore), `groupOrgKeys`, `groupOrgKeyClaims`, `groups/$gid/organizers`, `templates` per gli organizzatori, `armadi/$aid/proposals`, `challenges`, `next/board`, `next/sugg`, `identity/theme`, `privacy/photosDays`, eliminazione delle foto da parte di proprietario/admin, `info/keepLogDays`, `meta/chaosOff|chaosWheel|maxMinutes|maxGames`, `templates/*/s/maxMinutes|maxGames`.
 - Android: plugin `@capacitor/local-notifications` 8.3.1 e permesso `POST_NOTIFICATIONS`.
-- CI: lavoro "altri-browser" (Firefox e WebKit, non bloccante).
+- CI: prove su Firefox e WebKit in un controllo a parte, da avviare a mano (Actions › "Altri browser").
+- CI: server di GitHub fissati su Ubuntu 24.04 e Playwright 1.63 (con "ubuntu-latest" passato a Ubuntu 26 l'installazione di Playwright 1.56 falliva).
 - **Regia divisa in moduli** (idea 76): `tv-screens.js` (tra un gioco e l'altro, classifica, premiazione, sondaggio, Di sempre) e `tv-panels.js` (armadio della serata, esportazioni, modelli, scheda del gioco, album); `host.js` da 7.400 a 5.400 righe.
 - **Cronologia del gruppo** (Di sempre › Analisi › Cronologia): prima serata, traguardi, nuovi arrivati, giochi ripresi dopo mesi, record e cambi del più amato.
 - Ritmo del reveal per scena (lento, normale, veloce); pacchetti di atmosfera con immagine di sfondo; **domande per modalità** anche nelle analisi (Di sempre › Analisi › Gusti); collezione BGG completata subito con giocatori, durata e peso.

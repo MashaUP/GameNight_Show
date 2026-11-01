@@ -20,7 +20,7 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [ ] **Webhook verso altri servizi (idea 53).** C'è Discord (webhook del canale, dal browser della TV). Mandare eventi a servizi qualsiasi (Telegram, Zapier…) vorrebbe dire custodire i loro segreti: serve un server come il proxy BGG (`bgg-proxy/`, Cloudflare Worker), da aggiungere con una rotta `/hook` e i segreti con `wrangler secret`.
 - [ ] **Esportazione verso altri tracker (idea 55).** C'è il CSV "una riga per giocatore" con l'id di BoardGameGeek (formato in `docs/DATI.md`). Un formato preciso per un'app (es. BG Stats) va aggiunto solo quando quell'app ne pubblica uno documentato.
 - [ ] **Voti segreti anche per le regole del database (opportunità D).** Oggi prima del reveal i voti sono nascosti dall'interfaccia, ma `rooms/<codice>/votes` è leggibile da chi è collegato e conosce il codice. Per nasconderli davvero servirebbe un nodo leggibile solo dalla regia fino al reveal (e cambiare il conteggio "ha votato / manca" sui telefoni): cambiamento grande, da fare in una versione dedicata.
-- [ ] **Prove su Firefox e Safari (idea 75).** Il lavoro "altri-browser" su GitHub (`.github/workflows/verifica.yml`, Firefox e WebKit, non bloccante) è pronto ma non è mai stato eseguito: guardare il primo risultato nella scheda Actions e correggere le differenze.
+- [ ] **Prove su Firefox e Safari (idea 75).** Il controllo "Altri browser" su GitHub (`.github/workflows/altri-browser.yml`, Firefox e WebKit) è pronto ma non è mai stato eseguito: avviarlo a mano (Actions › Altri browser › Run workflow), guardare il risultato e correggere le differenze. Non blocca la "Verifica".
 
 ## 🔌 Da configurare (fuori dal codice)
 

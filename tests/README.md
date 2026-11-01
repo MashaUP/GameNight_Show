@@ -1,6 +1,6 @@
 # Prove automatiche di GameNight Show
 
-Tutte gratuite ed eseguite da GitHub a ogni caricamento (workflow **Verifica**, scheda *Actions*). `cd tests && npm test` esegue insieme `check.mjs`, il controllo del codice con ESLint (`npm run lint`: nomi non definiti, chiavi doppie…), `rules.test.js` e le prove unitarie (`links`, `nightclock`, `features`, `pdf`).
+Tutte gratuite ed eseguite da GitHub a ogni caricamento (workflow **Verifica**, scheda *Actions*; le prove su Firefox e WebKit sono nel workflow **Altri browser**, da avviare a mano). `cd tests && npm test` esegue insieme `check.mjs`, il controllo del codice con ESLint (`npm run lint`: nomi non definiti, chiavi doppie…), `rules.test.js` e le prove unitarie (`links`, `nightclock`, `features`, `pdf`).
 
 | Prova | Cosa controlla | Comando (dalla radice del progetto) |
 |---|---|---|
@@ -23,7 +23,8 @@ cd tests && npm install && cd ..
 python3 -m pip install playwright pillow
 python3 -m playwright install chromium
 python3 tests/e2e/run.py            # tutte (circa 30 minuti)
-python3 tests/e2e/run.py --ci       # la selezione di GitHub (meno di 10 minuti)
+python3 tests/e2e/run.py --ci       # la selezione di GitHub (circa 12 minuti)
+GN_BROWSER=firefox python3 tests/e2e/run.py i18n hub   # le stesse prove su Firefox (o webkit)
 python3 tests/e2e/run.py hub i18n   # solo quelle indicate
 ```
 
