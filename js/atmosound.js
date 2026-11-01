@@ -4,7 +4,7 @@
 // stelle: accordo lento e morbido · nebbia: vento. Festa e palcoscenico hanno già la musica.
 // Facoltativo (spento di base), segue il volume della musica, il silenzioso e la Safe Mode, e si
 // abbassa quando la musica suona. Usa pochi nodi audio e un solo timer per gli eventi brevi.
-import { musicOut, isMuted } from './sounds.js';
+import { atmoOut, isMuted } from './sounds.js';
 import { isSafeMode } from './safe.js';
 
 export const SOUND_SCENES = ['pioggia', 'candele', 'neon', 'stelle', 'nebbia'];
@@ -135,7 +135,7 @@ export const AtmoSound = {
     if (want === current) { this.level(level); return; }
     this.stop();
     if (!want) return;
-    const bus = musicOut();
+    const bus = atmoOut();
     if (!bus) return;
     ctx = bus.context;
     out = ctx.createGain();

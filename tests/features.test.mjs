@@ -270,3 +270,100 @@ test('soundboard personalizzata: elenco pubblico pulito, chiavi e controlli dei 
   assert.equal(checkFile({ type: 'audio/ogg', size: CSFX_MAX_BYTES + 1 }), 'size');
   assert.equal(checkFile({ type: 'audio/wav', size: 1000 }), '');
 });
+
+test('serate: solo il creatore (o il suo profilo) le elimina; riassunto con il creatore', async () => {
+  const { isNightCreator, nightDeletePaths } = await import('../js/nights.js');
+  const { nightSummary } = await import('../js/stats.js');
+  assert.ok(isNightCreator({ creatorUid: 'a', hostUid: 'b' }, 'a'));
+  assert.ok(!isNightCreator({ creatorUid: 'a', hostUid: 'b' }, 'b'), 'chi ha la regia non è il creatore');
+  assert.ok(isNightCreator({ creatorUid: 'a', creatorPid: 'PERS01' }, 'tablet', 'PERS01'), 'altro dispositivo dello stesso profilo');
+  assert.ok(!isNightCreator({ creatorUid: 'a', creatorPid: 'PERS01' }, 'x', 'PERS02'));
+  assert.ok(isNightCreator({ hostUid: 'old' }, 'old'), 'stanze di prima della 1.11: la TV che le guida');
+  assert.ok(!isNightCreator({ at: 1, games: {} }, 'old'), 'riassunti vecchi senza creatore: nessuno');
+  assert.deepEqual(Object.keys(nightDeletePaths('ABCD', 'GRP123')).sort(), ['groups/GRP123/nights/ABCD', 'groups/GRP123/photos/ABCD', 'groups/GRP123/rooms/ABCD', 'rooms/ABCD']);
+  assert.deepEqual(Object.keys(nightDeletePaths('ABCD', 'GRP123', { roomExists: false })).includes('rooms/ABCD'), false);
+  assert.throws(() => nightDeletePaths('../x', 'GRP123'));
+  const s = nightSummary([], {}, { createdAt: 1, creatorUid: 'a', creatorPid: 'PERS01' });
+  assert.equal(s.creatorUid, 'a');
+  assert.equal(s.creatorPid, 'PERS01');
+  assert.equal('creatorUid' in nightSummary([], {}, { createdAt: 1 }), false, 'stanze vecchie: niente campo vuoto');
+});
+
+test('codice a barre: cifra di controllo, UPC/EAN uguali, abbinamenti ricordati e limitati', async () => {
+  const { validBarcode, barcodeKey, cleanBarcode, BarcodeMap } = await import('../js/barcode.js');
+  assert.ok(validBarcode('4006381333931'), 'EAN-13 valido');
+  assert.ok(!validBarcode('4006381333932'), 'cifra di controllo sbagliata');
+  assert.ok(validBarcode('036000291452'), 'UPC-A valido');
+  assert.ok(validBarcode('96385074'), 'EAN-8 valido');
+  assert.ok(!validBarcode('12345'), 'troppo corto');
+  assert.ok(!validBarcode('abc'));
+  assert.equal(cleanBarcode(' 4006-381 333931 '), '4006381333931');
+  assert.equal(barcodeKey('036000291452'), '0036000291452', 'UPC-A e EAN-13 con lo 0: stessa chiave');
+  BarcodeMap.clear();
+  BarcodeMap.set('036000291452', { bgg: 230802, name: 'Azul' });
+  assert.deepEqual(BarcodeMap.get('0036000291452').bgg, 230802);
+  BarcodeMap.set('4006381333932', { bgg: 1, name: 'x' });
+  assert.equal(BarcodeMap.get('4006381333932'), null, 'codici non validi non si salvano');
+  BarcodeMap.set('4006381333931', { bgg: 'abc', name: 'x' });
+  assert.equal(BarcodeMap.get('4006381333931'), null, 'numero di BGG non valido');
+  for (let i = 0; i < 320; i++) {
+    const base = String(400000000000 + i);
+    let sum = 0; [...base].forEach((d, k) => { sum += Number(d) * (k % 2 ? 3 : 1); });
+    BarcodeMap.set(base + ((10 - (sum % 10)) % 10), { bgg: i + 1, name: `g${i}` });
+  }
+  assert.ok(Object.keys(BarcodeMap.all()).length <= 300, 'la cache non cresce all’infinito');
+  BarcodeMap.clear();
+});
+
+test('modelli di serata: impostazioni pulite, patch, differenze, scaletta da una serata passata', async () => {
+  const { cleanSettings, settingsFromMeta, settingsPatch, settingsDiff, makeTemplate, cleanTemplate, planFromNight, templateList } = await import('../js/templates.js');
+  const meta = { voting: { sempl: false, custom: [{ label: 'Rigiocheresti?' }, { label: '<b>x</b>' }, { label: 'troppo' }] }, chaos: true, voteSeconds: 90, voteAuto: true, atmosphere: 'stelle', atmoLevel: 'soft', maxPlayers: 8, hostUid: 'tv', groupId: 'GRP123', creatorUid: 'tv' };
+  const s = settingsFromMeta(meta, 'lounge');
+  assert.deepEqual(s, { voting: { sempl: false, custom: [{ label: 'Rigiocheresti?' }, { label: 'bx/b' }] }, chaos: true, voteSeconds: 90, voteAuto: true, atmosphere: 'stelle', atmoLevel: 'soft', maxPlayers: 8, music: 'lounge' });
+  assert.ok(!('hostUid' in s) && !('creatorUid' in s), 'mai codici, uid o creatori nel modello');
+  assert.deepEqual(cleanSettings({ voteSeconds: 7, atmosphere: '<script>', maxPlayers: 99, music: 'rock' }), {}, 'valori non ammessi scartati');
+  const { patch, music } = settingsPatch({ chaos: true, maxPlayers: 4 }, { activePlayers: 6 });
+  assert.equal(patch.chaos, true);
+  assert.equal(patch.voting, null, 'le chiavi assenti tornano al valore di base');
+  assert.equal(patch.maxPlayers, 6, 'i posti non scendono sotto chi è già entrato');
+  assert.equal(music, null);
+  const diff = settingsDiff({ chaos: true }, 'auto', { chaos: true, voteSeconds: 60 });
+  assert.deepEqual(diff.map((d) => d.key).sort(), ['music', 'voteSeconds']);
+  assert.throws(() => makeTemplate('  ', {}), 'serve un nome');
+  const tpl = makeTemplate('Giovedì <classico>', s, 5);
+  assert.equal(tpl.name, 'Giovedì classico');
+  assert.equal(cleanTemplate({ name: '', s: {} }), null);
+  assert.equal(templateList({ a: tpl, 'bad id!': tpl, b: { name: 'Vecchio', at: 1, s: {} } }).map((x) => x.id).join(','), 'a,b', 'ordinati e con id validi');
+  const night = { games: { x1: { name: 'Azul', order: 2 }, x2: { name: 'Città perdute', order: 1 }, x3: { name: 'Non ce l’ho', order: 3 } } };
+  const lib = { g1: { name: 'azul' }, g2: { name: 'Citta Perdute' } };
+  assert.deepEqual(planFromNight(night, lib), { ids: ['g2', 'g1'], missing: ['Non ce l’ho'] }, 'nell’ordine giocato, accenti e maiuscole non contano');
+});
+
+test('ospiti: votano per i giochi, ma nel gruppo non resta niente di loro', async () => {
+  const { nightSummary, buildBoard } = await import('../js/stats.js');
+  const players = { a: { name: 'Anna', style: 's', seed: 'a', color: '#FF5A4E' }, g: { name: 'Gino', style: 's', seed: 'g', color: '#FF5A4E', guest: true } };
+  const games = { g1: { name: 'Azul', status: 'revealed', order: 1, winners: { g: true } } };
+  const votes = { g1: { a: { overall: 8, mvp: 'g' }, g: { overall: 6, mvp: 'a', comment: 'bello' } } };
+  const s = nightSummary(buildBoard(games, votes), players, { createdAt: 1 });
+  assert.equal(s.games.g1.n, 2, 'il voto dell’ospite conta nella media del gioco');
+  assert.equal(s.games.g1.sum, 14);
+  assert.deepEqual(s.names, ['Anna'], 'il nome dell’ospite non si salva');
+  assert.equal(Object.keys(s.people).length, 1);
+  assert.equal(s.quotes.length, 0, 'niente commenti firmati dall’ospite');
+  assert.deepEqual(s.games.g1.w, [], 'la vittoria dell’ospite non va nelle statistiche personali');
+  assert.equal(s.guests, 1, 'resta solo quanti erano');
+});
+
+test('scaletta: ribilanciamento proposto solo in ritardo, prima i meno desiderati', async () => {
+  const { rebalance } = await import('../js/prep.js');
+  const now = 1_000_000_000_000;
+  const rem = [{ id: 'a', minutes: 60 }, { id: 'b', minutes: 30 }, { id: 'c', minutes: 20 }];
+  assert.equal(rebalance(rem, { endAt: now + 200 * 60000, now }), null, 'nei tempi: nessuna proposta');
+  const r = rebalance(rem, { endAt: now + 60 * 60000, now, wishes: { a: 3 } });
+  assert.ok(r.over > 10);
+  assert.ok(!r.drop.includes('a') || r.drop.length === 2, 'il più desiderato resta, se possibile');
+  assert.equal(r.drop[0], 'b', 'prima il meno desiderato e più lungo');
+  assert.ok(r.drop.length < rem.length, 'non svuota mai tutta la scaletta');
+  assert.ok(r.newEnd < now + (60 + 30 + 20 + 15) * 60000);
+  assert.equal(rebalance([], { endAt: now }), null);
+});

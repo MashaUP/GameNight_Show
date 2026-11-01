@@ -10,6 +10,8 @@ import arm from './en-arm.js';
 import feat from './en-feat.js';
 import misc from './en-misc.js';
 import tvx from './en-tvx.js';
+import mem from './en-mem.js';
+import v2 from './en-v2.js';
 
 export default {
   // ---------------------------------------------------------------- common
@@ -982,4 +984,6 @@ export default {
   ...feat,
   ...misc,
   ...tvx,
+  ...mem,
+  ...v2,
 };

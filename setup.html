@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="theme-color" content="#FFF4DE">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="gnr-title" content="setup.pageTitle">
+  <title>Configura la tua copia – GameNight Show</title>
+  <link rel="icon" href="assets/favicon-48.png" type="image/png" sizes="48x48">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/ui.css">
+</head>
+<body class="is-phone ui-body ds-page">
+  <main class="phone setup-page" id="app">
+    <header class="st-head">
+      <a class="btn-sec btn-sec--sm ph-back" href="index.html" aria-label="Torna alla home" data-i18n-attr="aria-label:selftest.backAria">← <span data-i18n="selftest.back">Home</span></a>
+      <h1 class="ph-title" data-i18n="setup.title">Configura la tua copia</h1>
+      <p class="ph-lead" data-i18n="setup.lead">Incolla qui la configurazione web del tuo progetto Firebase: controllo che funzioni e preparo il file config.js da mettere nel repository.</p>
+    </header>
+    <section class="card ph-card">
+      <label class="field-label" for="cfgIn" data-i18n="setup.paste">Configurazione di Firebase (il blocco firebaseConfig)</label>
+      <textarea class="input" id="cfgIn" rows="9" spellcheck="false" autocomplete="off"></textarea>
+      <p class="form-error" id="cfgErr" role="alert"></p>
+      <button type="button" class="btn btn-block" id="cfgCheck" data-i18n="setup.check">Controlla</button>
+    </section>
+    <section class="card ph-card" id="cfgResult" hidden aria-live="polite"></section>
+    <p class="muted small" data-i18n="setup.safe">Niente viene salvato o inviato altrove: i controlli parlano solo con il tuo progetto Firebase. Le chiavi web di Firebase non sono password.</p>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/setup.js"></script>
+</body>
+</html>

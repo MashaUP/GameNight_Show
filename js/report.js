@@ -1,8 +1,9 @@
 // Resoconto stampabile della serata: nel browser si salva in PDF dalla finestra di stampa;
 // nell'app Android (che non ha la finestra di stampa) il PDF vero si costruisce qui (pdfdoc.js).
-import { esc, fmt, downloadFile, saveInApp, toast } from './util.js';
+import { esc, fmt, downloadFile, saveInApp, toast, exportName } from './util.js';
 import { isApp, nativeOpen } from './native.js';
-import { reportPDF, labelsPDF } from './pdfdoc.js';
+// 2.1 (idea 79): il generatore di PDF si carica solo quando serve (prima pesava su ogni pagina)
+const pdfdoc = () => import('./pdfdoc.js');
 import { t, lang, fmtList } from './i18n.js';
 
 function names(list) {
@@ -13,13 +14,14 @@ function names(list) {
 
 /**
  * d: { group, emblem, color, date, number, facts, rows: [{ rank, name, avg, n, crit: {label: value}, mvp, winners, minutes, audience, consensus }],
- *      awards: [{ title, who, value }], achievements: [{ who, title }], quotes: [{ name, game, text }], photos: [{ data, caption, by }], next }
+ *      awards: [{ title, who, value }], achievements: [{ who, title }], quotes: [{ name, game, text }], photos: [{ data, caption, by }], next,
+ *      story: [frase] (1.12: racconto della serata, facoltativo) }
  */
 export function reportHTML(d) {
   const font = (f) => new URL(`assets/fonts/${f}`, location.href).href;
   const color = /^#[0-9A-Fa-f]{6}$/.test(d.color || '') ? d.color : '#FFC93C';
   const critHeads = [...new Set(d.rows.flatMap((r) => Object.keys(r.crit || {})))];
-  return `<!doctype html><html lang="${lang()}"><head><meta charset="utf-8"><title>${esc(`GameNight Show · ${d.group || t('report.pdf.night')} · ${d.date}`)}</title>
+  return `<!doctype html><html lang="${lang()}"><head><meta charset="utf-8"><title>${esc(reportFileName(d, 'pdf', false).replace(/\.pdf$/, ''))}</title>
 <style>
 @font-face { font-family: 'Fredoka'; src: url('${font('fredoka-600.woff2')}') format('woff2'); }
 @font-face { font-family: 'Nunito'; src: url('${font('nunito.woff2')}') format('woff2'); font-weight: 200 1000; }
@@ -45,6 +47,7 @@ tr.first td { background: #FFF3C4; }
 .award { border: 1.2pt solid #1F1A3D; border-radius: 6pt; padding: 5pt 8pt; break-inside: avoid; }
 .award b { display: block; font-size: 11pt; }
 .quotes { margin: 0; padding: 0; list-style: none; display: grid; gap: 4pt; }
+.story p { margin: 0; line-height: 1.45; }
 .quotes li { border-left: 3pt solid ${color}; padding-left: 7pt; font-style: italic; }
 .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8pt; }
 .photos figure { margin: 0; border: 1.2pt solid #1F1A3D; padding: 4pt; break-inside: avoid; }
@@ -59,6 +62,7 @@ section { break-inside: avoid-page; }
     <div class="sub">${esc(d.date)}${d.facts ? ` · ${esc(d.facts)}` : ''}</div></div>
   ${d.number ? `<div class="num">Game Night #${d.number}</div>` : ''}
 </div>
+${d.story?.length ? `<section class="story"><h2>${esc(t('story.title'))}</h2><p>${d.story.map(esc).join(' ')}</p></section>` : ''}
 <section><h2>${esc(t('report.pdf.board'))}</h2>
 <table><thead><tr><th>#</th><th>${esc(t('report.pdf.colGame'))}</th><th class="r">${esc(t('report.pdf.colAvg'))}</th>${critHeads.map((c) => `<th class="r">${esc(c)}</th>`).join('')}<th class="r">${esc(t('report.pdf.colVotes'))}</th><th>MVP</th><th>${esc(t('report.pdf.colWinners'))}</th><th class="r">${esc(t('report.pdf.colTime'))}</th></tr></thead>
 <tbody>${d.rows.map((r, i) => `<tr class="${i === 0 ? 'first' : ''}"><td>${r.rank}</td><td><b>${esc(r.name)}</b>${r.audience !== null && r.audience !== undefined ? `<div class="small">${esc(t('report.pdf.audience', { avg: fmt(r.audience) }))}</div>` : ''}${r.consensus !== null && r.consensus !== undefined ? `<div class="small">${esc(t('report.pdf.consensus', { n: r.consensus }))}</div>` : ''}</td>
@@ -71,7 +75,8 @@ ${d.photos.length ? `<section><h2>${esc(t('report.pdf.album'))}</h2><div class="
 </body></html>`;
 }
 
-export const reportFileName = (ext = 'pdf') => `GameNight_resoconto_${new Date().toISOString().slice(0, 10)}.${ext}`;
+/** Nome del resoconto: GameNight_<gruppo>_<data della serata>_Resoconto.pdf (2.0). */
+export const reportFileName = (d, ext = 'pdf', unique = true) => exportName({ group: d?.group || '', at: d?.at, kind: t('exp.k.report'), ext, unique });
 
 /**
  * Esporta il resoconto d (stesso oggetto di reportHTML).
@@ -82,8 +87,8 @@ export async function exportReport(d) {
   if (!isApp()) return printReport(reportHTML(d)) ? 'print' : 'error';
   toast(t('report.pdf.building'));
   try {
-    const blob = await reportPDF(d);
-    const name = reportFileName('pdf');
+    const blob = await (await pdfdoc()).reportPDF(d);
+    const name = reportFileName(d, 'pdf');
     const r = await saveInApp(blob, name);
     if (r === 'saved') nativeOpen(blob, name, 'application/pdf').catch(() => {});
     return 'pdf';
@@ -101,8 +106,8 @@ export async function exportReport(d) {
 export async function exportLabels(html, data) {
   if (!isApp() || !data) return printReport(html) ? 'print' : 'error';
   try {
-    const blob = labelsPDF(data);
-    const name = `GameNight_etichette_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const blob = (await pdfdoc()).labelsPDF(data);
+    const name = exportName({ group: data.heading || '', kind: t('exp.k.labels'), ext: 'pdf' });
     const r = await saveInApp(blob, name);
     if (r === 'saved') nativeOpen(blob, name, 'application/pdf').catch(() => {});
     return 'pdf';
@@ -117,7 +122,7 @@ export async function exportLabels(html, data) {
 export function printReport(html) {
   // Nell'app Android non c'è la finestra di stampa: chi ha i dati usa exportReport (PDF vero);
   // qui resta la pagina HTML come ripiego.
-  if (isApp()) { downloadFile(reportFileName('html'), html, 'text/html'); return null; }
+  if (isApp()) { downloadFile(exportName({ kind: t('exp.k.report'), ext: 'html' }), html, 'text/html'); return null; }
   document.getElementById('reportFrame')?.remove();
   const frame = document.createElement('iframe');
   frame.id = 'reportFrame';

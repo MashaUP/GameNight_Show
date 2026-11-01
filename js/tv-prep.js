@@ -2,9 +2,10 @@
 import { $, esc, activePlayers, nameKey, libFits, toast, ICONS, qrSVG, gameImageHTML, safeColor } from './util.js';
 import { avatarHTML } from './avatars.js';
 import { personKey } from './stats.js';
-import { tableGames, wishCounts, foodList, arrivals, buildPlan, planTimes, gameMinutes, hhmm } from './prep.js';
+import { tableGames, wishCounts, foodList, arrivals, buildPlan, planTimes, gameMinutes, hhmm, rebalance } from './prep.js';
 import { ding, pop } from './sounds.js';
 import { t } from './i18n.js';
+import { houseFor } from './traditions.js';
 
 let C = null;
 export function bindPrep(ctx) { C = ctx; }
@@ -34,8 +35,29 @@ export function poolIds() {
 export function wishes() { return wishCounts(S().wish); }
 
 /** Riquadro "pre-partita" della lobby: arrivi, giochi sul tavolo, desideri, cibo, scaletta. */
+/**
+ * Checklist "Pronti?" della lobby (2.1, idea 30): cosa è pronto e cosa manca, in una riga sola.
+ * Solo indicazioni: nessuna voce blocca l'inizio della serata.
+ */
+export function readyHTML() {
+  const m = S().meta || {};
+  const lib = S().library || {};
+  const plan = planList();
+  const withRules = plan.filter((p) => lib[p.id]?.manual || lib[p.id]?.rules).length;
+  const ps = Object.values(S().players || {}).filter((p) => p?.name && !p.away).length;
+  const items = [
+    [Boolean(m.armadioId), t('prep.ck.armadio'), m.armadioName || ''],
+    [plan.length > 0, t('prep.ck.plan'), plan.length ? t('prep.ck.planN', { n: plan.length }) : ''],
+    [plan.length > 0 && withRules === plan.length, t('prep.ck.rules'), plan.length ? `${withRules}/${plan.length}` : ''],
+    [Boolean(m.voteSeconds), t('prep.ck.timer'), m.voteSeconds ? `${m.voteSeconds}″` : ''],
+    [Boolean(m.maxMinutes || m.maxGames), t('prep.ck.limits'), [m.maxGames ? t('lim.vGames', { n: m.maxGames }) : '', m.maxMinutes ? t('lim.vMin', { n: m.maxMinutes }) : ''].filter(Boolean).join(' · ')],
+    [ps >= 2, t('prep.ck.players'), String(ps)]
+  ];
+  return `<div class="prep-block prep-ready"><b>${esc(t('prep.ck.title', { n: items.filter((x) => x[0]).length, all: items.length }))}</b><ul class="ready-list">${items.map(([ok, label, x]) => `<li class="${ok ? 'is-ok' : 'is-todo'}"><span aria-hidden="true">${ok ? '✅' : '⬜'}</span> ${esc(label)}${x ? ` <small>${esc(x)}</small>` : ''}<span class="sr-only">${esc(ok ? t('prep.ck.ok') : t('prep.ck.todo'))}</span></li>`).join('')}</ul></div>`;
+}
+
 export function prepHTML() {
-  if (!S().meta?.groupId) return '';
+  if (!S().meta?.groupId) return readyHTML();
   const lib = S().library || {};
   const table = onTable();
   const w = wishes();
@@ -54,7 +76,7 @@ export function prepHTML() {
   const top = Object.entries(w).filter(([id]) => lib[id] && !table[id]).sort((a, b) => b[1] - a[1]).slice(0, 3);
   if (top.length) blocks.push(`<div class="prep-block"><b>${t('prep.wished')}</b><span>${top.map(([id, n]) => `${esc(lib[id].name)} (${n})`).join(' · ')}</span></div>`);
   if (food.length) blocks.push(`<div class="prep-block"><b>${t('prep.food')}</b><span>${food.map((f) => `${esc(f.name)}: ${esc(f.food)}`).join(' · ')}</span></div>`);
-  return `${blocks.join('')}<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${t(S().plan?.items?.length ? 'prep.plan.open' : 'prep.plan.prepare')}</span></button>`;
+  return `${readyHTML()}${blocks.join('')}<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${t(S().plan?.items?.length ? 'prep.plan.open' : 'prep.plan.prepare')}</span></button>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,8 +167,14 @@ export const PlanPanel = {
     const lib = S().library || {};
     const w = wishes();
     const table = onTable();
-    const list = planTimes(planList(), Date.now());
-    const total = list.reduce((a, p) => a + p.minutes + 5, 0);
+    // Orari solo dei giochi che restano (quelli già giocati non spostano più la fine)
+    const all = planList();
+    const left = planTimes(all.filter((p) => !played.has(nameKey(lib[p.id].name))), Date.now());
+    const startOf = Object.fromEntries(left.map((p) => [p.id, p.start]));
+    const list = all.map((p) => ({ ...p, start: startOf[p.id] || 0 }));
+    const total = left.reduce((a, p) => a + p.minutes + 5, 0);
+    const endAt = Number(S().plan?.at) && Number(S().plan?.minutes) ? Number(S().plan.at) + Number(S().plan.minutes) * 60000 : 0;
+    const rb = rebalance(left, { endAt, wishes: w });
     box.innerHTML = list.length ? list.map((p, i) => {
       const it = lib[p.id];
       const done = played.has(nameKey(it.name));
@@ -155,7 +183,10 @@ export const PlanPanel = {
         <span class="plan-name"><b>${esc(it.name)}</b><small>${p.minutes} min${w[p.id] ? ` · ⭐ ${w[p.id]}` : ''}${table[p.id]?.length ? ` · ${t('prep.plan.broughtBy', { names: esc(table[p.id].join(', ')) })}` : ''}</small></span>
         <span class="plan-tools"><button type="button" class="icon-btn" data-plmove="-1" data-i="${i}" aria-label="${t('prep.plan.up')}">▲</button><button type="button" class="icon-btn" data-plmove="1" data-i="${i}" aria-label="${t('prep.plan.down')}">▼</button><button type="button" class="icon-btn" data-pldel="${i}" aria-label="${t('prep.plan.remove')}">${ICONS.x}</button>
         ${done ? '' : `<button type="button" class="btn-sec btn-sec--sm" data-plan-use="${esc(p.id)}">${t('prep.plan.play')}</button>`}</span></li>`;
-    }).join('') + `<li class="plan-total muted">${t('prep.plan.total', { h: Math.floor(total / 60), m: total % 60, end: hhmm(Date.now() + total * 60000) })}</li>` : `<li class="muted">${t('prep.plan.empty')}</li>`;
+    }).join('') + `<li class="plan-total muted">${t('prep.plan.total', { h: Math.floor(total / 60), m: total % 60, end: hhmm(Date.now() + total * 60000) })}</li>`
+      + (rb ? `<li class="plan-late"><b>⏰ ${t('prep.plan.late', { n: rb.over, end: hhmm(endAt) })}</b>${rb.drop.length ? `<span>${t('prep.plan.suggest', { list: esc(rb.drop.map((id) => lib[id]?.name).filter(Boolean).join(', ')), end: hhmm(rb.newEnd) })}</span>
+        <span class="plan-late-acts">${rb.drop.map((id) => `<button type="button" class="btn-sec btn-sec--sm" data-pldel="${all.findIndex((p) => p.id === id)}">${t('prep.plan.drop', { name: esc(lib[id]?.name || '') })}</button>`).join('')}</span>` : ''}</li>` : '')
+      : `<li class="muted">${t('prep.plan.empty')}</li>`;
   },
   update() {
     if (!this.el) return;
@@ -186,6 +217,7 @@ export const RulesPanel = {
             ${gameImageHTML(it, 'game-img--rules')}
             <p class="rules-meta">${[it.minPlayers && it.maxPlayers ? t('prep.rules.players', { min: it.minPlayers, max: it.maxPlayers }) : '', `${gameMinutes(it)} min`, it.weight ? t('prep.rules.weight', { w: Number(it.weight) }) : ''].filter(Boolean).join(' · ')}</p>
             ${it.rules ? `<h3>${t('prep.rules.short')}</h3><p class="rules-text">${esc(it.rules)}</p>` : `<p class="muted">${t('prep.rules.none')}</p>`}
+            ${houseFor(S().house, it.name).length ? `<h3>📜 ${t('mem.house.forGame')}</h3><ul class="rules-setup">${houseFor(S().house, it.name).map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul>` : ''}
             ${it.setup ? `<h3>${t('prep.rules.setup')}</h3><ul class="rules-setup">${esc(it.setup).split(/\n|;/).map((s) => s.trim()).filter(Boolean).map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}
           </div>
           <aside class="rules-side">

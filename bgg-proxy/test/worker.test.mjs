@@ -32,14 +32,18 @@ const THING_XML = `<?xml version="1.0" encoding="utf-8"?><items termsofuse="http
  <link type="boardgamecategory" id="1029" value="Economic" />
  <link type="boardgamemechanic" id="2072" value="Dice Rolling" />
  <link type="boardgameexpansion" id="926" value="CATAN: Cities &amp; Knights" />
- <statistics page="1"><ratings><usersrated value="120000" /><average value="7.09" /><averageweight value="2.29" /></ratings></statistics>
+ <link type="boardgamedesigner" id="11" value="Klaus Teuber" />
+ <link type="boardgamedesigner" id="3" value="(Uncredited)" />
+ <link type="boardgamepublisher" id="37" value="KOSMOS" />
+ <link type="boardgamepublisher" id="38" value="Giochi Uniti" />
+ <statistics page="1"><ratings><usersrated value="120000" /><average value="7.09" /><ranks><rank type="subtype" id="1" name="boardgame" friendlyname="Board Game Rank" value="512" /><rank type="family" id="5497" name="strategygames" value="400" /></ranks><averageweight value="2.29" /></ratings></statistics>
 </item>
 <item type="boardgameexpansion" id="926">
  <thumbnail>//cf.geekdo-images.com/thumb_926.jpg</thumbnail>
  <name type="primary" sortindex="1" value="CATAN: Cities &amp; Knights" />
  <yearpublished value="1998" /><minplayers value="3" /><maxplayers value="4" /><playingtime value="90" />
  <link type="boardgameexpansion" id="13" value="CATAN" inbound="true" />
- <statistics page="1"><ratings><usersrated value="20000" /><average value="7.6" /><averageweight value="2.9" /></ratings></statistics>
+ <statistics page="1"><ratings><usersrated value="20000" /><average value="7.6" /><ranks><rank type="subtype" id="1" name="boardgame" value="Not Ranked" /></ranks><averageweight value="2.9" /></ratings></statistics>
 </item>
 </items>`;
 
@@ -79,7 +83,12 @@ test('parseSearch e parseThings: campi, sondaggio giocatori, espansioni, URL htt
   assert.deepEqual(g.expansions, [{ id: 926, name: 'CATAN: Cities & Knights' }]);
   assert.equal(g.url, 'https://boardgamegeek.com/boardgame/13');
   assert.ok(!('description' in g), 'la descrizione non viene restituita');
+  assert.deepEqual(g.designers, ['Klaus Teuber']);
+  assert.deepEqual(g.publishers, ['KOSMOS', 'Giochi Uniti']);
+  assert.equal(g.rank, 512);
+  assert.equal(g.rating, 7.09);
   assert.equal(e.isExpansion, true);
+  assert.equal(e.rank, null, 'Not Ranked = nessuna posizione');
   assert.deepEqual(e.baseGames, [{ id: 13, name: 'CATAN' }]);
   assert.equal(e.thumb, 'https://cf.geekdo-images.com/thumb_926.jpg');
   assert.equal(e.url, 'https://boardgamegeek.com/boardgameexpansion/926');
@@ -205,4 +214,23 @@ test('callBgg: rete assente → bgg_unreachable dopo i tentativi', async () => {
   let n = 0;
   await assert.rejects(callBgg('/thing?id=1', ENV, { fetchImpl: async () => { n++; throw new Error('offline'); }, wait: noWait }), /bgg_unreachable/);
   assert.equal(n, 3);
+});
+
+test('collezione di un utente: giochi posseduti, cache, utente non valido', async () => {
+  resetRateLimit();
+  const COLL = `<?xml version="1.0" encoding="utf-8"?><items totalitems="2" termsofuse="https://boardgamegeek.com/xmlapi/termsofuse">
+<item objecttype="thing" objectid="13" subtype="boardgame" collid="1"><name sortindex="1">CATAN</name><yearpublished>1995</yearpublished><thumbnail>https://cf.geekdo-images.com/t13.jpg</thumbnail><status own="1" /><numplays>7</numplays></item>
+<item objecttype="thing" objectid="822" subtype="boardgame" collid="2"><name sortindex="1">Carcassonne</name><status own="1" /><numplays>0</numplays></item>
+</items>`;
+  let calls = 0;
+  const f = fakeFetch([[/\/collection\?username=anna&own=1/, () => { calls++; return calls === 1 ? xml('', 202) : xml(COLL); }]]);
+  const cache = fakeCache();
+  const j = await (await handle(req('/collection?user=anna'), ENV, {}, { cache, fetchImpl: f, wait: noWait })).json();
+  assert.equal(j.ok, true);
+  assert.deepEqual(j.items.map((x) => [x.id, x.name, x.plays]), [[13, 'CATAN', 7], [822, 'Carcassonne', 0]]);
+  assert.equal(j.items[0].thumb, 'https://cf.geekdo-images.com/t13.jpg');
+  await handle(req('/collection?user=anna'), ENV, {}, { cache, fetchImpl: f, wait: noWait });
+  assert.equal(calls, 2, 'la seconda volta dalla cache');
+  const bad = await handle(req('/collection?user=%3Cx%3E'), ENV, {}, { cache, fetchImpl: f, wait: noWait });
+  assert.equal(bad.status, 400);
 });

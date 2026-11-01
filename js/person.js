@@ -215,12 +215,13 @@ export const Person = {
    * Se qui c'era già un profilo diverso, lo unisce: aspetto più recente, gruppi e armadi sommati.
    * Restituisce { merged: boolean, info }.
    */
-  async linkWith(pid, key) {
+  async linkWith(pid, key, opts = {}) {
     await this.ready();
     const mine = this.local();
     if (mine?.pid === pid) { await this.load(); return { merged: false, info: this.data?.info }; }
-    let old = null;
-    if (mine) {
+    // 2.0: copia del vecchio profilo presa prima di un cambio di uid (dopo, il database non la lascia leggere)
+    let old = opts.old || null;
+    if (!old && mine) {
       try { old = (await get(dbRef(`people/${mine.pid}`))).val(); } catch { old = null; }
     }
     if (!old) {
@@ -283,6 +284,13 @@ export const Person = {
     await set(dbRef(`personKeys/${loc.pid}`), key);
     write(LS, { pid: loc.pid, key });
     return key;
+  },
+
+  /** Dimentica il profilo solo su questo dispositivo (uscita da un account: l'uid è condiviso, non si toglie). */
+  forget() {
+    write(LS, null);
+    write(CACHE, null);
+    this.data = null;
   },
 
   /** Scollega questo dispositivo (il profilo resta sugli altri). */

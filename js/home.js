@@ -7,12 +7,15 @@ import {
   squarePhoto, qrSVG, cleanName, param, randomCode, userError
 } from './util.js';
 import { t, fmtDate, langSwitchHTML, applyStatic } from './i18n.js';
-import { isConfigured, connect, get, set, dbRef, roomRef, groupRef, memberRef, armadioRef, onValue, explainError } from './fb.js';
+import { isConfigured, connect, get, set, dbRef, roomRef, groupRef, memberRef, armadioRef, onValue, explainError, explainAuthError, accountInfo, isDemo, startDemo, stopDemo } from './fb.js';
 import { Person, parseLinkCode, personKeysFor, mergedNights } from './person.js';
+import { Account, googleAvailable, checkCredentials } from './account.js';
+import { tipsSettingsHTML, bindTipsSettings } from './tips.js';
 import { avatarHTML, avatarOptions, avatarUri } from './avatars.js';
 import { progressFor, ACHIEVEMENTS } from './stats.js';
 import { isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
 import { mountUpdatePanel, autoCheck } from './updates.js';
+import { Notices, noticesHTML, bindNotices } from './notices.js';
 import { links, bindLinks, refreshLinks } from './links.js';
 import { APP_VERSION } from './version.js';
 import { initSpatialNav, isTvDevice } from './spatialnav.js';
@@ -158,7 +161,8 @@ async function paintBack() {
   const box = $('#backBox');
   if (hostRoom.length === 4 && H.uid) {
     const meta = (await get(roomRef(hostRoom, 'meta')).catch(() => null))?.val();
-    if (meta && meta.hostUid === H.uid) {
+    // 2.0: la TV ha una sessione sua; questo dispositivo è la regia se ne conosce il codice regia.
+    if (meta && (meta.hostUid === H.uid || ls.get(`gnr_regia_${hostRoom}`))) {
       $('#tileHost').classList.add('tile--live');
       $('#createTitle').textContent = t('home.host.liveTitle');
       $('#createTxt').innerHTML = `<span class="live-dot" aria-hidden="true"></span> ${esc(t('home.host.liveText', { code: hostRoom, group: meta.groupName || t('home.host.noGroup') }))}`;
@@ -236,7 +240,7 @@ function meHTML(state, full) {
 
 function paintMe(state = Person.data) {
   $('#hubMe').innerHTML = meHTML(state, false);
-  $('#hubMeFull').innerHTML = `<h2 class="sr-only">${esc(t('home.me.title'))}</h2>${meHTML(state, true)}`;
+  $('#hubMeFull').innerHTML = `<h2 class="sr-only">${esc(t('home.me.title'))}</h2>${meHTML(state, true)}${accountHTML()}`;
   paintHero(state?.info ? state : null);
   paintSideFoot(state);
 }
@@ -257,7 +261,101 @@ document.addEventListener('click', (e) => {
   else if (act === 'link') openLinkInput();
   else if (act === 'share') openShare();
   else if (act === 'trophies') openTrophies();
+  else if (act === 'acc-google') signInGoogle(b);
+  else if (act === 'acc-email') openAccountEmail();
+  else if (act === 'acc-out') signOutAccount(b);
 });
+
+// ---------------------------------------------------------------------------
+// Account permanente (2.0): Google o email, sopra al profilo personale (js/account.js)
+// ---------------------------------------------------------------------------
+
+/** Riquadro "Account" in Profilo e app. */
+function accountHTML() {
+  if (!isConfigured || !H.uid) return '';
+  const a = accountInfo();
+  if (a && !a.anonymous) {
+    const via = a.provider === 'google.com' ? 'Google' : t('acc.viaEmail');
+    return `<section class="acc-card" id="accCard">
+      <div class="tile-head"><span class="tile-ico tile-ico--green" aria-hidden="true">🔐</span><div><h3>${esc(t('acc.title'))}</h3><p class="tile-sub">${esc(t('acc.signedIn', { who: a.email || a.name || '—', via }))}</p></div></div>
+      <p class="muted small">${esc(t('acc.signedLead'))}</p>
+      <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="acc-out">${esc(t('acc.signOut'))}</button>
+    </section>`;
+  }
+  return `<section class="acc-card" id="accCard">
+    <div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">🔐</span><div><h3>${esc(t('acc.title'))}</h3><p class="tile-sub">${esc(t('acc.lead'))}</p></div></div>
+    <div class="btn-row">
+      ${googleAvailable() ? `<button type="button" class="ui-btn ui-btn--primary ui-btn--sm acc-google" data-act="acc-google"><span class="g-logo" aria-hidden="true">G</span> ${esc(t('acc.google'))}</button>` : ''}
+      <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="acc-email">✉️ ${esc(t('acc.email'))}</button>
+    </div>
+    ${googleAvailable() ? '' : `<p class="muted small">${esc(t('acc.appNote'))}</p>`}
+    <p class="muted small">${esc(t('acc.guestNote'))}</p>
+  </section>`;
+}
+
+/** Dopo l'accesso: messaggio e ritorno alla pagina da cui si è partiti (es. la serata). */
+function afterAccount(res) {
+  toast(t(res.profile === 'joined' ? 'acc.ok.joined' : res.kind === 'linked' ? 'acc.ok.linked' : 'acc.ok.created'));
+  const back = accountBack();
+  setTimeout(() => { if (back) location.href = back; else location.reload(); }, 900);
+}
+
+/** Pagina a cui tornare dopo l'accesso (?torna=play.html?room=ABCD): solo pagine nostre. */
+function accountBack() {
+  const raw = param('torna') || '';
+  return /^play\.html\?room=[A-Z0-9]{4}$/.test(raw) ? raw : '';
+}
+
+async function signInGoogle(btn) {
+  btn.disabled = true;
+  try { afterAccount(await Account.google()); } catch (err) { toast(explainAuthError(err), 'error'); btn.disabled = false; }
+}
+
+async function signOutAccount(btn) {
+  if (!confirm(t('acc.signOutAsk'))) return;
+  btn.disabled = true;
+  try { await Account.signOut(); toast(t('acc.signedOut')); setTimeout(() => location.reload(), 700); } catch (err) { toast(explainAuthError(err), 'error'); btn.disabled = false; }
+}
+
+/** Email e password: entra, crea l'account, password dimenticata. */
+function openAccountEmail(mode = 'login') {
+  const el = Sheet.open(`
+    ${head(`✉️ ${esc(t('acc.emailTitle'))}`)}
+    <div class="seg seg--full" role="group" aria-label="${esc(t('acc.emailTitle'))}">
+      <button type="button" data-accmode="login" aria-pressed="${mode === 'login'}">${esc(t('acc.mode.login'))}</button>
+      <button type="button" data-accmode="register" aria-pressed="${mode === 'register'}">${esc(t('acc.mode.register'))}</button>
+    </div>
+    <form id="accForm" class="acc-form" novalidate>
+      <div class="field"><label for="accEmail">${esc(t('acc.f.email'))}</label><input class="input" id="accEmail" type="email" autocomplete="email" inputmode="email" required></div>
+      <div class="field"><label for="accPw">${esc(t('acc.f.password'))}</label><input class="input" id="accPw" type="password" autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}" minlength="6" required></div>
+      <p class="muted small">${esc(t(mode === 'register' ? 'acc.registerNote' : 'acc.loginNote'))}</p>
+      <p class="form-error" id="accErr" role="alert"></p>
+      <button type="submit" class="ui-btn ui-btn--primary ui-btn--block" id="accGo">${esc(t(mode === 'register' ? 'acc.mode.register' : 'acc.mode.login'))}</button>
+      ${mode === 'login' ? `<button type="button" class="link-btn" id="accForgot">${esc(t('acc.forgot'))}</button>` : ''}
+    </form>`);
+  el.querySelectorAll('[data-accmode]').forEach((b) => b.addEventListener('click', () => openAccountEmail(b.dataset.accmode)));
+  el.querySelector('#accForgot')?.addEventListener('click', async () => {
+    const email = el.querySelector('#accEmail').value;
+    const bad = checkCredentials(email, 'x');
+    if (bad === 'acc.err.email') { el.querySelector('#accErr').textContent = t(bad); return; }
+    try { await Account.reset(email); el.querySelector('#accErr').textContent = ''; toast(t('acc.resetSent', { email })); } catch (err) { el.querySelector('#accErr').textContent = explainAuthError(err); }
+  });
+  el.querySelector('#accForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = el.querySelector('#accEmail').value;
+    const pw = el.querySelector('#accPw').value;
+    const bad = checkCredentials(email, pw, { register: mode === 'register' });
+    const err = el.querySelector('#accErr');
+    if (bad) { err.textContent = t(bad); return; }
+    const go = el.querySelector('#accGo');
+    go.disabled = true;
+    try {
+      const res = mode === 'register' ? await Account.register(email, pw) : await Account.login(email, pw);
+      Sheet.close();
+      afterAccount(res);
+    } catch (ex) { err.textContent = explainAuthError(ex); go.disabled = false; }
+  });
+}
 
 /** Modifica (o crea) nome, personaggio, colore, foto e motto. */
 function openEditor(info) {
@@ -543,6 +641,9 @@ async function checkLoans() {
   }
   const all = [...overdue, ...soon];
   const sig = alertsSig(all);
+  // 2.1 (idea 72): anche nel centro avvisi
+  Notices.clearCat('loans');
+  for (const l of all) Notices.put({ id: `loan:${l.aid}:${l.id}`, cat: 'loans', icon: overdue.includes(l) ? '⏰' : '📅', title: l.name || '?', sub: `${l.arm} · ${l.to || ''}`.trim(), href: `armadio.html?a=${l.aid}&loan=${l.id}`, sig: String(l.due || '') });
   const sn = ls.json(LOAN_SNOOZE, null);
   // Rimandato a domani: torna prima solo se c'è un prestito nuovo da ricordare.
   if (!all.length || (sn && sn.sig === sig && Date.now() < sn.until)) { box.hidden = true; box.innerHTML = ''; return; }
@@ -731,8 +832,12 @@ function openSettings() {
     <p class="muted small">${esc(t('home.set.langHint'))}</p>
     <h3>${esc(t('home.set.theme'))}</h3>${themeSwitchHTML('hubTheme')}
     <h3>${esc(t('home.set.a11y'))}</h3>${a11yHTML('hubA11y')}
+    <h3>💡 ${esc(t('tips.title'))}</h3>${tipsSettingsHTML()}
+    <p class="muted small">${esc(t('tips.lead'))}</p>
     <h3>${esc(t('home.set.help'))}</h3>
     <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stIntro">👋 ${esc(t('home.set.intro'))}</button><a class="btn-sec btn-sec--sm" href="test.html">🩺 ${esc(t('home.info.firebase'))}</a></div>
+    <div class="hub-row">${isDemo ? `<button type="button" class="btn-sec btn-sec--sm" id="stDemo">🧪 ${esc(t('demo.exit'))}</button>` : `<button type="button" class="btn-sec btn-sec--sm" id="stDemo">🧪 ${esc(t('demo.try'))}</button>`}<a class="btn-sec btn-sec--sm" href="setup.html">🛠️ ${esc(t('setup.open'))}</a></div>
+    <p class="muted small">${esc(t('demo.lead'))}</p>
     ${Person.local() ? `<div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stShare">🔗 ${esc(t('home.set.share'))}</button></div>` : ''}
     <h3>${esc(t('home.set.version'))}</h3>
     <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stUpd">🔄 ${esc(t('upd.check'))}</button></div>
@@ -740,7 +845,9 @@ function openSettings() {
   $('#stUpd', el).addEventListener('click', () => { Sheet.close(); openUpdates(true); });
   $('#stIntro', el).addEventListener('click', () => { Sheet.close(); showIntro(true); });
   $('#stShare', el)?.addEventListener('click', () => { Sheet.close(); openShare(); });
+  $('#stDemo', el).addEventListener('click', () => { if (isDemo) { if (confirm(t('demo.exitAsk'))) stopDemo(); } else if (confirm(t('demo.startAsk'))) startDemo(); });
   $('#stVer', el).textContent = $('#hubVer').textContent;
+  bindTipsSettings(el);
 }
 $('#hubSettings').addEventListener('click', openSettings);
 
@@ -789,6 +896,36 @@ function paintStatic() {
   $('#hubVer').textContent = v;
   $('#infoVer').textContent = `${v} · ${t('common.languageName')}`;
   if ($('#scanBtn').hidden === false) $('#codeLabel').textContent = t('home.join.codeOr');
+}
+
+// ---------------------------------------------------------------------------
+// Centro avvisi (2.1, idea 72)
+// ---------------------------------------------------------------------------
+
+function paintNoticeCount() {
+  const n = Notices.list().length;
+  const c = $('#ncCount');
+  if (!c) return;
+  c.hidden = !n;
+  c.textContent = n > 9 ? '9+' : String(n);
+}
+Notices.on(paintNoticeCount);
+function openNotices() {
+  const el = Sheet.open(`${head(`🔔 ${esc(t('nc.title'))}`)}<div id="ncBody">${noticesHTML()}</div>`);
+  const body = $('#ncBody', el);
+  bindNotices(body, () => { body.innerHTML = noticesHTML(); });
+}
+/** Prossime serate dei tuoi gruppi (entro 7 giorni): una lettura all'apertura, niente ascolti fissi. */
+async function checkNextNights() {
+  const groups = { ...(ls.json('gnr_profiles', {}) || {}), ...(Person.data?.groups || {}) };
+  Notices.clearCat('nights');
+  for (const gid of Object.keys(groups).filter((g) => /^[A-Z0-9]{6}$/.test(g)).slice(0, 6)) {
+    const nx = (await get(groupRef(gid, 'next')).catch(() => null))?.val();
+    const at = Number(nx?.at) || 0;
+    if (!at || at < Date.now() || at - Date.now() > 7 * 86400000) continue;
+    const info = (await get(groupRef(gid, 'info/name')).catch(() => null))?.val() || '';
+    Notices.put({ id: `night:${gid}`, cat: 'nights', icon: '📅', title: t('nc.night', { group: info || gid }), sub: `${fmtDate(at, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${nx.place ? ` · ${nx.place}` : ''}`, sig: String(at) });
+  }
 }
 
 function paintAll() {
@@ -840,10 +977,17 @@ async function boot() {
   paintAll();
   paintBack();
   checkLoans().catch(() => {});
+  checkNextNights().catch(() => {});
   if (legacy.length === 6) { try { await adoptMember(legacy); paintAll(); } catch (err) { toast(explainError(err), 'warn'); } }
   if (hashLink) askLink(hashLink);
+  else if (param('accedi') === '1') { showView('altro'); setTimeout(() => (googleAvailable() ? document.querySelector('#accCard')?.scrollIntoView({ block: 'center' }) : openAccountEmail()), 300); }
   else if (!state) showIntro();
 }
 boot();
 // Avviso "È disponibile GameNight Show …" nell'app, e link diretto alla sezione (index.html#aggiornamenti)
-if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); } else autoCheck({ onOpen: () => openUpdates() }).catch(() => {});
+if (location.hash === '#aggiornamenti') { history.replaceState(null, '', location.pathname); openUpdates(); } else {
+  autoCheck({ onOpen: () => openUpdates() }).then((st) => {
+    if (st?.status === 'update') Notices.put({ id: 'app:update', cat: 'app', icon: '⬇️', title: t('nc.update', { v: st.release?.version || '' }), href: '#aggiornamenti', sig: st.release?.version || '' });
+  }).catch(() => {});
+}
+$('#hubNotices')?.addEventListener('click', openNotices);

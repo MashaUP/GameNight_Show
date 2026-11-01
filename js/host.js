@@ -1,6 +1,6 @@
 // Schermata TV (host): crea la stanza, guida la serata e mostra reveal, classifica e premi.
 import {
-  isConfigured, connect, roomRef, groupRef, armadioRef, libraryRef, secretRef, dbRef, onValue, get, set, update, remove, push,
+  isConfigured, connect, useSession, roomRef, groupRef, armadioRef, libraryRef, secretRef, dbRef, onValue, get, set, update, remove, push,
   serverTimestamp, explainError, trackConnection, serverNow
 } from './fb.js';
 import {
@@ -9,9 +9,10 @@ import {
   toastUndo, applyTheme, themeSwitchHTML, isShowTheme, dbKey, compressPhoto, qrSVG,
   isImageSource, gameImageHTML, toast, confetti, installImageFallback, showFatal,
   showNotConfigured, downloadFile, ICONS, PLAYER_COLORS, MIN_PLAYERS, MAX_PLAYERS, DEFAULT_PLAYERS,
-  ErrLog, a11yHTML, prefersReducedMotion, voteTimer, timerColor, editPhoto, rememberNight, pollChoices, POLL_MAX_VOTES
+  ErrLog, a11yHTML, prefersReducedMotion, voteTimer, timerColor, editPhoto, rememberNight, pollChoices, POLL_MAX_VOTES, exportName
 } from './util.js';
-import { avatarHTML, avatarOptions } from './avatars.js';
+import { avatarHTML, avatarOptions, Seasonal } from './avatars.js';
+import { seasonalAccessory, houseFor } from './traditions.js';
 import { runTour, resetTours, tourOpen } from './tour.js';
 import {
   CRITERIA, gameStats, verdict, buildBoard, buildAwards, rankLine, boardCSV, nightSummary, buildAllTime,
@@ -24,9 +25,17 @@ import { renderShareImage, renderStoryImage, renderYearImage, shareOrDownload, n
 import {
   ding, pop, drumroll, fanfare, joinSound, soundsOn, setSounds, whistle, achievementSound, victory, sadTrombone,
   newGameSound, endNightSound, isMuted, setMuted, getVolume, setVolume, SFX, playSfx, cymbal, audioStatus, audioNeedsUnlock, audioBlocked, audioCtx,
-  clockTick, timeUp, fireworkSound, stepUp
+  clockTick, timeUp, fireworkSound, stepUp, tick, duck
 } from './sounds.js';
-import { fireworks, confettiBurst } from './fx.js';
+import { fireworks, confettiBurst, fxAllowed, setFxScale } from './fx.js';
+import { allowedChaos, wheelSlices, fxScale, paceScale, votingForMode, gameVoting, guestAnonPatch, teamTotals } from './show.js';
+import { TEAM_STYLE } from './extras.js';
+import { historyCheck, compareTop } from './history-check.js';
+import { nextBoardTvHTML } from './next-board.js';
+import { bindChallenge, ChallengePanel } from './challenge.js';
+import { discordSummary, sendToDiscord, getHook, setHook, validHook, autoSend, setAutoSend } from './discord.js';
+import { playsCSV } from './trackers.js';
+import { bindShow, ShowPanel, PresencePanel, RevealPreview, ShowPrefs, applyFar, applyTheme21, currentScene, finaleClass } from './tv-show.js';
 import {
   bindTV, TablePanel, GameWheel, Quiz, Knocks, liveScoresHTML, editScore, rivalryLine, seasonTabHTML, rivalsTabHTML,
   cardsTabHTML, bindCards, seasonStageHTML, VideoPanel, downloadICS, importGamesCSV, changeRegiaCode, cleanupOldRooms
@@ -34,18 +43,26 @@ import {
 import { Lite } from './lite.js';
 import { publicUrl, isApp } from './native.js';
 import { Person } from './person.js';
+import { settingsFromMeta, settingsPatch, settingsDiff, settingLabel, makeTemplate, templateList, planFromNight, LocalTemplates, TEMPLATE_MAX } from './templates.js';
+import { isNightCreator } from './nights.js';
 import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
 import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
+import { nightStory, storyText, gameSessions, durationInfo } from './insights.js';
+import { bindVotes, LateVotePanel, processLate, lateCount } from './tv-votes.js';
+import { Tips } from './tips.js';
+import { bindScreens, IdleScreen, BoardScreen, AwardsScreen, PollScreen, AlltimeScreen } from './tv-screens.js';
+import { bindPanels, LibPanel, ExportPanel, TemplatesPanel, GameSheet, AlbumPanel } from './tv-panels.js';
+import { bindMemory, insightsHTML, insightsClick, insightsChange, traditionsHTML, traditionsClick, traditionsSubmit, CustomAwardPanel, confBadge } from './tv-memory.js';
 import { Music, MUSIC_MODES, MOOD_LABEL } from './music.js';
 import { AtmoSound, SOUND_SCENES } from './atmosound.js';
-import { Atmo, ATMOS, atmoForGame } from './atmo.js';
+import { Atmo, ATMOS, atmoForGame, registerPack } from './atmo.js';
 import { TRIVIA, groupFacts, tonightNews } from './facts.js';
 import { commentatorMode, setCommentatorMode, COMMENTATOR_MODES, revealComment, nightRecap, podiumLine, speak, stopSpeaking } from './commentary.js';
 import { exportReport } from './report.js';
 import { Vault, checksum, sealBackup, validateBackup, storageInfo, askPersistence } from './vault.js';
 import { isSafeMode, setSafeMode, watchErrors } from './safe.js';
-import { trophies, affinities, lastPlayed, freshnessLabel, personKey, awardTitle } from './stats.js';
+import { trophies, affinities, lastPlayed, freshnessLabel, personKey, awardTitle, customAwardList } from './stats.js';
 import { t as tr, has as trHas, fmtDate as fmtDateL, fmtNum, fmtList, langSwitchHTML } from './i18n.js';
 import { bindSharedTimer, SharedTimer, kindLabel } from './sharedtimer.js';
 import { pausePatch, playElapsed as elapsedOf } from './nightclock.js';
@@ -56,7 +73,10 @@ import { CustomSounds, publicList, customIdOf, checkFile, CSFX_ICONS, CSFX_MAX }
 
 const app = $('#app');
 const STORE_KEY = 'gnr_host_room';
-const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer'];
+
+// 2.0: la TV usa la sessione di regia, separata da quella del giocatore dello stesso browser (fb.js).
+useSession('regia');
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'pendingImage', 'poll', 'presence', 'claims', 'commands', 'trash', 'buzz', 'bets', 'sfx', 'gossip', 'profileClaims', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'knock', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer', 'customAwards', 'late', 'votelog'];
 // Quanto la TV aspetta un telefono che si scollega durante la votazione.
 const GRACE_MS = 60000;
 const GROUPS_KEY = 'gnr_groups';
@@ -121,13 +141,46 @@ bindSharedTimer({
   onExpire: (v) => { if (v.sound) timeUp(); logEvent(tr('timer.log', { name: v.label || kindLabel(v.kind) }), '⏰'); }
 });
 // Schermata ambientale: legge lo stesso stato della serata (ambientModel) e si spegne con meta/ambient.
-bindAmbient({ model: () => ambientModel(), exit: () => setAmbient(false) });
+bindAmbient({ model: () => ambientModel(), exit: () => (S.meta?.publicTv && !S.meta?.ambient ? setPublicTv(false) : setAmbient(false)) });
 // Pre-partita: giochi sul tavolo, desideri, scaletta, regole.
 bindPrep({
   S, roomRef, set, update, remove, serverTimestamp, serverNow, explainError,
   logEvent: (...a) => logEvent(...a), libraryItems: () => libraryItems(), playedTonight: () => playedTonight(),
   libOk: (it, n) => libOk(it, n), useLibraryGame: (id) => useLibraryGame(id),
   startPlay: (name) => { update(roomRef(S.code, 'state'), playState(name, S.draft.spectators)).catch((err) => toast(explainError(err), 'error')); newGameSound(); }
+});
+
+// Voti aggiunti o cambiati dopo il reveal, sempre decisi dalla regia (2.0).
+bindVotes({
+  S, roomRef, set, update, remove, push, serverTimestamp, explainError,
+  proxyVote: (gid, uid) => ProxyVote.open(gid, uid), saveNight: () => saveNight(), logEvent: (...a) => logEvent(...a)
+});
+
+// Regia dello show (2.1): scene, audio per categoria, profili, vista da lontano, imprevisti, domande per
+// modalità, tema della TV, pacchetti di atmosfera, anteprima del reveal, presenze.
+bindShow({
+  S, roomRef, groupRef, update, set, explainError,
+  canWriteGroup: () => Boolean(S.meta?.groupId && S.groupAdmin),
+  Music, syncMusic: () => syncMusic(), syncAtmo: () => { applyPack(); syncAtmo(); }, logEvent: (...a) => logEvent(...a)
+});
+// Sfide fra gruppi (2.1, idea 67): solo aggregati, solo con il consenso del gruppo.
+bindChallenge({ S, dbRef, get, set, remove, onValue, explainError, canWriteGroup: () => Boolean(S.meta?.groupId && S.groupAdmin) });
+/** Pacchetto di atmosfera scelto su questa TV (idea 22): registrato come scena "pack". */
+function applyPack() {
+  const id = ShowPrefs.pack();
+  registerPack(id ? ShowPrefs.packs().find((p) => p.id === id) || null : null);
+}
+applyFar();
+applyPack();
+window.addEventListener('gnr-scene', () => { applyScene(); syncMusic(); });
+// Le regole del silenzio dipendono anche da pannelli che si aprono senza aggiornare la stanza (regole, voce)
+setInterval(() => { if (S.code) applyScene(); }, 1500);
+
+// Statistiche e memoria (1.12): analisi, tradizioni, premi del gruppo.
+bindMemory({
+  S, roomRef, groupRef, set, remove, serverTimestamp, explainError,
+  canWriteGroup: () => Boolean(S.meta?.groupId && S.groupAdmin),
+  saveNight: () => saveNight(), logEvent: (...a) => logEvent(...a)
 });
 
 document.documentElement.classList.add('tv');
@@ -183,7 +236,7 @@ async function boot() {
   if (!isConfigured) { showNotConfigured(app); return; }
   // Vecchi link "host.html?armadio=CODICE": l'armadio ha la sua pagina (1.2)
   const armLink = normalizeCode(param('armadio') || '', 6);
-  if (armLink.length === 6 && !param('room')) { location.replace(`armadio.html?a=${armLink}`); return; }
+  if (armLink.length === 6 && !param('room')) { location.replace(`armadio.html?a=${armLink}&s=regia`); return; }
   app.innerHTML = loadingHTML(tr('tv.boot.connecting'));
   try {
     S.uid = await connect();
@@ -200,11 +253,21 @@ async function boot() {
   // Regia trasferita con il QR: il codice regia arriva nell'indirizzo (dopo #, non va al server).
   const hashRegia = normalizeCode((location.hash.match(/regia=([A-Za-z0-9-]+)/) || [])[1] || '', 8);
   S.hashGroupKey = normalizeCode((location.hash.match(/gk=([A-Za-z0-9-]+)/) || [])[1] || '', 8);
+  // 2.1 (idea 63): link da organizzatore (#ok=CHIAVE): modelli di serata senza essere admin del gruppo
+  S.hashOrgKey = normalizeCode((location.hash.match(/ok=([A-Za-z0-9-]+)/) || [])[1] || '', 8);
+  try { if (S.hashOrgKey) sessionStorage.setItem('gnr_ok', S.hashOrgKey); else S.hashOrgKey = sessionStorage.getItem('gnr_ok') || ''; } catch { /* niente */ }
   const wanted = fromUrl || normalizeCode(localStorage.getItem(STORE_KEY));
   if (wanted.length === 4) {
     try {
       const meta = (await get(roomRef(wanted, 'meta'))).val();
       if (meta && meta.hostUid === S.uid) { openRoom(wanted); toastResumed(wanted); return; }
+      // 2.0: la regia ha una sessione sua. Se questo dispositivo conosce già il codice regia della stanza
+      // (l'ha creata o guidata lui) la riprende da solo. Arrivando con il QR di passaggio (#regia=…, un altro
+      // dispositivo) si chiede conferma: un vecchio link aperto per sbaglio non deve togliere la regia alla TV.
+      const known = hashRegia ? '' : regiaCode(wanted);
+      if (meta && known) {
+        try { await takeOver(wanted, known); toastResumed(wanted); return; } catch { /* codice cambiato: si chiede */ }
+      }
       if (meta) { renderCreate({ resume: wanted, regia: hashRegia }); return; }
     } catch (err) {
       showFatal(app, tr('tv.boot.readFailed'), explainError(err));
@@ -508,7 +571,11 @@ function renderCreate(opts = {}) {
     const meta = (await get(roomRef(b.dataset.room, 'meta')).catch(() => null))?.val();
     if (meta?.hostUid === S.uid) { takeOver(b.dataset.room, '').catch((err) => { $('#rsErr').textContent = explainError(err); }); return; }
     const known = regiaCode(b.dataset.room);
-    if (known) $('#rsRegia').value = prettyRegia(known);
+    if (known) {
+      $('#rsRegia').value = prettyRegia(known);
+      takeOver(b.dataset.room, known).catch(() => { $('#rsErr').textContent = tr('tv.resume.needRegia'); $('#rsRegia').focus(); });
+      return;
+    }
     $('#rsRegia').focus();
   });
   $('#resumeForm').addEventListener('submit', async (e) => {
@@ -719,7 +786,7 @@ const Demo = {
       const gid = st.gameId;
       const g = S.games[gid];
       if (!g) return;
-      const crits = g.quick ? [] : activeCriteria(S.meta.voting);
+      const crits = g.quick ? [] : activeCriteria(gameVoting(g, S.meta));
       for (const b of bots) {
         if (S.votes?.[gid]?.[b] || S.players[b]?.away) continue;
         this.later(`vote${gid}${b}`, 1200 + Math.random() * 4500, () => {
@@ -807,7 +874,7 @@ async function copyGroupGames(gid, aid) {
 
 /** L'armadio ha la sua pagina (1.2): ricerca, filtri, posizioni, prestiti, cronologia, condivisione. */
 function renderArmadio(arm) {
-  location.href = `armadio.html?a=${encodeURIComponent(arm.id)}${arm.isNew ? '&add=1' : ''}`;
+  location.href = `armadio.html?a=${encodeURIComponent(arm.id)}${arm.isNew ? '&add=1' : ''}&s=regia`;
 }
 
 async function resolveGroup() {
@@ -853,7 +920,7 @@ async function createRoom() {
     }
     if (!code) throw new Error(tr('tv.noFreeCode'));
     await set(roomRef(code, 'meta'), {
-      hostUid: S.uid, maxPlayers: S.setupCount, createdAt: serverTimestamp(),
+      hostUid: S.uid, maxPlayers: S.setupCount, createdAt: serverTimestamp(), ...creatorMeta(),
       groupId: group.id, groupName: group.name, soundboard: true,
       armadioId: arm.id, armadioName: arm.name
     });
@@ -1059,7 +1126,7 @@ async function importBackupFile(file) {
 
 function emergencyFileName() {
   const n = nightNumber();
-  return `gamenight_${n || S.code}_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  return exportName({ group: S.meta?.groupName || '', at: S.meta?.createdAt, kind: tr('exp.k.backup'), extra: n ? `n${n}` : S.code, ext: 'json' });
 }
 function downloadEmergency() {
   downloadFile(emergencyFileName(), JSON.stringify(sealBackup(backupData(true))), 'application/json');
@@ -1075,11 +1142,39 @@ async function groupBackup(withPhotos = false) {
   // Dalla 1.2 le foto grandi dell'armadio stanno a parte: con "anche le foto" si salvano anche quelle
   const armadioImages = withPhotos && S.meta?.armadioId ? (await get(armadioRef(S.meta.armadioId, 'images')).catch(() => null))?.val() || null : null;
   const body = sealBackup({ app: 'GameNight_Show', kind: 'group', at: Date.now(), group: { id: gid, name: info?.name || S.meta.groupName || '' }, info, identity, library, nights, next, photos: photos || null, armadioImages });
-  downloadFile(`gamenight_gruppo_${gid}_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(body), 'application/json');
+  downloadFile(exportName({ group: info?.name || S.meta.groupName || gid, kind: tr('exp.k.groupBackup'), ext: 'json' }), JSON.stringify(body), 'application/json');
   logEvent(tr('tv.log.groupBackup'), '🗄️');
+  BackupState.mark(gid, Object.keys(nights || {}).length);
 }
 
-/** Rimette nel gruppo i giochi e le serate che mancano (non sovrascrive niente). */
+/**
+ * Stato dei backup del gruppo (2.1, idea 57). Firebase gratuito non fa copie automatiche: la copia è il file
+ * scaricato. Su questa TV si ricorda quando è stato fatto l'ultimo e quante serate conteneva; a fine serata,
+ * se sono passati più di 30 giorni o ci sono almeno 3 serate nuove, la TV lo ricorda (una volta per serata).
+ */
+const BackupState = {
+  key: (gid) => `gnr_gb_last_${gid}`,
+  get(gid) { try { return JSON.parse(localStorage.getItem(this.key(gid)) || 'null'); } catch { return null; } },
+  mark(gid, nights) { try { localStorage.setItem(this.key(gid), JSON.stringify({ at: Date.now(), nights })); } catch { /* niente */ } },
+  /** Testo per gli Strumenti: "Ultimo backup del gruppo: 12 giorni fa (8 serate)". */
+  line(gid) {
+    const b = this.get(gid);
+    if (!b?.at) return tr('bk2.never');
+    const days = Math.floor((Date.now() - b.at) / 86400000);
+    return tr('bk2.last', { when: days < 1 ? tr('bk2.today') : tr('bk2.days', { n: days }), n: b.nights || 0 });
+  },
+  due(gid, nightsNow) {
+    const b = this.get(gid);
+    if (!b?.at) return nightsNow >= 2;
+    return Date.now() - b.at > 30 * 86400000 || nightsNow - (b.nights || 0) >= 3;
+  }
+};
+
+/**
+ * Rimette nel gruppo i giochi e le serate che mancano (non sovrascrive niente).
+ * 2.1 (idea 58): prima un'anteprima con la scelta delle singole serate (e se rimettere i giochi e lo stemma);
+ * le serate già presenti nel gruppo si vedono ma non si possono scegliere (niente sovrascritture).
+ */
 async function restoreGroupFile(file) {
   const res = validateBackup(await file.text(), 'group');
   if (!res.ok) { alert(tr('tv.bk.invalid', { list: res.errors.join('\n• ') })); return; }
@@ -1087,21 +1182,52 @@ async function restoreGroupFile(file) {
   const gid = S.meta?.groupId;
   if (d.group.id !== gid && !confirm(tr('tv.bk.otherGroup', { name: d.group.name || d.group.id }))) return;
   if (res.tampered && !confirm(tr('tv.bk.tamperedGroup'))) return;
-  let lib = 0, nights = 0, failed = 0;
-  for (const [id, it] of Object.entries(d.library || {})) {
-    if (S.library?.[id]) continue;
-    try {
-      await set(libRef(id), it); lib++;
-      const big = d.armadioImages?.[id];
-      if (S.meta?.armadioId && typeof big === 'string' && big.startsWith('data:image/')) await set(armadioRef(S.meta.armadioId, `images/${id}`), big).catch(() => {});
-    } catch { failed++; }
+  const nights = Object.entries(d.nights || {}).filter(([, n]) => n && typeof n === 'object').sort((a, b) => (Number(b[1].at) || 0) - (Number(a[1].at) || 0));
+  const libNew = Object.keys(d.library || {}).filter((id) => !S.library?.[id]);
+  const choice = await new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'overlay';
+    el.innerHTML = `
+      <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="grTitle">
+        <div class="panel-head"><h2 id="grTitle">📥 ${esc(tr('bk2.title'))}</h2><button type="button" class="icon-btn" data-grno aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
+        <p class="panel-note">${esc(tr('bk2.lead', { name: d.group.name || d.group.id }))}</p>
+        <div class="rg-row"><button type="button" class="link-btn" data-grall="1">${esc(tr('bk2.all'))}</button><button type="button" class="link-btn" data-grall="0">${esc(tr('bk2.none'))}</button></div>
+        <ul class="gr-list">${nights.map(([room, n]) => {
+          const have = Boolean(S.nights?.[room]);
+          const games = Object.values(n.games || {}).filter((g) => g?.name).map((g) => g.name);
+          return `<li><label class="quick-toggle ${have ? 'is-off' : ''}"><input type="checkbox" data-grn="${esc(room)}" ${have ? 'disabled' : 'checked'}><span><b>${esc(n.at ? fmtDateL(Number(n.at), { day: 'numeric', month: 'short', year: 'numeric' }) : room)}</b> · ${esc(tr('tv.nGames', { n: games.length }))}${have ? ` · <em>${esc(tr('bk2.have'))}</em>` : ''}<small class="muted">${esc(games.slice(0, 5).join(', '))}</small></span></label></li>`;
+        }).join('') || `<li class="muted">${esc(tr('bk2.noNights'))}</li>`}</ul>
+        ${libNew.length ? `<label class="quick-toggle"><input type="checkbox" id="grLib" checked><span>${esc(tr('bk2.lib', { n: libNew.length }))}</span></label>` : ''}
+        ${d.identity && !S.identity?.emblem && !S.identity?.logo ? `<label class="quick-toggle"><input type="checkbox" id="grId" checked><span>${esc(tr('bk2.identity'))}</span></label>` : ''}
+        <div class="claim-actions"><button type="button" class="btn-sec" data-grno>${esc(tr('tv.cancel'))}</button><button type="button" class="btn" data-grgo>${esc(tr('bk2.go'))}</button></div>
+      </div>`;
+    document.body.appendChild(el);
+    const done = (v) => { el.remove(); resolve(v); };
+    el.addEventListener('click', (e) => {
+      if (e.target === el || e.target.closest('[data-grno]')) { done(null); return; }
+      const all = e.target.closest('[data-grall]');
+      if (all) { el.querySelectorAll('[data-grn]:not(:disabled)').forEach((c) => { c.checked = all.dataset.grall === '1'; }); return; }
+      if (e.target.closest('[data-grgo]')) done({ rooms: [...el.querySelectorAll('[data-grn]:checked')].map((c) => c.dataset.grn), lib: Boolean($('#grLib', el)?.checked), identity: Boolean($('#grId', el)?.checked) });
+    });
+  });
+  if (!choice) return;
+  let lib = 0, nn = 0, failed = 0;
+  if (choice.lib) {
+    for (const id of libNew) {
+      try {
+        await set(libRef(id), d.library[id]); lib++;
+        const big = d.armadioImages?.[id];
+        if (S.meta?.armadioId && typeof big === 'string' && big.startsWith('data:image/')) await set(armadioRef(S.meta.armadioId, `images/${id}`), big).catch(() => {});
+      } catch { failed++; }
+    }
   }
-  for (const [room, n] of Object.entries(d.nights || {})) {
+  for (const room of choice.rooms) {
     if (S.nights?.[room]) continue;
-    try { await set(groupRef(gid, `nights/${room}`), n); nights++; } catch { failed++; }
+    try { await set(groupRef(gid, `nights/${room}`), d.nights[room]); nn++; } catch { failed++; }
   }
-  if (!S.identity?.emblem && !S.identity?.logo && d.identity) await set(groupRef(gid, 'identity'), d.identity).catch(() => { failed++; });
-  toast(`${tr('tv.bk.groupRestored', { games: tr('tv.nGames', { n: lib }), nights: tr('tv.nNights', { n: nights }) })}${failed ? tr('tv.bk.groupFailed', { n: failed }) : ''}`, failed ? 'warn' : 'info');
+  if (choice.identity && d.identity) await set(groupRef(gid, 'identity'), d.identity).catch(() => { failed++; });
+  logEvent(tr('bk2.log', { n: nn }), '📥');
+  toast(`${tr('tv.bk.groupRestored', { games: tr('tv.nGames', { n: lib }), nights: tr('tv.nNights', { n: nn }) })}${failed ? tr('tv.bk.groupFailed', { n: failed }) : ''}`, failed ? 'warn' : 'info');
 }
 
 /** Macchina del tempo: cronologia della serata e ripristino delle istantanee. */
@@ -1257,6 +1383,7 @@ const IntegrityPanel = {
         <div class="panel-head"><h2 id="icTitle">🔎 ${esc(title)}</h2><button type="button" class="icon-btn" id="icClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
         <ul class="ic-list" id="icList"></ul>
         <p class="ic-summary" id="icSummary"></p>
+        <div id="icHistory"></div>
         <div class="claim-actions" id="icActions"></div>
       </div>`;
     document.body.appendChild(el);
@@ -1284,6 +1411,12 @@ const IntegrityPanel = {
     if (!this.el) return;
     this.checks = integrityChecks();
     const ico = { ok: '✅', info: 'ℹ️', warn: '⚠️', error: '❌' };
+    // 2.1 (idea 34): anche lo storico del gruppo, con le correzioni proposte (resoconto della serata)
+    const hist = S.meta?.groupId ? historyCheck(S.nights, S.library) : [];
+    const gid = S.meta?.groupId || '';
+    const link = (code) => `<a href="resoconto.html?room=${encodeURIComponent(code)}&g=${encodeURIComponent(gid)}&s=regia" target="_blank" rel="noopener">${esc(code)}</a>`;
+    $('#icHistory', this.el).innerHTML = S.meta?.groupId ? `<details class="ic-hist" ${hist.some((h) => h.level !== 'info') ? 'open' : ''}><summary>${esc(tr('hc.title', { n: hist.length }))}</summary>
+      ${hist.length ? `<ul class="ic-list">${hist.slice(0, 30).map((h) => `<li class="ic-row ic-row--${h.level}"><span class="ic-ico" aria-hidden="true">${ico[h.level]}</span><b>${esc(tr(`hc.k.${h.k}`))}</b><span>${esc((h.names || []).join(' · '))} ${[h.code, ...(h.codes || [])].filter(Boolean).slice(0, 4).map(link).join(' ')}</span></li>`).join('')}</ul><p class="muted small">${esc(tr('hc.fix'))}</p>` : `<p class="muted">✅ ${esc(tr('hc.ok'))}</p>`}</details>` : '';
     $('#icList', this.el).innerHTML = this.checks.map((c) => `<li class="ic-row ic-row--${c.level}"><span class="ic-ico" aria-hidden="true">${ico[c.level]}</span><b>${esc(c.label)}</b><span>${esc(c.text)}</span></li>`).join('');
     const errors = this.checks.filter((c) => c.level === 'error');
     const fixable = errors.filter((c) => c.fix);
@@ -1320,7 +1453,9 @@ async function recreateFromVault(room) {
   const m = d.meta || {};
   await set(roomRef(code, 'meta'), {
     hostUid: S.uid, maxPlayers: m.maxPlayers || DEFAULT_PLAYERS, createdAt: m.createdAt || serverTimestamp(),
-    groupId: m.groupId || null, groupName: m.groupName || null, voting: m.voting || null, chaos: m.chaos || null
+    groupId: m.groupId || null, groupName: m.groupName || null, voting: m.voting || null, chaos: m.chaos || null,
+    // Il creatore resta quello della serata originale (backup); i backup vecchi non ce l'hanno: diventa chi la ripristina.
+    ...(typeof m.creatorUid === 'string' ? { creatorUid: m.creatorUid, ...(typeof m.creatorPid === 'string' ? { creatorPid: m.creatorPid } : {}) } : creatorMeta())
   });
   let regia = regiaCode(room) || randomCode(8);
   try { await set(secretRef(code), regia); } catch { regia = regiaCode(room); }
@@ -1816,6 +1951,10 @@ const ToolsPanel = {
         <div class="tools-grid">
           <section class="tool"><h3>${tr('tv.tl.pause')}</h3><p class="muted">${tr('tv.tl.pauseText')}</p><button type="button" class="btn" id="tlPause"></button></section>
           <section class="tool"><h3>🌙 ${esc(tr('amb.toolTitle'))}</h3><p class="muted">${esc(tr('amb.toolLead'))}</p><button type="button" class="btn-sec" id="tlAmbient"></button></section>
+          <section class="tool"><h3>⚡ ${esc(tr('qc.title'))}</h3><p class="muted">${esc(tr('qc.lead', { n: QUICK_MAX }))}</p>
+            <div class="qc-grid">${Object.keys(QUICK).map((k) => `<label class="quick-toggle"><input type="checkbox" data-qc="${k}" ${quickChosen().includes(k) ? 'checked' : ''}><span>${QUICK[k].ico} ${esc(tr(`qc.k.${k}`))}</span></label>`).join('')}</div></section>
+          <section class="tool"><h3>📺 ${esc(tr('tvpub.title'))}</h3><p class="muted">${esc(tr('tvpub.lead'))}</p><button type="button" class="btn-sec" id="tlPublic">${esc(S.meta?.publicTv ? tr('tvpub.off') : tr('tvpub.on'))}</button></section>
+          <section class="tool"><h3>${seasonIcon()} ${esc(tr('mem.seasonal.title'))}</h3><p class="muted">${esc(tr('mem.seasonal.lead'))}</p><button type="button" class="btn-sec" id="tlSeasonal" aria-pressed="${S.meta?.seasonal === true}">${esc(S.meta?.seasonal ? tr('mem.seasonal.off') : tr('mem.seasonal.on'))}</button></section>
           <section class="tool"><h3>⏱️ ${esc(tr('timer.title'))}</h3><p class="muted">${esc(tr('timer.lead'))}</p><button type="button" class="btn-sec" id="tlTimer">${esc(tr('amb.openTimer'))}</button></section>
           <section class="tool"><h3>${tr('tv.tl.voteTimer')}</h3><p class="muted">${tr('tv.tl.voteTimerText')}</p>
             <select class="input select select--sm" id="tlVoteTimer" aria-label="${tr('tv.tl.voteTimerAria')}">${opts(VOTE_TIMERS(), String(Number(S.meta?.voteSeconds) || 0))}</select>
@@ -1860,11 +1999,13 @@ const ToolsPanel = {
           <section class="tool tool--wide"><h3>${tr('tv.tl.saves')}</h3><p class="save-line" id="tlSave">${tr('tv.tl.reading')}</p>
             <div class="rg-row"><button type="button" class="btn-sec" id="tlTime">⏪ <span>${tr('tv.tm.title')}</span></button>
             <button type="button" class="btn-sec" id="tlCheck">🔎 <span>${tr('tv.ic.title')}</span></button>
+            <button type="button" class="btn-sec" id="tlTpl">🗂️ <span>${tr('tpl.title')}</span></button>
             <button type="button" class="btn-sec" id="tlTransfer">📺 <span>${tr('tv.tr.title')}</span></button></div>
             <div class="rg-row"><button type="button" class="btn-sec" id="tlDownload">${ICONS.download}<span>${tr('tv.tl.emergency')}</span></button>
             <button type="button" class="btn-sec" id="tlRestoreFile">📥 <span>${tr('tv.tl.import')}</span></button>
             ${S.meta?.groupId ? `<button type="button" class="btn-sec" id="tlGroupBackup">🗄️ <span>${tr('tv.tl.groupBackup')}</span></button><button type="button" class="btn-sec" id="tlGroupRestore">${tr('tv.tl.groupImport')}</button>` : ''}</div>
             ${S.meta?.groupId ? `<label class="quick-toggle"><input type="checkbox" id="tlAutoGB" ${autoGroupBackup() ? 'checked' : ''}><span>${tr('tv.tl.autoGB')}</span></label>` : ''}
+            ${S.meta?.groupId ? `<p class="muted small" id="tlGbState">🗄️ ${esc(BackupState.line(S.meta.groupId))}</p>` : ''}
             <input type="file" id="tlFile" accept="application/json,.json" hidden><input type="file" id="tlGroupFile" accept="application/json,.json" hidden></section>
           <section class="tool"><h3>${tr('tv.tl.room')}</h3>
             <label class="quick-toggle"><input type="checkbox" id="tlLock" ${S.meta?.locked ? 'checked' : ''}><span>${tr('tv.tl.lock')}</span></label>
@@ -1878,12 +2019,17 @@ const ToolsPanel = {
             <button type="button" class="btn-sec btn-sec--sm" id="tlPrune">${tr('tv.tl.prune')}</button></section>
           ${S.meta?.groupId ? `<section class="tool"><h3>${tr('tv.tl.group')}</h3><p class="muted">${tr('tv.tl.groupText')}</p><div class="rg-row"><button type="button" class="btn-sec" id="tlIdentity">${tr('tv.tl.identity')}</button><button type="button" class="btn-sec" id="tlAlbum">${tr('tv.tl.album')}</button></div>
             <p class="gk-line">${S.groupAdmin && groupKey(S.meta.groupId) ? tr('tv.tl.gkShow', { key: esc(prettyKey(groupKey(S.meta.groupId))) }) : S.groupAdmin ? tr('tv.tl.gkAdmin') : tr('tv.tl.gkNo')}</p>
-            <div class="rg-row">${!S.groupAdmin ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkEnter">${tr('tv.tl.gkEnter')}</button>` : ''}${S.groupOwner ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkNew">${tr('tv.tl.gkNew')}</button>` : ''}</div>
+            <div class="rg-row">${!S.groupAdmin ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkEnter">${tr('tv.tl.gkEnter')}</button>` : ''}${S.groupOwner ? `<button type="button" class="btn-sec btn-sec--sm" id="tlGkNew">${tr('tv.tl.gkNew')}</button>` : ''}${S.groupAdmin ? `<button type="button" class="btn-sec btn-sec--sm" id="tlOrg">🗂️ <span>${esc(tr('org.invite'))}</span></button>` : ''}<button type="button" class="btn-sec btn-sec--sm" id="tlChallenge">⚔️ <span>${esc(tr('chg.title'))}</span></button></div>
+            ${S.groupOrganizer && !S.groupAdmin ? `<p class="muted small">🗂️ ${esc(tr('org.youAre'))}</p>` : ''}
             ${S.groupAdmin ? `<h4 class="tool-sub">🔐 Privacy</h4>
             <label class="quick-toggle"><input type="checkbox" id="tlPrivate" ${S.privacy?.private ? 'checked' : ''}><span>${tr('tv.tl.private')}</span></label>
             <label class="field-label" for="tlExpire">${tr('tv.tl.expire')}</label>
-            <select class="input select select--sm" id="tlExpire">${opts([['0', tr('tv.tl.never')], ['7', tr('tv.tl.afterDays', { n: 7 })], ['30', tr('tv.tl.afterDays', { n: 30 })], ['90', tr('tv.tl.afterDays', { n: 90 })]], String(Number(S.privacy?.expireDays) || 0))}</select>` : ''}</section>` : ''}
+            <select class="input select select--sm" id="tlExpire">${opts([['0', tr('tv.tl.never')], ['7', tr('tv.tl.afterDays', { n: 7 })], ['30', tr('tv.tl.afterDays', { n: 30 })], ['90', tr('tv.tl.afterDays', { n: 90 })]], String(Number(S.privacy?.expireDays) || 0))}</select>
+            <label class="field-label" for="tlPhotosDays">${esc(tr('ret.photos'))}</label>
+            <select class="input select select--sm" id="tlPhotosDays">${opts([['0', tr('tv.tl.never')], ['90', tr('tv.tl.afterDays', { n: 90 })], ['180', tr('tv.tl.afterDays', { n: 180 })], ['365', tr('tv.tl.afterDays', { n: 365 })]], String(Number(S.privacy?.photosDays) || 0))}</select>
+            <p class="muted small">${esc(tr('ret.photosLead'))}</p>` : ''}</section>` : ''}
           <section class="tool"><h3>${tr('tv.tl.chaos')}</h3><p class="muted">${tr('tv.tl.chaosText')}</p><button type="button" class="btn-sec" id="tlVoting">${tr('tv.tl.questions')}</button></section>
+          <section class="tool"><h3>🎬 ${esc(tr('show.title'))}</h3><p class="muted">${esc(tr('show.toolLead'))}</p><div class="rg-row"><button type="button" class="btn-sec" id="tlShow">🎬 <span>${esc(tr('show.open'))}</span></button><button type="button" class="btn-sec" id="tlPresence">🙋 <span>${esc(tr('show.ps.title'))}</span></button></div></section>
           <section class="tool"><h3>${tr('tv.tl.check')}</h3><p class="muted">${tr('tv.tl.checkText')}</p>
             <a class="btn-sec" href="test.html" target="_blank" rel="noopener">${tr('tv.tl.checkOpen')}</a></section>
         </div>
@@ -1932,6 +2078,16 @@ const ToolsPanel = {
       if (e.target.closest('#tlInstall')) { this.close(); InstallQR.open(); return; }
       if (e.target.closest('#tlTour')) { resetTours(); this.close(); setTimeout(() => runTour(S.state?.phase || 'lobby', TOURS[S.state?.phase] || TOURS.lobby, { force: true }), 200); return; }
       if (e.target.closest('#tlGkEnter')) { this.close(); showGroupKeyBanner(); $('#gkInput')?.focus(); return; }
+      if (e.target.closest('#tlChallenge')) { this.close(); ChallengePanel.open(); return; }
+      if (e.target.closest('#tlOrg')) {
+        const k = randomCode(8);
+        set(dbRef(`groupOrgKeys/${S.meta.groupId}`), k).then(async () => {
+          const url = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}host.html#ok=${k}`;
+          try { await navigator.clipboard?.writeText(url); } catch { /* niente */ }
+          alert(tr('org.link', { url }));
+        }).catch((err) => toast(explainError(err), 'error'));
+        return;
+      }
       if (e.target.closest('#tlGkNew')) {
         if (!confirm(tr('tv.tl.gkConfirm'))) return;
         const k = randomCode(8);
@@ -1939,6 +2095,11 @@ const ToolsPanel = {
         return;
       }
       if (e.target.closest('#tlCheck')) { this.close(); IntegrityPanel.open(); return; }
+      if (e.target.closest('#tlTpl')) { this.close(); TemplatesPanel.open(); return; }
+      if (e.target.closest('#tlShow')) { this.close(); ShowPanel.open(); return; }
+      if (e.target.closest('#tlPresence')) { this.close(); PresencePanel.open(); return; }
+      if (e.target.closest('#tlSeasonal')) { this.close(); update(roomRef(S.code, 'meta'), { seasonal: S.meta?.seasonal ? null : true }).catch((err) => toast(explainError(err), 'error')); return; }
+      if (e.target.closest('#tlPublic')) { this.close(); setPublicTv(!S.meta?.publicTv).catch((err) => toast(explainError(err), 'error')); return; }
       if (e.target.closest('#tlTransfer')) { this.close(); TransferPanel.open(); return; }
       if (e.target.closest('#tlPrune')) {
         const n = await Vault.prune(30, S.code).catch(() => 0);
@@ -1952,6 +2113,12 @@ const ToolsPanel = {
     const metaFlag = (key, val) => update(roomRef(S.code, 'meta'), { [key]: val }).catch((err) => toast(explainError(err), 'error'));
     el.addEventListener('change', (e) => {
       const t = e.target;
+      if (t.dataset?.qc) {
+        const chosen = [...el.querySelectorAll('[data-qc]:checked')].map((x) => x.dataset.qc);
+        if (chosen.length > QUICK_MAX) { t.checked = false; toast(tr('qc.max', { n: QUICK_MAX }), 'warn'); return; }
+        setQuickChosen(chosen);
+        return;
+      }
       if (t.id === 'tlSounds') { setSounds(t.checked); if (t.checked) ding(); }
       if (t.id === 'tlMute') { setMuted(t.checked); if (t.checked) stopSpeaking(); syncMusic(); }
       if (t.id === 'tlMusic') { Music.setMode(t.value); syncMusic(true); }
@@ -1967,6 +2134,15 @@ const ToolsPanel = {
           if (!days) { toast(tr('tv.tl.expireNever')); return; }
           const n = await cleanupOldRooms(S.meta.groupId, days);
           toast(n ? tr('tv.tl.expired', { n }) : tr('tv.tl.expireLater', { n: days }));
+        }).catch((err) => toast(explainError(err), 'error'));
+      }
+      if (t.id === 'tlPhotosDays') {
+        const days = Number(t.value) || 0;
+        if (days && !confirm(tr('ret.photosAsk', { n: days }))) { t.value = String(Number(S.privacy?.photosDays) || 0); return; }
+        update(groupRef(S.meta.groupId, 'privacy'), { photosDays: days || null }).then(async () => {
+          if (!days) { toast(tr('ret.photosNever')); return; }
+          const n = await cleanupOldPhotos(S.meta.groupId, days);
+          toast(tr('ret.photosDone', { n }));
         }).catch((err) => toast(explainError(err), 'error'));
       }
       if (t.id === 'tlVoteAuto') metaFlag('voteAuto', t.checked || null);
@@ -2067,6 +2243,70 @@ async function setAmbient(on) {
   logEvent(on ? tr('amb.logOn') : tr('amb.logOff'), '🌙');
 }
 
+/**
+ * Comandi rapidi della TV (1.11, idea 15): fino a 5 azioni scelte negli Strumenti, sempre a portata nella barra in
+ * alto. Ognuna è attiva solo quando ha senso nella fase della serata (niente reveal a votazione chiusa, niente
+ * "prossimo" a metà voto). La scelta resta su questa TV.
+ */
+const QUICK_KEY = 'gnr_quick';
+const QUICK_MAX = 5;
+const QUICK = {
+  pause: { ico: '⏸️', label: () => tr(S.state?.paused ? 'qc.resume' : 'qc.pause'), ok: () => Boolean(S.state), run: () => setPaused(!S.state?.paused) },
+  reveal: { ico: '🃏', label: () => tr('qc.reveal'), ok: () => S.state?.phase === 'voting' && Boolean(S.state?.gameId), run: () => { const b = document.getElementById('revealBtn'); if (b) b.click(); else return revealGame(S.state.gameId); return null; } },
+  next: { ico: '⏭️', label: () => tr('qc.next'), ok: () => ['reveal', 'board'].includes(S.state?.phase), run: () => goNext() },
+  timer: { ico: '⏱️', label: () => tr('timer.title'), ok: () => S.state?.phase !== 'lobby', run: () => TablePanel.open('timer') },
+  mute: { ico: '🔇', label: () => tr(isMuted() ? 'qc.unmute' : 'qc.mute'), ok: () => true, run: () => { setMuted(!isMuted()); if (isMuted()) stopSpeaking(); syncMusic(); paintQuick(true); } },
+  ambient: { ico: '🌙', label: () => tr(S.meta?.ambient ? 'amb.off' : 'amb.on'), ok: () => true, run: () => setAmbient(!S.meta?.ambient) },
+  public: { ico: '📺', label: () => tr(S.meta?.publicTv ? 'tvpub.off' : 'tvpub.on'), ok: () => true, run: () => setPublicTv(!S.meta?.publicTv) },
+  interval: { ico: '☕', label: () => tr('tv.tl.startInt'), ok: () => ['idle', 'board'].includes(S.state?.phase), run: () => Interval.open() },
+  check: { ico: '🔎', label: () => tr('tv.ic.title'), ok: () => true, run: () => IntegrityPanel.open() }
+};
+const QUICK_DEFAULT = ['pause', 'timer', 'mute'];
+function quickChosen() {
+  try {
+    const v = JSON.parse(localStorage.getItem(QUICK_KEY) || 'null');
+    if (Array.isArray(v)) return v.filter((k) => QUICK[k]).slice(0, QUICK_MAX);
+  } catch { /* niente */ }
+  return QUICK_DEFAULT;
+}
+function setQuickChosen(list) {
+  try { localStorage.setItem(QUICK_KEY, JSON.stringify(list.filter((k) => QUICK[k]).slice(0, QUICK_MAX))); } catch { /* niente */ }
+  paintQuick(true);
+}
+let quickSig = '';
+function paintQuick(force = false) {
+  const bar = document.getElementById('quickBar');
+  if (!bar) return;
+  const keys = quickChosen();
+  const items = keys.map((k) => ({ k, label: QUICK[k].label(), on: QUICK[k].ok() }));
+  const sig = JSON.stringify(items);
+  if (!force && sig === quickSig && bar.childElementCount === items.length) return;
+  quickSig = sig;
+  bar.innerHTML = items.map((x) => `<button type="button" class="chip chip-btn quick-btn" data-quick="${x.k}" ${x.on ? '' : 'disabled'} title="${esc(x.label)}" aria-label="${esc(x.label)}"><span aria-hidden="true">${QUICK[x.k].ico}</span></button>`).join('');
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-quick]');
+  if (!b || b.disabled) return;
+  const q = QUICK[b.dataset.quick];
+  if (!q?.ok()) { paintQuick(true); return; }
+  Promise.resolve(q.run()).catch((err) => toast(explainError(err), 'error')).finally(() => setTimeout(() => paintQuick(true), 300));
+});
+
+/**
+ * Modalità pubblico della TV (1.11, idea 13): spariscono comandi, moduli e pulsanti della regia; restano gioco,
+ * timer, risultati, classifica e codice della stanza. La serata si guida dal telefono regia (o tasto V / "Regia").
+ * È in rooms/<codice>/meta/publicTv: resta dopo un ricaricamento e il telefono regia sa com'è.
+ */
+async function setPublicTv(on) {
+  if (!S.code || Boolean(S.meta?.publicTv) === Boolean(on)) return;
+  await update(roomRef(S.code, 'meta'), { publicTv: on ? true : null });
+  logEvent(on ? tr('tvpub.logOn') : tr('tvpub.logOff'), '📺');
+}
+function applyPublicTv() {
+  const on = Boolean(S.code && S.meta?.publicTv);
+  document.documentElement.classList.toggle('tv-public', on);
+}
+
 /** Tutto quello che la schermata ambientale mostra, ricavato dallo stato della serata. */
 function ambientModel() {
   const st = S.state || {};
@@ -2082,7 +2322,8 @@ function ambientModel() {
     : null;
   const board = buildBoard(S.games, S.votes).slice(0, 3).map((r) => ({ name: r.name, avg: fmt(r.stats.avg) }));
   return {
-    on: Boolean(S.meta?.ambient), phase,
+    // Modalità pubblico (1.11, idea 13): tra un gioco e l'altro la TV mostra la schermata ambientale invece del modulo della regia
+    on: Boolean(S.meta?.ambient) || (Boolean(S.meta?.publicTv) && phase === 'idle'), phase,
     mode: name ? 'game' : 'idle',
     statusKey: S.state?.paused ? 'paused' : playing ? 'playing' : pick ? 'next' : phase === 'lobby' ? 'lobby' : phase === 'board' ? 'board' : 'between',
     game: name ? { key: `${playing ? st.playId : 'pick'}:${name}`, name, image: S.draft?.image && !playing ? S.draft.image : (it?.image || it?.thumb || null), info: it ? libInfo(it) : '' } : null,
@@ -2171,6 +2412,23 @@ async function ensureGroupAdmin(gid, keyIn = '') {
   } catch { return false; }
 }
 
+/**
+ * Ruolo "organizzatore" (2.1, idea 63): gestisce i modelli di serata (e il calendario, che già scrivono tutti
+ * i dispositivi del gruppo) senza poter cambiare armadio, storico, identità o privacy. Lo dà un admin con un
+ * link che contiene una chiave a parte (groupOrgKeys): le regole del database lo verificano.
+ */
+async function ensureOrganizer(gid) {
+  try {
+    if ((await get(groupRef(gid, `organizers/${S.uid}`)).catch(() => null))?.val() === true) { S.groupOrganizer = true; return true; }
+    if (!S.hashOrgKey) return false;
+    await set(dbRef(`groupOrgKeyClaims/${gid}/${S.uid}`), S.hashOrgKey);
+    await set(groupRef(gid, `organizers/${S.uid}`), true);
+    S.groupOrganizer = true;
+    toast(tr('org.welcome', { name: S.meta?.groupName || '' }));
+    return true;
+  } catch { toast(tr('org.badKey'), 'warn'); return false; }
+}
+
 /** Una volta autorizzati: serata in corso, stanza nell'elenco del gruppo, giocatori registrati come membri. */
 function onGroupAdmin(gid) {
   S.groupAdmin = true;
@@ -2226,8 +2484,8 @@ function watchGroup() {
   if (!gid || S.groupWatching === gid) return;
   S.groupWatching = gid;
   // I telefoni con il profilo del gruppo trovano da soli la serata in corso (solo se questo computer è autorizzato).
-  ensureGroupAdmin(gid).then((ok) => { if (ok) onGroupAdmin(gid); else { S.groupAdmin = false; showGroupKeyBanner(); } }).catch(() => {});
-  const paths = { group: 'info', ...(S.meta?.armadioId ? {} : { library: 'library' }), nights: 'nights', identity: 'identity', next: 'next', photos: `photos/${S.code}`, privacy: 'privacy' };
+  ensureGroupAdmin(gid).then((ok) => { if (ok) onGroupAdmin(gid); else { S.groupAdmin = false; ensureOrganizer(gid); showGroupKeyBanner(); } }).catch(() => {});
+  const paths = { group: 'info', ...(S.meta?.armadioId ? {} : { library: 'library' }), nights: 'nights', identity: 'identity', next: 'next', photos: `photos/${S.code}`, privacy: 'privacy', house: 'house' };
   for (const [key, path] of Object.entries(paths)) {
     onValue(groupRef(gid, path), (snap) => {
       S[key] = snap.val() || (key === 'group' || key === 'next' || key === 'privacy' ? null : {});
@@ -2319,83 +2577,6 @@ function photoList(photos) {
   return Object.entries(photos || {}).map(([id, p]) => ({ id, ...p })).filter((p) => p.data).sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
 }
 
-const AlbumPanel = {
-  el: null,
-  isOpen() { return Boolean(this.el); },
-  /** room: stanza di cui mostrare le foto (di default quella di stasera). */
-  async open(room = S.code, title = tr('tv.al.title')) {
-    if (this.el || !S.meta?.groupId) return;
-    this.room = room;
-    this.slide = null;
-    this.sig = null;
-    const el = document.createElement('div');
-    el.className = 'overlay';
-    el.innerHTML = `
-      <div class="card panel panel--wide panel--album" role="dialog" aria-modal="true" aria-labelledby="alTitle">
-        <div class="panel-head"><h2 id="alTitle">${esc(title)}</h2>
-          <div class="rg-row">${room === S.code ? `<button type="button" class="btn-sec btn-sec--sm" id="alAdd">${ICONS.image}<span>${tr('tv.al.add')}</span></button><input type="file" id="alFile" accept="image/*" hidden>` : ''}
-          <button type="button" class="btn-sec btn-sec--sm" id="alShow">${ICONS.play}<span>${tr('tv.al.show')}</span></button>
-          <button type="button" class="icon-btn" id="alClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div></div>
-        <div class="album-grid" id="alGrid"><p class="muted">${tr('tv.al.loading')}</p></div>
-      </div>`;
-    document.body.appendChild(el);
-    this.el = el;
-    el.addEventListener('click', (e) => {
-      if (e.target === el || e.target.closest('#alClose')) { this.close(); return; }
-      if (e.target.closest('#alAdd')) { $('#alFile', el).click(); return; }
-      if (e.target.closest('#alShow')) { this.show(0); return; }
-      const d = e.target.closest('[data-delphoto]');
-      if (d && confirm(tr('tv.al.delConfirm'))) { remove(groupRef(S.meta.groupId, `photos/${this.room}/${d.dataset.delphoto}`)).catch((err) => toast(explainError(err), 'error')); return; }
-      const ph = e.target.closest('[data-photo]');
-      if (ph) this.show(Number(ph.dataset.photo));
-    });
-    $('#alFile', el)?.addEventListener('change', async (e) => {
-      const f = e.target.files[0];
-      e.target.value = '';
-      if (!f) return;
-      try {
-        const data = await compressPhoto(f);
-        await set(push(groupRef(S.meta.groupId, `photos/${this.room}`)), { data, uid: S.uid, by: 'TV', at: serverTimestamp() });
-      } catch (err) { if (!err.cancelled) toast(explainError(err), 'error'); }
-    });
-    if (room !== S.code) {
-      const snap = await get(groupRef(S.meta.groupId, `photos/${room}`)).catch(() => null);
-      this.photos = photoList(snap?.val());
-    }
-    this.update();
-  },
-  list() { return this.room === S.code ? photoList(S.photos) : (this.photos || []); },
-  update() {
-    if (!this.el) return;
-    const list = this.list();
-    const sig = list.map((p) => p.id).join('|');
-    if (sig === this.sig) return;
-    this.sig = sig;
-    $('#alGrid', this.el).innerHTML = list.length ? list.map((p, i) => `
-      <figure class="polaroid" style="--r:${((i * 37) % 7) - 3}deg">
-        <button type="button" class="polaroid-img" data-photo="${i}" aria-label="${tr('tv.al.open')}"><img src="${esc(p.data)}" alt="${esc(p.caption || tr('tv.al.photo'))}"></button>
-        <figcaption>${esc(p.caption || '')}<small>${esc(p.by || '')}${p.game ? ` · ${esc(p.game)}` : ''}</small></figcaption>
-        ${this.room === S.code ? `<button type="button" class="${'lib-del'}" data-delphoto="${esc(p.id)}" aria-label="${tr('tv.al.del')}">${ICONS.x}</button>` : ''}
-      </figure>`).join('') : `<p class="muted">${this.room === S.code ? tr('tv.al.empty') : tr('tv.al.emptyOld')}</p>`;
-  },
-  show(i) {
-    const list = this.list();
-    if (!list.length) return;
-    clearInterval(this.timer);
-    let idx = i;
-    const box = document.createElement('div');
-    box.className = 'slideshow';
-    const paint = () => {
-      const p = list[idx % list.length];
-      box.innerHTML = `<figure><img src="${esc(p.data)}" alt=""><figcaption>${esc(p.caption || '')} <small>${esc(p.by || '')}</small></figcaption></figure><p class="muted">${tr('tv.al.slide', { i: String((idx % list.length) + 1), n: String(list.length) })}</p>`;
-    };
-    paint();
-    this.timer = setInterval(() => { idx++; paint(); }, 4500);
-    box.addEventListener('click', () => { clearInterval(this.timer); box.remove(); });
-    document.body.appendChild(box);
-  },
-  close() { clearInterval(this.timer); document.querySelector('.slideshow')?.remove(); this.el?.remove(); this.el = null; this.sig = ''; }
-};
 
 // ---------------------------------------------------------------------------
 // Prossima serata (data, luogo, presenze)
@@ -2414,7 +2595,7 @@ function nextNightHTML(withForm = true) {
       <h2>${tr('tv.nx.title')}</h2>
       ${at ? `<p class="next-when">${esc(fmtDateL(at, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}${nx.place ? ` · ${esc(nx.place)}` : ''}</p>
         ${nx.note ? `<p class="muted">${esc(nx.note)}</p>` : ''}
-        <div class="rsvp-cols">${['si', 'forse', 'no'].map((a) => `<div><b>${RSVP_LABEL(a)} (${by(a).length})</b><p>${esc(by(a).join(', ')) || '—'}</p></div>`).join('')}</div>` : `<p class="muted">${tr('tv.nx.none')}</p>`}
+        <div class="rsvp-cols">${['si', 'forse', 'no'].map((a) => `<div><b>${RSVP_LABEL(a)} (${by(a).length})</b><p>${esc(by(a).join(', ')) || '—'}</p></div>`).join('')}</div>${nextBoardTvHTML(nx)}` : `<p class="muted">${tr('tv.nx.none')}</p>`}
       ${withForm ? `<form class="next-form" id="nxForm" novalidate>
         <label class="sr-only" for="nxAt">${tr('tv.nx.at')}</label><input class="input" type="datetime-local" id="nxAt" value="${local}">
         <label class="sr-only" for="nxPlace">${tr('tv.nx.place')}</label><input class="input" id="nxPlace" maxlength="60" placeholder="${tr('tv.nx.placePh')}" value="${esc(nx?.place || '')}">
@@ -2436,113 +2617,6 @@ async function saveNextNight(atStr, place) {
 // Scheda completa del gioco (ludoteca avanzata)
 // ---------------------------------------------------------------------------
 
-const GameSheet = {
-  el: null,
-  isOpen() { return Boolean(this.el); },
-  open(id) {
-    this.close();
-    const it = S.library?.[id];
-    if (!it) return;
-    this.id = id;
-    this.eanClear = false;
-    this.image = it.image || it.thumb || null;
-    this.imageChanged = false;
-    const rec = gameRecord(S.nights, it.name);
-    const opt = (vals, cur, empty) => `<option value="">${empty}</option>` + vals.map(([v, l]) => `<option value="${esc(v)}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('');
-    const bases = libraryItems().filter((x) => x.id !== id && !x.baseId).map((x) => [x.id, x.name]);
-    const el = document.createElement('div');
-    el.className = 'overlay';
-    el.innerHTML = `
-      <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="gsTitle">
-        <div class="panel-head"><h2 id="gsTitle">${esc(it.name)}</h2><button type="button" class="icon-btn" id="gsClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
-        <div class="gs-record">
-          <span>${tr('tv.gs.matches', { n: String(rec.matches) })}</span>
-          <span>${tr('tv.gs.avg', { v: rec.avg !== null ? fmt(rec.avg) : '—' })}</span>
-          <span>${tr('tv.gs.minutes', { v: rec.minutes ? `${rec.minutes} min` : '—' })}</span>
-          <span>${tr('tv.gs.last', { v: rec.last ? fmtDateL(rec.last, { day: 'numeric', month: 'short', year: 'numeric' }) : tr('tv.gs.never') })}</span>
-          <span>${tr('tv.gs.consensus', { v: rec.consensus !== null ? `${rec.consensus}%` : '—' })}</span>
-          <span><b>${rec.champion ? esc(rec.champion.name) : '—'}</b> ${rec.champion ? tr('tv.gs.champWins', { n: rec.champion.wins }) : tr('tv.gs.champ')}</span>
-          <span>${tr('tv.gs.level', { n: String(rec.level) })}</span>
-        </div>
-        <div class="gs-grid">
-          <button type="button" class="lib-add-img ${this.image ? 'has-img' : ''}" id="gsPick" aria-label="${tr('tv.gs.photo')}">${this.image ? `<img src="${esc(this.image)}" alt="">` : ICONS.image}</button>
-          <input type="file" id="gsFile" accept="image/*" hidden>
-          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.name')}</span><input class="input" id="gsName" maxlength="40" value="${esc(it.name)}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.minP')}</span><select class="input select" id="gsMin">${playersOptions(it.minPlayers, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.maxP')}</span><select class="input select" id="gsMax">${playersOptions(it.maxPlayers, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.dur')}</span><select class="input select" id="gsDur">${durationOptions(it.duration)}</select></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.mode')}</span><select class="input select" id="gsMode">${opt(Object.entries(GAME_MODES), it.mode, '—')}</select></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.weight')}</span><select class="input select" id="gsWeight">${opt([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((w) => [w, `${fmtNum(w)} / 5`]), it.weight, '—')}</select></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.tags')}</span><input class="input" id="gsTags" maxlength="120" placeholder="${tr('tv.gs.tagsPh')}" value="${esc(tagsOf(it).join(', '))}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.pub')}</span><input class="input" id="gsPub" maxlength="40" value="${esc(it.publisher || '')}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.year')}</span><input class="input" id="gsYear" type="number" min="1900" max="2100" value="${esc(it.year || '')}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.lang')}</span><input class="input" id="gsLang" maxlength="20" value="${esc(it.language || '')}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.owner')}</span><input class="input" id="gsOwner" maxlength="24" value="${esc(it.owner || (it.addedBy && it.addedBy !== 'TV' ? it.addedBy : ''))}"></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.status')}</span><select class="input select" id="gsStatus">${opt(Object.entries(GAME_STATUS).filter(([k]) => k !== 'posseduto'), it.status === 'posseduto' ? '' : it.status, tr('tv.gs.available'))}</select></label>
-          <label class="gs-f"><span class="field-label">${tr('tv.gs.loan')}</span><input class="input" id="gsLoan" maxlength="24" value="${esc(it.loanTo || '')}"></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.base')}</span><select class="input select" id="gsBase">${opt(bases, it.baseId, tr('tv.gs.isBase'))}</select></label>
-          <label class="gs-f gs-f--full"><span class="field-label">${tr('tv.gs.rules')}</span><textarea class="input" id="gsRules" maxlength="600" rows="3" placeholder="${tr('tv.gs.rulesPh')}">${esc(it.rules || '')}</textarea></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.setup')}</span><textarea class="input" id="gsSetup" maxlength="300" rows="3" placeholder="${tr('tv.gs.setupPh')}">${esc(it.setup || '')}</textarea></label>
-          <label class="gs-f gs-f--wide"><span class="field-label">${tr('tv.gs.video')}</span><input class="input" id="gsVideo" type="url" maxlength="200" placeholder="https://www.youtube.com/…" value="${esc(it.video || '')}">
-            ${it.ean ? `<small class="muted">${tr('tv.gs.ean', { ean: esc(it.ean) })} <button type="button" class="link-btn" id="gsEanClear">${tr('tv.gs.eanDel')}</button></small>` : `<small class="muted">${tr('tv.gs.eanHow')}</small>`}</label>
-        </div>
-        <p class="form-error" id="gsErr" role="alert"></p>
-        <div class="claim-actions"><button type="button" class="btn btn-big" id="gsSave">${ICONS.check}<span>${tr('tv.save')}</span></button></div>
-      </div>`;
-    document.body.appendChild(el);
-    this.el = el;
-    el.addEventListener('click', (e) => {
-      if (e.target === el || e.target.closest('#gsClose')) { this.close(); return; }
-      if (e.target.closest('#gsPick')) { $('#gsFile', el).click(); return; }
-      if (e.target.closest('#gsSave')) this.save();
-      if (e.target.closest('#gsEanClear')) { this.eanClear = true; e.target.closest('small').textContent = tr('tv.gs.eanGone'); }
-    });
-    $('#gsFile', el).addEventListener('change', async (e) => {
-      const f = e.target.files[0];
-      e.target.value = '';
-      if (!f) return;
-      try { this.image = await gameImage(f); this.imageChanged = true; const b = $('#gsPick', el); b.innerHTML = `<img src="${this.image}" alt="">`; b.classList.add('has-img'); } catch (err) { if (!err.cancelled) toast(err.message, 'error'); }
-    });
-  },
-  async save() {
-    const v = (id) => $(id, this.el).value.trim();
-    const num = (id) => Number(v(id)) || null;
-    const name = cleanName(v('#gsName'));
-    const err = $('#gsErr', this.el);
-    if (!name) { err.textContent = tr('tv.gs.errName'); return; }
-    const same = findLibrary(name);
-    if (same && same.id !== this.id) { err.textContent = tr('tv.gs.errDup'); return; }
-    if (num('#gsMin') && num('#gsMax') && num('#gsMin') > num('#gsMax')) { err.textContent = tr('tv.gs.errMinMax'); return; }
-    if (v('#gsVideo') && !/^https:\/\/[^\s"<>]+$/.test(v('#gsVideo'))) { err.textContent = tr('tv.gs.errVideo'); return; }
-    const year = num('#gsYear');
-    const status = v('#gsStatus') || null;
-    const patch = {
-      name, image: this.image || null,
-      minPlayers: num('#gsMin'), maxPlayers: num('#gsMax'), duration: num('#gsDur'),
-      mode: v('#gsMode') || null, weight: num('#gsWeight'),
-      tags: v('#gsTags') ? [...new Set(v('#gsTags').split(',').map((t) => cleanName(t, 20)).filter(Boolean))].slice(0, 8) : null,
-      publisher: cleanName(v('#gsPub'), 40) || null, year: year && year >= 1900 && year <= 2100 ? year : null,
-      language: cleanName(v('#gsLang'), 20) || null, owner: cleanName(v('#gsOwner'), 24) || null,
-      status, loanTo: status === 'prestato' ? (cleanName(v('#gsLoan'), 24) || null) : null,
-      baseId: v('#gsBase') || null,
-      rules: $('#gsRules', this.el).value.trim().slice(0, 600) || null,
-      setup: $('#gsSetup', this.el).value.trim().slice(0, 300) || null,
-      video: /^https:\/\/[^\s"<>]+$/.test(v('#gsVideo')) ? v('#gsVideo').slice(0, 200) : null,
-      ...(this.eanClear ? { ean: null } : {})
-    };
-    try {
-      if (S.meta?.armadioId) {
-        const before = S.library?.[this.id] || {};
-        delete patch.image;
-        await saveGame(S.meta.armadioId, this.id, patch, this.imageChanged ? { full: this.image || null } : {});
-        armLog(S.meta.armadioId, { op: 'edit', item: this.id, name, by: 'TV', msg: before.name !== name ? `prima: ${before.name}` : '' }); // i18n-ok: cronologia dell'armadio nel database
-      } else await update(libRef(this.id), patch);
-      toast(tr('tv.gs.saved', { name }));
-      this.close();
-    } catch (e) { err.textContent = explainError(e); }
-  },
-  close() { this.el?.remove(); this.el = null; }
-};
 
 /** Persone conosciute dal gruppo (per la ricerca "che Andrea non odia"). */
 function knownPeople() {
@@ -2581,10 +2655,77 @@ function moodNow() {
   return 'lounge';
 }
 
+/**
+ * Classifica a squadre (2.1, idea 3): somma dei punteggi del segnapunti di ogni partita per squadra.
+ * Separata dai voti di gradimento; compare solo se ci sono squadre e almeno un punteggio.
+ */
+function teamTotalsNow() {
+  const teams = S.table?.teams;
+  if (!teams) return [];
+  const scores = Object.fromEntries(Object.entries(S.games || {}).filter(([, g]) => g?.scores).map(([id, g]) => [id, g.scores]));
+  return teamTotals(teams, scores).filter((x) => x.members.length);
+}
+function teamBoardHTML() {
+  const list = teamTotalsNow();
+  if (list.length < 2 || !list.some((x) => x.games)) return '';
+  return `<section class="team-board card" aria-label="${esc(tr('show.team.title'))}"><h2>🤝 ${esc(tr('show.team.title'))}</h2><ol>${list.map((x, r) => {
+    const st = TEAM_STYLE[x.i] || TEAM_STYLE[0];
+    return `<li style="--tc:${st.color}"><span class="team-dot">${st.icon}</span><b>${esc(st.name)}</b><small class="muted">${esc(x.members.map((u) => S.players?.[u]?.name || '?').join(', '))}</small><span class="team-pts">${esc(tr('show.team.pts', { n: x.total }))}</span>${r === 0 && x.total > (list[1]?.total ?? -1) ? '<span aria-hidden="true">👑</span>' : ''}</li>`;
+  }).join('')}</ol><p class="muted small">${esc(tr('show.team.note'))}</p></section>`;
+}
+
+/**
+ * Limiti della serata (2.1, idea 31): quando si supera la durata massima o si arriva al numero massimo di
+ * giochi, la TV lo dice una volta (avviso e cronaca) e propone di chiudere. Non chiude mai da sola.
+ */
+function checkLimits() {
+  const m = S.meta || {};
+  if (!S.code || S.state?.phase === 'awards') return;
+  const played = Object.values(S.games || {}).filter((g) => g?.status === 'revealed').length;
+  const mins = m.createdAt ? Math.floor((serverNow() - Number(m.createdAt)) / 60000) : 0;
+  const hit = [];
+  if (m.maxGames && played >= m.maxGames) hit.push(tr('lim.hitGames', { n: m.maxGames }));
+  if (m.maxMinutes && mins >= m.maxMinutes) hit.push(tr('lim.hitMinutes', { n: m.maxMinutes }));
+  const sig = hit.join('|');
+  if (!sig || S.limitSig === sig) return;
+  S.limitSig = sig;
+  logEvent(hit.join(' · '), '⏳');
+  toast(`${hit.join(' · ')} ${tr('lim.suggest')}`, 'warn');
+}
+
+/**
+ * Idea 12 (2.1): a serata finita (premiazione conclusa) gli ospiti diventano "Ospite 1, 2…" anche nella stanza,
+ * senza foto né motto, un minuto dopo (il tempo di guardare la premiazione). Il riassunto del gruppo non li ha mai avuti.
+ */
+let anonTimer = null;
+function maybeAnonGuests() {
+  const done = S.state?.phase === 'awards' && S.state?.done;
+  if (!done) { clearTimeout(anonTimer); anonTimer = null; return; }
+  if (anonTimer || !Object.values(S.players || {}).some((p) => p?.guest && !p.anon)) return;
+  anonTimer = setTimeout(() => {
+    const patch = guestAnonPatch(S.players, (n) => tr('show.guestN', { n }));
+    if (Object.keys(patch).length && S.state?.done) update(roomRef(S.code), patch).then(() => logEvent(tr('show.guestAnonDone'), '🕶️')).catch(() => {});
+  }, 60000);
+}
+
+/**
+ * Scena della fase in corso (2.1, idee 1 e 17): quanti effetti e, con le regole del silenzio, se abbassare
+ * musica e atmosfere (regole aperte, voto, commentatore). Il "Silenzioso" scelto da chi guida non si tocca.
+ */
+function applyScene() {
+  const sc = currentScene();
+  setFxScale(fxScale(sc.fx));
+  duck(sc.duck, 'scene');
+  document.documentElement.dataset.fx = sc.fx;
+}
+
 let musicTimer = null;
 function syncMusic() {
   const mode = Music.mode();
   if (mode === 'off' || isMuted()) { if (Music.playing() || Music.wanted) Music.stop(); return; }
+  // Musica della scena (2.1): se la fase ha una musica sua vince sull'"automatica"; "spenta" la ferma solo qui.
+  const sceneMusic = S.code ? currentScene().music : 'auto';
+  if (sceneMusic === 'off') { if (Music.playing() || Music.wanted) Music.stop(); return; }
   // Durante il reveal la musica tace: parlano i tamburi e le carte.
   const quiet = (S.revealQuietUntil || 0) - Date.now();
   if (quiet > 0 && S.state?.phase === 'reveal') {
@@ -2593,7 +2734,7 @@ function syncMusic() {
     musicTimer = setTimeout(syncMusic, quiet + 50);
     return;
   }
-  const mood = mode === 'auto' ? moodNow() : mode;
+  const mood = sceneMusic !== 'auto' ? sceneMusic : mode === 'auto' ? moodNow() : mode;
   let level = 0;
   if (mood === 'suspense' && S.state?.phase === 'voting') {
     const votes = S.votes?.[S.state.gameId] || {};
@@ -2882,7 +3023,7 @@ const Interval = {
 };
 
 function anyPanelOpen() {
-  return [GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel, ExportPanel, QrPanel, TablePanel, GameWheel, VideoPanel, Quiz, PlanPanel, RulesPanel].some((p) => p.isOpen()) || ClaimPanel.isOpen() || Boolean($('#eventOverlay'));
+  return [GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel, ExportPanel, QrPanel, TablePanel, GameWheel, VideoPanel, Quiz, PlanPanel, RulesPanel, CustomAwardPanel, LateVotePanel, ShowPanel, PresencePanel, RevealPreview, ChallengePanel].some((p) => p.isOpen()) || ClaimPanel.isOpen() || Boolean($('#eventOverlay'));
 }
 
 function checkAutoInterval() {
@@ -2954,95 +3095,19 @@ function recapData(board, awards) {
 }
 
 /** Pannello "Condividi ed esporta": immagine, storia verticale, PDF, CSV. */
-const ExportPanel = {
-  el: null,
-  isOpen() { return Boolean(this.el); },
-  open(board, awards) {
-    this.close();
-    this.board = board;
-    this.awards = awards;
-    const el = document.createElement('div');
-    el.className = 'overlay';
-    el.innerHTML = `
-      <div class="card panel" role="dialog" aria-modal="true" aria-labelledby="exTitle">
-        <div class="panel-head"><h2 id="exTitle">${tr('tv.ex.title')}</h2><button type="button" class="icon-btn" id="exClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
-        <div class="export-grid">
-          <button type="button" class="export-opt" id="exImg"><span aria-hidden="true">🖼️</span><b>${tr('tv.ex.img')}</b><small>${tr('tv.ex.imgText')}</small></button>
-          <button type="button" class="export-opt" id="exStory"><span aria-hidden="true">📱</span><b>${tr('tv.ex.story')}</b><small>${tr('tv.ex.storyText')}</small></button>
-          <button type="button" class="export-opt" id="exPdf"><span aria-hidden="true">📄</span><b>${tr('tv.ex.pdf')}</b><small>${tr('tv.ex.pdfText')}</small></button>
-          <button type="button" class="export-opt" id="exCsv"><span aria-hidden="true">📊</span><b>CSV</b><small>${tr('tv.ex.csvText')}</small></button>
-          <button type="button" class="export-opt" id="exVideo"><span aria-hidden="true">🎬</span><b>${tr('tv.ex.video')}</b><small>${tr('tv.ex.videoText')}</small></button>
-        </div>
-      </div>`;
-    document.body.appendChild(el);
-    this.el = el;
-    el.addEventListener('click', async (e) => {
-      if (e.target === el || e.target.closest('#exClose')) { this.close(); return; }
-      const b = e.target.closest('.export-opt');
-      if (!b) return;
-      b.disabled = true;
-      try {
-        if (b.id === 'exImg') await this.image();
-        if (b.id === 'exStory') await this.story();
-        if (b.id === 'exPdf') this.pdf();
-        if (b.id === 'exVideo') { const data = this.videoData(); this.close(); VideoPanel.open(data); return; }
-        if (b.id === 'exCsv') downloadFile(`GameNight_Show_${S.code}_${new Date().toISOString().slice(0, 10)}.csv`, boardCSV(this.board, S.players), 'text/csv;charset=utf-8');
-      } catch (err) {
-        toast(tr('tv.ex.failed'), 'error');
-        console.error(err);
-      } finally { b.disabled = false; }
-    });
-  },
-  title() { return `${S.identity?.emblem && !S.identity?.logo ? `${S.identity.emblem} ` : ''}${S.meta.groupName || tr('tv.ourNight')}`; },
-  /** Dati per il video riassunto. */
-  videoData() {
-    const champs = nightChampions(this.board).filter((c) => c.rank <= 3).slice(0, 3).map((c) => ({ name: playerOrGhost(c.uid).name, points: c.points, player: playerOrGhost(c.uid) }));
-    const awards = this.awards.filter((a) => a.kind !== 'ach').map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) }));
-    return {
-      group: S.meta.groupName || tr('tv.ourNight'), subtitle: nightDate(S.meta.createdAt), number: nightNumber(),
-      games: this.board.map((r) => ({ name: r.name, avg: r.stats.avg, image: /^data:image\//.test(r.image || '') ? r.image : null })),
-      champs, awards, photos: photoList(S.photos).map((p) => p.data)
-    };
-  },
-  async image() {
-    const blob = await renderShareImage({ title: this.title(), subtitle: nightDate(S.meta.createdAt), board: this.board, awards: this.awards.filter((a) => a.kind !== 'ach') });
-    await shareOrDownload(blob, `GameNight_Show_${new Date().toISOString().slice(0, 10)}.png`, tr('tv.ex.shareTitle'), true);
-  },
-  async story() {
-    const d = recapData(this.board, this.awards);
-    const facts = [tr('tv.ic.nGames', { n: d.games }), tr('tv.fc.players', { n: String(activePlayers(S.players).length) }), d.minutes ? (d.minutes >= 60 ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : `${d.minutes} min`) : ''].filter(Boolean).join(' · ');
-    const awards = this.awards.filter((a) => a.kind !== 'ach' && !['mvp', 'wins'].includes(a.key)).map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) }));
-    const blob = await renderStoryImage({ title: S.meta.groupName || tr('tv.ourNight'), emblem: S.identity?.logo ? '' : (S.identity?.emblem || ''), color: S.identity?.color, subtitle: nightDate(S.meta.createdAt), number: nightNumber(), board: this.board, mvp: d.mvp, winners: d.kings, facts, awards });
-    await shareOrDownload(blob, `GameNight_Show_storia_${new Date().toISOString().slice(0, 10)}.png`, tr('tv.ourNight'), true);
-  },
-  pdf() {
-    const d = recapData(this.board, this.awards);
-    const crits = activeCriteria(S.meta.voting);
-    const rows = this.board.map((r) => ({
-      rank: r.rank, name: r.name, avg: r.stats.avg, n: r.stats.n,
-      crit: r.quick ? {} : Object.fromEntries(crits.map((c) => [c.short || c.label, r.stats.crit[c.key] ?? null])),
-      mvp: r.stats.mvp.winners.map((u) => playerOrGhost(u).name),
-      winners: Object.keys(r.winners || {}).map((u) => playerOrGhost(u).name),
-      minutes: r.playedMin || null, audience: r.stats.audience?.n ? r.stats.audience.avg : null, consensus: r.stats.consensus
-    }));
-    const quotes = [];
-    for (const r of this.board) for (const v of [...r.stats.list, ...(r.stats.audience?.list || [])]) if (v.comment) quotes.push({ name: playerOrGhost(v.uid).name, game: r.name, text: v.comment });
-    const data = {
-      group: S.meta.groupName || '', emblem: S.identity?.logo ? '' : (S.identity?.emblem || ''), color: S.identity?.color,
-      date: nightDate(S.meta.createdAt), number: nightNumber(),
-      facts: [tr('tv.ic.nGames', { n: d.games }), tr('tv.fc.players', { n: String(activePlayers(S.players).length) }), d.minutes ? `${Math.floor(d.minutes / 60)} h ${d.minutes % 60} min` : ''].filter(Boolean).join(' · '),
-      rows,
-      awards: this.awards.filter((a) => a.kind !== 'ach').map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)), value: a.value })),
-      achievements: this.awards.filter((a) => a.kind === 'ach').map((a) => ({ title: a.title, who: namesList(a.players.map((p) => p.name)) })),
-      quotes: quotes.slice(0, 20),
-      photos: photoList(S.photos),
-      next: d.next ? `${d.next}${S.next?.place ? `, ${S.next.place}` : ''}` : ''
-    };
-    // Browser: finestra di stampa ("Salva come PDF"). App Android: PDF vero salvato e aperto.
-    exportReport(data).then((r) => { if (r === 'print') toast(tr('tv.ex.printHint')); });
-  },
-  close() { this.el?.remove(); this.el = null; }
-};
+/** Testo per Discord dalla classifica di stasera. */
+function discordText(board, awards) {
+  const d = recapData(board, awards);
+  return discordSummary({
+    group: S.meta?.groupName || '', date: nightDate(S.meta?.createdAt), board: board.map((r) => ({ name: r.name, avg: r.stats.avg, n: r.stats.n })),
+    mvp: d.mvp, kings: d.kings, awards: d.awards, next: d.next,
+    labels: { board: tr('tv.ic.board'), votes: (n) => tr('tv.rv.nVotes', { n }), kings: tr('dc.kings'), next: tr('tv.nx.title'), decimal: tr('dc.decimal') }
+  });
+}
+async function sendDiscordNow(board, awards) {
+  try { await sendToDiscord(discordText(board, awards)); toast(tr('dc.sent')); logEvent(tr('dc.sent'), '💬'); } catch (err) { toast(tr(err.code === 'nohook' ? 'dc.badHook' : 'dc.failed'), 'warn'); }
+}
+
 
 function render() {
   if (!WATCHED.every((k) => S.loaded.has(k))) return;
@@ -3054,6 +3119,7 @@ function render() {
   watchArmadio();
   trackOffline();
   if (!S.meta) { renderRoomGone(); return; }
+  if (Seasonal.on !== (S.meta.seasonal === true)) { Seasonal.set(S.meta.seasonal); S.screenKey = ''; }
   trackEvents();
   Save.touch();
   registerMembers();
@@ -3091,13 +3157,25 @@ function render() {
   TablePanel.update();
   PlanPanel.update();
   RulesPanel.update();
+  CustomAwardPanel.update();
+  LateVotePanel.update();
+  processLate();
+  ShowPanel.update();
+  PresencePanel.update();
+  maybeAnonGuests();
+  checkLimits();
+  applyTheme21();
+  applyScene();
   SharedTimer.sync();
   Quiz.update();
   Knocks.sync();
   maybeCleanup();
+  maybePhotoCleanup();
   applyIdentity();
   processBuzz();
   paintPause();
+  applyPublicTv();
+  paintQuick();
   Ambient.sync();
   paintEvent();
   processCommands();
@@ -3169,6 +3247,7 @@ function shellHTML(phase) {
           <span class="chip">${tr('tv.tr.room')} <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="${tr('tv.hdr.locked')}" hidden> 🔒</span></span>
           <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="${tr('tv.hdr.playersTitle')}">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
           <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="${tr('tv.hdr.endTitle')}">🏁 <span>${tr('tv.endNight')}</span></button>
+          <span class="quick-bar" id="quickBar" role="toolbar" aria-label="${esc(tr('qc.title'))}"></span>
           <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="${tr('tv.hdr.toolsTitle')}">${ICONS.edit}<span>${tr('tv.tl.title')}</span></button>
           ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="${tr('tv.hdr.libTitle')}">${ICONS.books}<span>${tr('tv.armadio')}</span></button>` : ''}
           <button class="icon-btn" type="button" id="fsBtn" aria-label="${tr('tv.hdr.fs')}" title="${tr('tv.hdr.fsTitle')}">${ICONS.expand}</button>
@@ -3176,6 +3255,7 @@ function shellHTML(phase) {
         </div>
       </header>
       <main id="screen" class="screen screen--${phase}"></main>
+      <button type="button" class="pub-exit" id="pubExit" title="${esc(tr('tvpub.exitTitle'))}">🎛️ <span>${esc(tr('tvpub.exit'))}</span></button>
     </div>`;
 }
 
@@ -3213,6 +3293,7 @@ function bindShell() {
   $('#hdrPlayers').addEventListener('click', () => Panel.open());
   $('#hdrLib')?.addEventListener('click', () => LibPanel.open());
   $('#hdrTools')?.addEventListener('click', () => ToolsPanel.open());
+  $('#pubExit')?.addEventListener('click', () => setPublicTv(false).catch((err) => toast(explainError(err), 'error')));
   $('#hdrEnd')?.addEventListener('click', () => endNight());
   $('#newNightBtn').addEventListener('click', newNight);
   $('#hdrSafe').addEventListener('click', () => { if (confirm(tr('tv.safe.offConfirm'))) applySafeMode(false); });
@@ -3269,10 +3350,11 @@ function setupGlobalKeys() {
     if (tourOpen()) return;
     if (Interval.isOpen()) { e.preventDefault(); Interval.close(); return; }
     if (Ambient.isShown() && (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack' || e.key === 'BrowserBack')) { e.preventDefault(); setAmbient(false).catch(() => {}); return; }
-    if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (ClaimPanel.isOpen() || Quiz.isOpen()) return;
-    const open = [CustomSfxPanel, PlanPanel, RulesPanel, TablePanel, GameWheel, VideoPanel, TimeMachine, IntegrityPanel, TransferPanel, QrPanel, ExportPanel, GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel].find((p) => p.isOpen());
+    const open = [ChallengePanel, RevealPreview, ShowPanel, PresencePanel, LateVotePanel, CustomAwardPanel, TemplatesPanel, CustomSfxPanel, PlanPanel, RulesPanel, TablePanel, GameWheel, VideoPanel, TimeMachine, IntegrityPanel, TransferPanel, QrPanel, ExportPanel, GameSheet, Panel, LibPanel, ProxyVote, ToolsPanel, EditGame, RecoPanel, VotingPanel, IdentityPanel, AlbumPanel].find((p) => p.isOpen());
+    // Esc chiude la finestra aperta anche se il cursore è in un campo o su una casella (1.11)
     if (e.key === 'Escape' && open) { e.preventDefault(); open.close(); return; }
+    if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (open) return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); return; }
     if ((e.key === 'm' || e.key === 'M') && S.code && S.meta) { e.preventDefault(); toggleMusic(); return; }
@@ -3280,6 +3362,7 @@ function setupGlobalKeys() {
     if ((e.key === 'g' || e.key === 'G') && S.code && S.meta) { e.preventDefault(); Panel.open(); return; }
     if ((e.key === 'l' || e.key === 'L') && hasLib()) { e.preventDefault(); LibPanel.open(); return; }
     if ((e.key === 'p' || e.key === 'P') && S.code && S.meta) { e.preventDefault(); setPaused(!S.state?.paused).catch(() => {}); return; }
+    if ((e.key === 'v' || e.key === 'V') && S.code && S.meta) { e.preventDefault(); setPublicTv(!S.meta?.publicTv).catch((err) => toast(explainError(err), 'error')); return; }
     if ((e.key === 'a' || e.key === 'A') && S.code && S.meta) { e.preventDefault(); setAmbient(!S.meta?.ambient).catch((err) => toast(explainError(err), 'error')); return; }
     if ((e.key === 't' || e.key === 'T') && S.code && S.meta && S.state?.phase !== 'lobby') { e.preventDefault(); TablePanel.open(); return; }
     if ((e.key === 'q' || e.key === 'Q') && S.code && S.meta && ['idle', 'board'].includes(S.state?.phase)) { e.preventDefault(); Quiz.open(); return; }
@@ -3356,7 +3439,8 @@ function graceLeft(uid) {
  * votato, o scollegati da poco (magari stanno rientrando dopo un crash).
  */
 function expectedVoters(votedMap = {}) {
-  return activePlayers(S.players).filter((p) => votedMap[p.uid] || isOnline(p.uid) || graceLeft(p.uid) > 0);
+  // 2.1 (idea 6): chi guarda (spettatore per la serata) non si aspetta; se vota, il voto conta.
+  return activePlayers(S.players).filter((p) => votedMap[p.uid] || (!p.watch && (isOnline(p.uid) || graceLeft(p.uid) > 0)));
 }
 
 /** Trofei guadagnati nelle serate precedenti del gruppo, per chiave persona. */
@@ -3539,14 +3623,18 @@ const Panel = {
  * Sposta un giocatore su un nuovo telefono (nuovo uid): profilo, voti dati,
  * voti MVP ricevuti, vittorie e scelta nel sondaggio.
  */
-async function migratePlayer(oldUid, newUid) {
+async function migratePlayer(oldUid, newUid, claim = {}) {
   const p = S.players[oldUid];
   if (!p) throw userError(tr('tv.pl.gone'));
   await Save.snap(tr('tv.snap.beforeMigrate', { name: p.name }));
   const patch = {};
   const { away, ...profile } = p;
+  // Il profilo personale passa al nuovo dispositivo solo se il nuovo dispositivo è di quel profilo (le regole lo controllano).
+  if (profile.pid && claim.pid !== profile.pid) delete profile.pid;
   patch[`players/${newUid}`] = profile;
   patch[`players/${oldUid}`] = null;
+  patch[`handover/${oldUid}`] = null;
+  patch[`handover/${newUid}`] = null;
   for (const [gid, gameVotes] of Object.entries(S.votes || {})) {
     for (const [uid, v] of Object.entries(gameVotes || {})) {
       if (uid === oldUid) {
@@ -3593,12 +3681,16 @@ const ClaimPanel = {
     for (const [uid, c] of Object.entries(S.claims || {})) {
       if (!c?.target || !S.players[c.target] || S.players[uid]) remove(roomRef(S.code, `claims/${uid}`)).catch(() => {});
     }
-    // Con il codice personale giusto il rientro è automatico, senza chiedere conferma.
+    // Rientro automatico, senza chiedere conferma, quando il dispositivo ha diritto a quel posto:
+    // - gettone di passaggio (token) o profilo personale (pid): verificati dalle regole del database (2.0);
+    // - codice del profilo di gruppo uguale (come prima).
     for (const c of list) {
-      if (c.code && S.players[c.target]?.memberId === c.code && !this.auto.has(c.uid)) {
+      const t0 = S.players[c.target];
+      const proven = Boolean(c.token) || Boolean(c.pid && t0?.pid === c.pid) || Boolean(c.code && t0?.memberId === c.code);
+      if (proven && !this.auto.has(c.uid)) {
         this.auto.add(c.uid);
-        const name = S.players[c.target].name;
-        migratePlayer(c.target, c.uid)
+        const name = t0.name;
+        migratePlayer(c.target, c.uid, c)
           .then(() => toast(tr('tv.pl.backNewPhone', { name })))
           .catch((err) => { this.auto.delete(c.uid); toast(explainError(err), 'error'); });
       }
@@ -3639,7 +3731,7 @@ const ClaimPanel = {
     $('#clYes', el).addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       try {
-        await migratePlayer(claim.target, claim.uid);
+        await migratePlayer(claim.target, claim.uid, claim);
         toast(tr('tv.pl.backNewPhone', { name: p.name }));
         this.close();
       } catch (err) {
@@ -3852,6 +3944,9 @@ const ProxyVote = {
     if (this.needMvp && !v.mvp) missing.push('MVP');
     if (missing.length) { $('#pvErr', this.el).textContent = tr('tv.pv.missing', { list: missing.join(', ') }); return; }
     const data = { overall: v.overall, byHost: true, at: serverTimestamp() };
+    // 2.0: voto aggiunto dopo il reveal dalla TV (resta segnato come tale)
+    const late = S.games[this.gid]?.status === 'revealed';
+    if (late) Object.assign(data, { late: true, by: 'tv' });
     if (!this.quick) Object.assign(data, { coinv: v.coinv, sempl: v.sempl, rigioc: v.rigioc });
     if (v.mvp) data.mvp = v.mvp;
     const name = S.players[this.uid]?.name || tr('tv.pv.player');
@@ -3864,6 +3959,10 @@ const ProxyVote = {
         return;
       }
       await set(roomRef(S.code, `votes/${this.gid}/${this.uid}`), data);
+      if (late) {
+        set(push(roomRef(S.code, 'votelog')), { gid: this.gid, uid: this.uid, kind: 'proxy', by: 'tv', at: serverTimestamp() }).catch(() => {});
+        saveNight();
+      }
       toast(tr('tv.pv.saved', { name }));
       this.close();
     } catch (err) {
@@ -3941,6 +4040,7 @@ async function runCommand(c) {
     case 'interval': if (Interval.isOpen()) Interval.close(); else if (['idle', 'board'].includes(phase)) Interval.open(); break;
     case 'resume': await setPaused(false); break;
     case 'ambient': await setAmbient(a.on === undefined ? !S.meta?.ambient : (a.on === true || a.on === '1')); break;
+    case 'public': await setPublicTv(a.on === undefined ? !S.meta?.publicTv : (a.on === true || a.on === '1')); break;
     default: break;
   }
 }
@@ -4015,6 +4115,8 @@ async function toAwards(withUndo = false) {
   await setPhase('awards');
   if (withUndo) toastUndo(tr('tv.end.done'), () => setPhase(back));
   if (autoGroupBackup()) setTimeout(() => groupBackup(false).catch(() => {}), 2500);
+  if (autoSend() && getHook()) { const b = buildBoard(S.games, S.votes); if (b.length) setTimeout(() => sendDiscordNow(b, buildAwards(b, S.votes, S.players)), 4000); }
+  else if (S.meta?.groupId && BackupState.due(S.meta.groupId, Object.keys(S.nights || {}).length)) setTimeout(() => toast(tr('bk2.remind'), 'warn'), 6000);
 }
 
 const AUTO_GB_KEY = 'gnr_auto_group_backup';
@@ -4058,6 +4160,26 @@ function poolLibrary() {
 function boostWishes(list) {
   const w = wishes();
   return list.map((r) => (w[r.id] ? { ...r, score: Math.min(99, r.score + 8 * w[r.id]), reasons: [tr('tv.lib.wish', { n: w[r.id] }), ...r.reasons] } : r)).sort((a, b) => b.score - a.score);
+}
+
+/** Lo stesso gioco serata per serata (1.12, idea 8) e durata dichiarata/osservata (idea 36) nella scheda. */
+function sessionsHTML(it) {
+  const ss = gameSessions(S.nights, it.name).slice(-8);
+  const du = durationInfo(it);
+  const dur = du.declared && du.observed ? `<small class="muted">${esc(tr('ins.game.duration', { declared: `${du.declared}′`, observed: `${du.observed}′`, n: du.n }))}</small>` : '';
+  if (ss.length < 2 && !dur) return '';
+  return `<div class="gs-sessions">${ss.length >= 2 ? `<span class="field-label">${tr('ins.game.title')}</span><span class="gs-sess-row">${ss.map((x) => `<span class="gs-sess ${x.few ? 'is-few' : ''}" title="${esc(tr('ins.game.votesN', { n: x.n }))}"><small>${esc(fmtDateL(x.at, { day: 'numeric', month: 'short' }))}</small><b>${fmt(x.avg)}</b></span>`).join('')}</span>` : ''}${dur}</div>`;
+}
+
+/** Regole della casa del gioco scritto nel modulo (1.12, idea 68). */
+function paintHouseNote() {
+  const box = $('#houseNote');
+  const name = $('#gameName')?.value || '';
+  if (!box) return;
+  const rules = houseFor(S.house, name);
+  const html = rules.length ? `<b>📜 ${tr('mem.house.forGame')}</b><ul>${rules.map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul>` : '';
+  if (box.innerHTML !== html) box.innerHTML = html;
+  box.hidden = !rules.length;
 }
 
 function findLibrary(name) {
@@ -4108,6 +4230,18 @@ function durationOptions(selected) {
     .map((d) => `<option value="${d}" ${Number(selected) === d ? 'selected' : ''}>${d} min${d === 180 ? tr('tv.lib.orMore') : ''}</option>`).join('');
 }
 
+/**
+ * Chi crea la serata (1.11): questo dispositivo e, se ha un profilo personale, il profilo (così la può
+ * cancellare anche da un altro dispositivo dello stesso profilo). Non cambia più, neanche passando la regia.
+ */
+/** Simbolo della ricorrenza di oggi (per il pulsante degli accessori stagionali). */
+const seasonIcon = () => seasonalAccessory()?.icon || '🎈';
+
+function creatorMeta() {
+  const pid = Person.data?.pid;
+  return { creatorUid: S.uid, ...(pid && /^[A-Z0-9]{6}$/.test(pid) ? { creatorPid: pid } : {}) };
+}
+
 /** Salva il riassunto della serata nel gruppo, per la classifica di sempre. */
 function saveNight() {
   const gid = S.meta?.groupId;
@@ -4115,7 +4249,7 @@ function saveNight() {
   const board = buildBoard(S.games, S.votes);
   const ref = groupRef(gid, `nights/${S.code}`);
   if (S.meta?.demo) return Promise.resolve();
-  const op = board.length ? set(ref, nightSummary(board, S.players, S.meta, buildAwards(board, S.votes, S.players))) : remove(ref);
+  const op = board.length ? set(ref, nightSummary(board, S.players, S.meta, buildAwards(board, S.votes, S.players), { library: S.library, custom: S.customAwards })) : remove(ref);
   return op.catch((err) => { console.warn('Serata non salvata nel gruppo', err); if (S.groupAdmin === false) showGroupKeyBanner(); });
 }
 
@@ -4160,371 +4294,6 @@ async function copyPicks(code, aid) {
   return Object.keys(picks).length;
 }
 
-/**
- * Armadio dei giochi: i giochi del gruppo, conservati per tutte le serate. Si prepara prima della serata
- * (dalla schermata iniziale della TV o dal telefono) e si completa anche durante.
- * opts.mount: elemento in cui mostrarlo come pagina (prima della serata); senza, si apre come pannello.
- */
-const LibPanel = {
-  el: null,
-  sig: '',
-  img: null,
-  lastFocus: null,
-
-  // Come pagina (prima della serata) non conta come pannello aperto: Esc non lo chiude.
-  isOpen() { return Boolean(this.el) && !this.inline; },
-
-  open(opts = {}) {
-    if (this.el || !hasLib()) return;
-    this.inline = Boolean(opts.mount);
-    this.lastFocus = document.activeElement;
-    this.img = null;
-    const el = document.createElement('div');
-    el.className = this.inline ? 'armadio-inline' : 'overlay';
-    el.innerHTML = `
-      <div class="card panel panel--wide ${'armadio'}" role="${this.inline ? 'region' : 'dialog'}" ${this.inline ? '' : 'aria-modal="true"'} aria-labelledby="lpTitle">
-        <div class="panel-head">
-          <h2 id="lpTitle">${tr('tv.create.armTitle')}</h2>
-          ${inRoom() && ['lobby', 'idle'].includes(S.state?.phase) ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSwitchBtn" aria-expanded="false" aria-controls="lpSwitch">🔁 <span>${tr('tv.lib.switch')}</span></button>` : ''}
-          ${this.inline ? '' : `<button type="button" class="icon-btn" id="lpClose" aria-label="${tr('tv.close')}">${ICONS.x}</button>`}
-        </div>
-        <div class="arm-switch" id="lpSwitch" hidden></div>
-        ${armReadOnly() ? `<p class="arm-ro">${tr('tv.lib.demo')}</p>` : ''}
-        <p class="arm-ro arm-missing" id="lpMissing" hidden>${tr('tv.lib.missing')}</p>
-        <p class="panel-note">${tr('tv.lib.note', { name: esc(armadioName()) })}
-          ${S.meta.armadioId ? tr('tv.lib.armCode', { code: esc(S.meta.armadioId) }) : tr('tv.lib.groupCode', { code: esc(S.meta.groupId) })}</p>
-        <div class="arm-key" id="lpKey"></div>
-        <div class="arm-tools">
-          <button type="button" class="btn-sec btn-sec--sm" id="lpPhone">📱 <span>${tr('tv.lib.phoneAdd')}</span></button>
-          <button type="button" class="btn-sec btn-sec--sm" id="lpQr">🔎 <span>${tr('tv.lib.phoneBrowse')}</span></button>
-          ${S.meta.armadioId && !armReadOnly() ? `<a class="btn-sec btn-sec--sm" id="lpFull" href="${'armadio.html'}?a=${esc(S.meta.armadioId)}" target="_blank" rel="noopener">🗂️ <span>${tr('tv.lib.full')}</span></a>` : ''}
-          <button type="button" class="btn-sec btn-sec--sm" id="lpCsv" title="${tr('tv.lib.csvTitle')}">📥 <span>${tr('tv.lib.csv')}</span></button>
-          <input type="file" id="lpCsvFile" accept=".csv,text/csv" hidden>
-        </div>
-        <form class="lib-add" id="lpForm" novalidate>
-          <button type="button" class="lib-add-img" id="lpPick" aria-label="${tr('tv.lib.pick')}">${ICONS.image}</button>
-          <label class="sr-only" for="lpName">${tr('tv.eg.name')}</label>
-          <input class="input" id="lpName" maxlength="40" autocomplete="off" placeholder="${tr('tv.lib.namePh')}">
-          <button type="submit" class="btn" id="lpSubmit">${ICONS.plus}<span>${tr('tv.lib.add')}</span></button>
-          <div class="lib-add-more">
-            <span class="field-label" id="lpPlLabel">${tr('tv.players')}</span>
-            <label class="sr-only" for="lpMin">${tr('tv.lib.min')}</label>
-            <select class="input select select--sm" id="lpMin">${playersOptions('', tr('tv.lib.minOpt'))}</select>
-            <label class="sr-only" for="lpMax">${tr('tv.lib.max')}</label>
-            <select class="input select select--sm" id="lpMax">${playersOptions('', tr('tv.lib.maxOpt'))}</select>
-            <label class="sr-only" for="lpDur">${tr('tv.gs.dur')}</label>
-            <select class="input select select--sm" id="lpDur">${durationOptions('')}</select>
-            <label class="quick-toggle"><input type="checkbox" id="lpSel" checked><span>${tr('tv.lib.tonight')}</span></label>
-            <button type="button" class="link-btn" id="lpCancel" hidden>${tr('tv.lib.cancelEdit')}</button>
-          </div>
-          <div class="lib-add-url">
-            <label class="sr-only" for="lpUrl">${tr('tv.lib.url')}</label>
-            <input class="input input--sm" id="lpUrl" type="url" inputmode="url" placeholder="${tr('tv.lib.urlPh')}">
-            <button type="button" class="btn-sec btn-sec--sm" id="lpUrlOk">${tr('tv.lib.urlOk')}</button>
-          </div>
-          <input type="file" id="lpFile" accept="image/*" hidden>
-        </form>
-        <p class="form-error" id="lpErr" role="alert"></p>
-        <div class="arm-sel" id="lpSelBar"></div>
-        <div class="lib-search">
-          <label class="sr-only" for="lpSearch">${tr('tv.lib.search')}</label>
-          <input class="input" id="lpSearch" type="search" autocomplete="off" placeholder="${tr('tv.lib.searchPh')}">
-          <div class="lib-chips-row" id="lpChips"></div>
-        </div>
-        <ul class="lib-grid" id="lpList"></ul>
-      </div>`;
-    (opts.mount || document.body).appendChild(el);
-    this.el = el;
-    this.sig = '';
-    const file = $('#lpFile', el);
-    $('#lpCsvFile', el).addEventListener('change', async (e) => {
-      const f = e.target.files[0];
-      e.target.value = '';
-      if (!f) return;
-      try {
-        const r = await importGamesCSV(f);
-        if (r) toast(`${tr('tv.lib.csvDone', { n: r.added })}${r.updated ? tr('tv.lib.csvUpdated', { n: r.updated }) : ''}`);
-      } catch (err) { toast(err.message || explainError(err), 'error'); }
-    });
-    el.addEventListener('click', (e) => {
-      if ((!this.inline && e.target === el) || e.target.closest('#lpClose')) { this.close(); return; }
-      if (e.target.closest('#lpPick')) { file.click(); return; }
-      if (e.target.closest('#lpCsv')) { $('#lpCsvFile', el).click(); return; }
-      if (e.target.closest('#lpQr')) { QrPanel.open(tr('tv.lib.qrBrowse'), libraryUrl(), tr('tv.lib.qrBrowseText')); return; }
-      if (e.target.closest('#lpPhone')) { QrPanel.open(tr('tv.lib.qrAdd'), armadioPhoneUrl(), tr('tv.lib.qrAddText')); return; }
-      if (e.target.closest('#lpUrlOk')) { this.useUrl(); return; }
-      if (e.target.closest('#lpCancel')) { this.resetForm(); return; }
-      if (e.target.closest('#lpSelClear')) { this.clearSel(); return; }
-      if (e.target.closest('#lpKeyGo')) { this.useKey(); return; }
-      if (e.target.closest('#lpSwitchBtn')) { this.paintSwitch(); return; }
-      const sw = e.target.closest('[data-armswitch]');
-      if (sw) { this.doSwitch(sw.dataset.armswitch); return; }
-      if (e.target.closest('#lpSwitchGo')) { this.doSwitch(normalizeCode($('#lpSwitchIn', this.el).value, 6)); return; }
-      if (e.target.closest('#lpSelAll')) { this.selAll(); return; }
-      const sel = e.target.closest('[data-sel]');
-      if (sel) { this.toggleSel(sel.dataset.sel); return; }
-      const edit = e.target.closest('[data-edit]');
-      if (edit) { GameSheet.open(edit.dataset.edit); return; }
-      const del = e.target.closest('[data-del]');
-      if (del) this.removeItem(del.dataset.del);
-    });
-    $('#lpUrl', el).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.useUrl(); } });
-    file.addEventListener('change', () => { const f = file.files[0]; file.value = ''; if (f) this.setImage(f); });
-    this.onPaste = (e) => {
-      const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-      if (item) { e.preventDefault(); this.setImage(item.getAsFile()); }
-    };
-    document.addEventListener('paste', this.onPaste);
-    const form = $('#lpForm', el);
-    form.addEventListener('dragover', (e) => { e.preventDefault(); form.classList.add('is-over'); });
-    form.addEventListener('dragleave', () => form.classList.remove('is-over'));
-    form.addEventListener('drop', (e) => {
-      e.preventDefault();
-      form.classList.remove('is-over');
-      const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
-      if (f) this.setImage(f);
-    });
-    form.addEventListener('submit', (e) => { e.preventDefault(); this.add(); });
-    $('#lpSearch', el).addEventListener('input', (e) => { this.query = e.target.value; this.sig = ''; this.update(); });
-    this.query = '';
-    this.update();
-    $('#lpName', el).focus();
-  },
-
-  async useUrl() {
-    const err = $('#lpErr', this.el);
-    try {
-      const r = await gameImageFromUrl($('#lpUrl', this.el).value.trim());
-      this.img = r.image;
-      const b = $('#lpPick', this.el);
-      b.innerHTML = `<img src="${esc(this.img)}" alt="">`;
-      b.classList.add('has-img');
-      $('#lpUrl', this.el).value = '';
-      err.textContent = '';
-      if (!r.copied) toast(tr('tv.lib.urlLinked'), 'warn');
-    } catch (e) { err.textContent = e.message; }
-  },
-
-  async useKey() {
-    const aid = S.meta?.armadioId;
-    const v = $('#lpKeyIn', this.el)?.value || '';
-    if (!aid) return;
-    const ok = await ensureArmadioAdmin(aid, v).catch(() => false);
-    if (ok) { S.armAdmin = true; registerMembers(); toast(tr('tv.lib.keyOk')); }
-    else toast(tr('tv.lib.keyWrong'), 'error');
-    this.sig = '';
-    this.update();
-  },
-
-  /** Riga della chiave: per chi può modificare, la chiave da dare a un'altra TV; per chi consulta, dove scriverla. */
-  paintKey() {
-    const kb = $('#lpKey', this.el);
-    if (!kb) return;
-    const aid = S.meta?.armadioId;
-    let html = '';
-    if (aid && S.armAdmin === false) {
-      html = `<span>${tr('tv.lib.readOnly')}</span>
-        <span class="gk-row"><label class="sr-only" for="lpKeyIn">${tr('tv.lib.key')}</label><input class="input code-input code-input--8" id="lpKeyIn" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX"><button type="button" class="btn-sec btn-sec--sm" id="lpKeyGo">${tr('tv.gk.confirm')}</button></span>`;
-    } else if (aid && S.armAdmin && armadioKey(aid)) {
-      html = `<span>${tr('tv.lib.keyShow', { key: esc(prettyKey(armadioKey(aid))) })}</span>`;
-    }
-    if (kb.dataset.sig !== html) { kb.dataset.sig = html; kb.innerHTML = html; kb.hidden = !html; }
-  },
-
-  /** Elenco degli armadi per cambiare quello della serata. */
-  paintSwitch() {
-    const box = $('#lpSwitch', this.el);
-    const btn = $('#lpSwitchBtn', this.el);
-    if (!box) return;
-    box.hidden = !box.hidden;
-    btn?.setAttribute('aria-expanded', String(!box.hidden));
-    if (box.hidden) return;
-    const list = recentArmadi().filter((a) => a.id !== S.meta?.armadioId);
-    box.innerHTML = `
-      <p class="muted small">${tr('tv.lib.switchText')}</p>
-      ${list.length ? `<div class="arm-list">${list.map((a) => `<button type="button" class="arm-open-btn" data-armswitch="${esc(a.id)}">📦 <span>${esc(a.name)}</span><small>${esc(a.id)}</small></button>`).join('')}</div>` : ''}
-      <div class="arm-inline"><label class="sr-only" for="lpSwitchIn">${tr('tv.create.armCodeLabel')}</label><input class="input input--sm" id="lpSwitchIn" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="${tr('tv.lib.switchPh')}"><button type="button" class="btn-sec btn-sec--sm" id="lpSwitchGo">${tr('tv.lib.use')}</button></div>
-      <p class="form-error" id="lpSwitchErr" role="alert"></p>`;
-  },
-  async doSwitch(id) {
-    const err = $('#lpSwitchErr', this.el);
-    if (!/^[A-Z0-9]{6}$/.test(id || '')) { if (err) err.textContent = tr('tv.arm.codeLen'); return; }
-    if (id === S.meta?.armadioId) return;
-    try {
-      await switchArmadio(id);
-      this.close();
-    } catch (e) { if (err) err.textContent = explainError(e); }
-  },
-
-  toggleSel(id) {
-    const it = S.library?.[id];
-    if (!it) return;
-    writeSel({ [id]: isSel({ ...it, id }) ? null : true }).catch((e) => toast(explainError(e), 'error'));
-  },
-
-  clearSel() {
-    const ids = selectedIds();
-    if (!ids.length || !confirm(tr('tv.lib.clearConfirm'))) return;
-    writeSel(Object.fromEntries(ids.map((id) => [id, null]))).catch((e) => toast(explainError(e), 'error'));
-  },
-
-  selAll() {
-    const ids = libraryItems().filter((it) => isAvailable(it) && !isSel(it)).map((it) => it.id);
-    if (!ids.length) return;
-    writeSel(Object.fromEntries(ids.map((id) => [id, true]))).catch((e) => toast(explainError(e), 'error'));
-  },
-
-  close() {
-    if (!this.el) return;
-    document.removeEventListener('paste', this.onPaste);
-    this.el.remove();
-    this.el = null;
-    if (!this.inline) this.lastFocus?.focus?.();
-    this.inline = false;
-  },
-
-  resetPick() {
-    const b = $('#lpPick', this.el);
-    b.innerHTML = ICONS.image;
-    b.classList.remove('has-img');
-  },
-
-  resetForm() {
-    this.editId = null;
-    this.img = null;
-    this.resetPick();
-    $('#lpName', this.el).value = '';
-    $('#lpMin', this.el).value = '';
-    $('#lpMax', this.el).value = '';
-    $('#lpDur', this.el).value = '';
-    $('#lpSel', this.el).checked = true;
-    $('#lpSel', this.el).closest('label').hidden = false;
-    $('#lpSubmit', this.el).innerHTML = `${ICONS.plus}<span>${tr('tv.lib.add')}</span>`;
-    $('#lpCancel', this.el).hidden = true;
-    $('#lpErr', this.el).textContent = '';
-    $('#lpName', this.el).focus();
-  },
-
-  startEdit(id) {
-    const it = S.library?.[id];
-    if (!it) return;
-    this.editId = id;
-    this.img = null;
-    $('#lpName', this.el).value = it.name;
-    $('#lpMin', this.el).value = it.minPlayers || '';
-    $('#lpMax', this.el).value = it.maxPlayers || '';
-    $('#lpDur', this.el).value = it.duration || '';
-    $('#lpSel', this.el).closest('label').hidden = true;
-    const b = $('#lpPick', this.el);
-    const shown = it.image || it.thumb;
-    if (shown) { b.innerHTML = `<img src="${esc(shown)}" alt="">`; b.classList.add('has-img'); } else this.resetPick();
-    $('#lpSubmit', this.el).innerHTML = `${ICONS.check}<span>${tr('tv.save')}</span>`;
-    $('#lpCancel', this.el).hidden = false;
-    $('#lpErr', this.el).textContent = '';
-    $('#lpName', this.el).focus();
-  },
-
-  /** Giocatori e durata scelti nel modulo (null se non indicati). */
-  extra() {
-    const num = (id) => Number($(id, this.el).value) || null;
-    return { minPlayers: num('#lpMin'), maxPlayers: num('#lpMax'), duration: num('#lpDur') };
-  },
-
-  async setImage(f) {
-    try {
-      this.img = await gameImage(f);
-      const b = $('#lpPick', this.el);
-      b.innerHTML = `<img src="${this.img}" alt="">`;
-      b.classList.add('has-img');
-      $('#lpErr', this.el).textContent = '';
-    } catch (err) {
-      $('#lpErr', this.el).textContent = err.message;
-    }
-  },
-
-  async add() {
-    const input = $('#lpName', this.el);
-    const err = $('#lpErr', this.el);
-    const name = cleanName(input.value);
-    const extra = this.extra();
-    if (!name) { err.textContent = tr('tv.lib.needName'); input.focus(); return; }
-    if (extra.minPlayers && extra.maxPlayers && extra.minPlayers > extra.maxPlayers) {
-      err.textContent = tr('tv.gs.errMinMax');
-      return;
-    }
-    const same = findLibrary(name);
-    try {
-      if (this.editId) {
-        if (same && same.id !== this.editId) { err.textContent = tr('tv.gs.errDup'); return; }
-        const patch = { name, ...extra };
-        if (S.meta?.armadioId) await saveGame(S.meta.armadioId, this.editId, patch, this.img ? { full: this.img } : {});
-        else { if (this.img) patch.image = this.img; await update(libRef(this.editId), patch); }
-        toast(tr('tv.gs.saved', { name }));
-      } else {
-        if (same && !this.img && !Object.values(extra).some(Boolean)) { err.textContent = tr('tv.lib.already'); return; }
-        const id = await addToLibrary(name, this.img, 'TV', extra);
-        if (id && $('#lpSel', this.el).checked) await writeSel({ [id]: true });
-        toast(`${tr('tv.lib.added', { name })}${$('#lpSel', this.el).checked ? tr('tv.lib.addedTonight') : ''}`);
-      }
-      this.resetForm();
-    } catch (e) {
-      err.textContent = explainError(e);
-    }
-  },
-
-  removeItem(id) {
-    const it = S.library?.[id];
-    if (!it || !confirm(tr('tv.lib.delConfirm', { name: it.name }))) return;
-    if (S.meta?.armadioId) armTrash(S.meta.armadioId, id, it, 'TV').then(() => toast(tr('tv.lib.deleted', { name: it.name }))).catch((e) => toast(explainError(e), 'error'));
-    else remove(libRef(id)).catch((e) => toast(explainError(e), 'error'));
-  },
-
-  update() {
-    if (!this.el) return;
-    this.paintKey();
-    const miss = $('#lpMissing', this.el);
-    if (miss) miss.hidden = !S.armMissing;
-    this.el.querySelector('.armadio')?.classList.toggle('armadio--ro', armReadOnly());
-    const all = libraryItems();
-    const played = playedTonight();
-    const sig = JSON.stringify([all.map((i) => [i.id, i.name, i.addedBy, (i.image || '').length, libInfo(i), i.status, i.loanTo, tagsOf(i), i.baseId, i.mode, i.weight, isSel(i)]), [...played], this.query]);
-    if (sig === this.sig) return;
-    this.sig = sig;
-    // Ricerca: parole chiave + filtri capiti dalla frase
-    const q = String(this.query || '').trim();
-    const tags = [...new Set(all.flatMap(tagsOf))];
-    const f = q ? parseQuery(q, knownPeople(), tags) : {};
-    const structured = Object.keys(f).length > 0;
-    if (q && !structured) f.text = q;
-    const ids = new Set(searchLibrary(S.library, f, S.nights).map((x) => x.id));
-    const items = all.filter((it) => ids.has(it.id));
-    $('#lpChips', this.el).innerHTML = q ? `${filterChips(f).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}<span class="muted">${tr('tv.lib.found', { n: String(items.length), total: String(all.length) })}</span>` : '';
-    const baseName = (id) => S.library?.[id]?.name;
-    const nSel = all.filter((it) => isSel(it)).length;
-    $('#lpSelBar', this.el).innerHTML = all.length ? `
-      <span class="arm-sel-n">${tr('tv.lib.selN', { n: nSel })}</span>
-      <span class="muted small">${nSel >= 2 ? tr('tv.lib.selMany') : tr('tv.lib.selFew')}</span>
-      <span class="rg-row">${nSel < all.length ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSelAll">${tr('tv.lib.selAll')}</button>` : ''}${nSel ? `<button type="button" class="btn-sec btn-sec--sm" id="lpSelClear">${tr('tv.lib.selClear')}</button>` : ''}</span>` : '';
-    $('#lpList', this.el).innerHTML = items.length ? items.map((it) => {
-      const isPlayed = played.has(nameKey(it.name));
-      const status = !isAvailable(it) ? esc(awayLabel(it)) : '';
-      const note = isPlayed ? tr('tv.lib.played') : (it.owner ? tr('tv.lib.owner', { name: esc(it.owner) }) : it.addedBy && it.addedBy !== 'TV' ? tr('tv.lib.broughtBy', { name: esc(it.addedBy) }) : '');
-      return `
-        <li class="lib-tile ${isPlayed ? 'is-played' : ''} ${status ? 'is-away' : ''} ${isSel(it) ? 'is-sel' : ''}">
-          ${gameImageHTML(it, 'game-img--lib')}
-          <button type="button" class="lib-sel" data-sel="${esc(it.id)}" aria-pressed="${isSel(it)}" title="${isSel(it) ? tr('tv.lib.selOn') : tr('tv.lib.selOff')}">${isSel(it) ? '✓' : '☆'}<span>${tr('tv.int.tonight')}</span></button>
-          ${status ? `<span class="lib-status">${status}</span>` : ''}
-          <span class="lib-name">${esc(it.name)}</span>
-          ${it.baseId && baseName(it.baseId) ? `<span class="lib-exp">${tr('tv.lib.expOf', { name: esc(baseName(it.baseId)) })}</span>` : ''}
-          <span class="lib-info">${esc(libInfo(it)) || '&nbsp;'}</span>
-          ${tagsOf(it).length || it.mode || it.weight ? `<span class="lib-tags">${it.mode ? `<span>${esc(GAME_MODES[it.mode] || it.mode)}</span>` : ''}${it.weight ? `<span>${tr('tv.lib.weight', { n: it.weight })}</span>` : ''}${tagsOf(it).slice(0, 3).map((t) => `<span>#${esc(t)}</span>`).join('')}</span>` : ''}
-          <span class="lib-meta">${note}</span>
-          <button type="button" class="lib-edit" data-edit="${esc(it.id)}" aria-label="${tr('tv.lib.edit', { name: esc(it.name) })}">${ICONS.edit}</button>
-          <button type="button" class="${'lib-del'}" data-${'del'}="${esc(it.id)}" aria-label="${tr('tv.lib.del', { name: esc(it.name) })}">${ICONS.x}</button>
-        </li>`;
-    }).join('') : `<li class="lib-empty">${all.length ? tr('tv.lib.noMatch') : tr('tv.lib.empty')}</li>`;
-  }
-};
 
 // ---------------------------------------------------------------------------
 // Lobby
@@ -4672,409 +4441,6 @@ function miniBoardHTML(board) {
     ${board.length > 7 ? `<p class="muted">${tr('tv.idle.more', { n: board.length - 7 })}</p>` : ''}`;
 }
 
-SCREENS.idle = {
-  mount(el) {
-    this.mode = 'drop';
-    const number = Object.keys(S.games).length + 1;
-    const board = buildBoard(S.games, S.votes);
-    el.innerHTML = `
-      <section class="idle">
-        <form class="card next-card" id="nextForm" novalidate>
-          <h1>${tr('tv.idle.game', { n: String(number) })}</h1>
-          <p class="play-timer" id="playTimer" hidden></p>
-          <div class="live-box" id="liveBox"></div>
-          <div class="lib-pick" id="libPick"></div>
-          <label class="field-label" for="gameName">${tr('tv.eg.name')}</label>
-          <input class="input input--xl" id="gameName" maxlength="40" autocomplete="off" placeholder="${tr('tv.idle.namePh')}" value="${esc(S.draft.name)}">
-          <p class="field-label photo-label">${tr('tv.idle.photo')}</p>
-          <div class="photo-row">
-            <div class="dropzone" id="dropzone"></div>
-            <div class="img-actions">
-              <button type="button" class="btn-sec" id="pickFile">${ICONS.image}<span>${tr('tv.idle.file')}</span></button>
-              <button type="button" class="btn-sec" id="fromPhone" aria-pressed="false">${ICONS.phone}<span>${tr('tv.idle.phone')}</span></button>
-              <button type="button" class="btn-sec" id="fromUrl" aria-expanded="false" aria-controls="urlPanel">${ICONS.link}<span>${tr('tv.idle.link')}</span></button>
-            </div>
-          </div>
-          <input type="file" id="fileInput" accept="image/*" hidden>
-          <div class="url-panel" id="urlPanel" hidden>
-            <label class="sr-only" for="urlInput">${tr('tv.idle.url')}</label>
-            <input class="input" id="urlInput" type="url" inputmode="url" placeholder="${tr('tv.idle.urlPh')}">
-            <button type="button" class="btn-sec" id="urlOk">${tr('tv.lib.urlOk')}</button>
-          </div>
-          <div class="win-pick">
-            <div class="win-head">
-              <span class="field-label" id="winLabel">${tr('tv.idle.winners')}</span>
-              <label class="quick-toggle" title="${tr('tv.idle.quickTitle')}"><input type="checkbox" id="quickChk" ${S.draft.quick ? 'checked' : ''}><span>${tr('tv.idle.quick')}</span></label>
-            </div>
-            <div class="win-avs" id="winAvs" role="group" aria-labelledby="winLabel"></div>
-          </div>
-          <p class="form-error" id="nextErr" role="alert"></p>
-          <div class="ov-row">
-            <button class="btn-sec" type="button" id="openRules" title="${tr('tv.idle.rulesTitle')}">📖 <span>${tr('tv.idle.rules')}</span></button>
-            <button class="btn-sec" type="button" id="startPlay">${ICONS.clock}<span id="startPlayTxt">${tr('tv.tour.i4.t')}</span></button>
-            <button class="btn btn-big" type="submit" id="openVote">${ICONS.lock}<span>${tr('tv.tour.i5.t')}</span></button>
-          </div>
-        </form>
-        <aside class="side-board">
-          <div class="side-head">
-            <h2>${tr('tv.ic.board')}</h2>
-            ${board.length ? `<span class="muted">${tr('tv.ic.nGames', { n: board.length })}</span>` : ''}
-          </div>
-          ${miniBoardHTML(board)}
-          <div class="side-actions">
-            ${board.length ? `<button type="button" class="btn-sec" id="showBoard">${ICONS.trophy}<span>${tr('tv.idle.fullBoard')}</span></button>` : ''}
-            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
-            <button type="button" class="btn-sec" id="showInterval" title="${tr('tv.idle.intTitle')}">☕ <span>${tr('tv.tl.interval')}</span></button>
-            <button type="button" class="btn-sec" id="openTable" title="${tr('tv.idle.tableTitle')}">🎲 <span>${tr('tv.idle.table')}</span></button>
-            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openPlan" title="${tr('tv.idle.planTitle')}">🗓️ <span>${tr('tv.idle.plan')}</span></button>` : ''}
-            <button type="button" class="btn-sec" id="openQuiz" title="${tr('tv.idle.quizTitle')}">🧠 <span>Quiz</span></button>
-            <button type="button" class="btn-sec" id="endNight">🏁 <span>${tr('tv.end.end')}</span></button>
-          </div>
-        </aside>
-      </section>`;
-
-    $('#showAllTime', el)?.addEventListener('click', () => openAllTime());
-    $('#showInterval', el).addEventListener('click', () => Interval.open());
-    $('#openTable', el).addEventListener('click', () => TablePanel.open());
-    $('#openQuiz', el).addEventListener('click', () => Quiz.open());
-    $('#openPlan', el)?.addEventListener('click', () => PlanPanel.open());
-    $('#openRules', el).addEventListener('click', () => {
-      const it = findLibrary(cleanName($('#gameName').value));
-      if (!it) { this.error(tr('tv.idle.rulesErr')); return; }
-      RulesPanel.open(it.id);
-    });
-    $('#liveBox', el).addEventListener('click', (e) => { const b = e.target.closest('[data-score-edit]'); if (b) editScore(b.dataset.scoreEdit); });
-    $('#winAvs', el).addEventListener('click', (e) => {
-      const b = e.target.closest('[data-win]');
-      if (!b) return;
-      const uid = b.dataset.win;
-      const wins = S.draft.winners || [];
-      const specs = S.draft.spectators || [];
-      // giocatore → vincitore → spettatore → giocatore
-      if (wins.includes(uid)) { S.draft.winners = wins.filter((x) => x !== uid); S.draft.spectators = [...specs, uid]; }
-      else if (specs.includes(uid)) S.draft.spectators = specs.filter((x) => x !== uid);
-      else S.draft.winners = [...wins, uid];
-      this.paintWinners(true);
-      saveDraft();
-    });
-    $('#quickChk', el).addEventListener('change', (e) => { S.draft.quick = e.target.checked; saveDraft(); });
-    $('#startPlay', el).addEventListener('click', () => {
-      const name = cleanName($('#gameName').value);
-      if (!name) { this.error(tr('tv.idle.needGame')); $('#gameName').focus(); return; }
-      update(roomRef(S.code, 'state'), playState(name, S.draft.spectators)).catch((err) => this.error(explainError(err)));
-      newGameSound();
-    });
-    this.tick = setInterval(() => this.paintTimer(), 1000);
-    $('#libPick', el).addEventListener('click', (e) => {
-      if (e.target.closest('#startPoll')) { startPoll(); return; }
-      if (e.target.closest('#openWheel')) { GameWheel.open(); return; }
-      if (e.target.closest('#pickRandom')) { this.randomPick(); return; }
-      const pu = e.target.closest('[data-plan-use]');
-      if (pu) { useLibraryGame(pu.dataset.planUse); return; }
-      if (e.target.closest('#openReco')) { RecoPanel.open(); return; }
-      if (e.target.closest('#openLib')) { LibPanel.open(); return; }
-      const po = e.target.closest('[data-pool]');
-      if (po) { S.poolAll = po.dataset.pool === 'all'; this.paintLib(true); return; }
-      const chip = e.target.closest('[data-lib]');
-      if (!chip || this.rolling) return;
-      this.pickLib(chip.dataset.lib);
-    });
-
-    const nameInput = $('#gameName', el);
-    nameInput.addEventListener('input', () => {
-      S.draft.name = nameInput.value;
-      saveDraft();
-      if (S.draft.libraryId && nameKey(S.library?.[S.draft.libraryId]?.name) !== nameKey(nameInput.value)) {
-        S.draft.libraryId = null;
-        this.paintLib(true);
-      }
-    });
-    setTimeout(() => nameInput.focus(), 50);
-
-    const fileInput = $('#fileInput', el);
-    $('#pickFile', el).addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => { if (fileInput.files[0]) this.useFile(fileInput.files[0]); fileInput.value = ''; });
-
-    const dz = $('#dropzone', el);
-    dz.addEventListener('click', (e) => {
-      if (e.target.closest('#clearImg')) { S.draft.image = null; this.paintDrop(); return; }
-      if (this.mode === 'drop' && !S.draft.image) fileInput.click();
-    });
-    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-over'); });
-    dz.addEventListener('dragleave', () => dz.classList.remove('is-over'));
-    dz.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dz.classList.remove('is-over');
-      const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
-      if (file) this.useFile(file);
-    });
-
-    this.onPaste = (e) => {
-      const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-      if (item) { e.preventDefault(); this.useFile(item.getAsFile()); }
-    };
-    document.addEventListener('paste', this.onPaste);
-
-    $('#fromPhone', el).addEventListener('click', () => {
-      this.mode = this.mode === 'phone' ? 'drop' : 'phone';
-      if (this.mode === 'phone' && S.pendingImage) remove(roomRef(S.code, 'pendingImage')).catch(() => {});
-      this.paintDrop();
-    });
-
-    const urlBtn = $('#fromUrl', el);
-    const urlPanel = $('#urlPanel', el);
-    urlBtn.addEventListener('click', () => {
-      urlPanel.hidden = !urlPanel.hidden;
-      urlBtn.setAttribute('aria-expanded', String(!urlPanel.hidden));
-      el.querySelector('.next-card').classList.toggle('has-url', !urlPanel.hidden);
-      if (!urlPanel.hidden) $('#urlInput').focus();
-    });
-    const useUrl = async () => {
-      const url = $('#urlInput').value.trim();
-      try {
-        const r = await gameImageFromUrl(url);
-        S.draft.image = r.image;
-        this.mode = 'drop';
-        this.error('');
-        this.paintDrop();
-        urlPanel.hidden = true;
-        urlBtn.setAttribute('aria-expanded', 'false');
-        el.querySelector('.next-card').classList.remove('has-url');
-      } catch (err) { this.error(err.message); }
-    };
-    $('#urlOk', el).addEventListener('click', useUrl);
-    $('#urlInput', el).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); useUrl(); } });
-
-    $('#nextForm', el).addEventListener('submit', (e) => { e.preventDefault(); this.openVoting(); });
-    $('#showBoard', el)?.addEventListener('click', () => setPhase('board'));
-    $('#endNight', el)?.addEventListener('click', endNight);
-
-    this.paintDrop();
-    this.paintLib(true);
-    this.paintWinners(true);
-  },
-
-  /** Il gioco consigliato per i presenti, in una riga. */
-  bestHTML(fit) {
-    if (!fit.length || !Object.keys(S.nights || {}).length) return '';
-    const ps = activePlayers(S.players);
-    const rec = recommend({ library: poolLibrary(), nights: S.nights, present: ps.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...playedTonight()].map((k) => dbKey(k))) });
-    const r = boostWishes(rec.all)[0];
-    if (!r) return '';
-    return `<button type="button" class="best-pick" data-lib="${esc(r.id)}"><span>${tr('tv.idle.best', { name: esc(r.item.name), score: String(r.score) })}</span><small>${esc(r.reasons.slice(0, 2).join(' · '))}</small></button>`;
-  },
-
-  /** Pulsanti "Chi ha vinto?": i giocatori presenti, si possono scegliere in più. */
-  paintWinners(force = false) {
-    const box = $('#winAvs');
-    if (!box) return;
-    const ps = activePlayers(S.players);
-    const chosen = new Set((S.draft.winners || []).filter((uid) => ps.some((p) => p.uid === uid)));
-    const specs = new Set(S.draft.spectators || []);
-    const sig = JSON.stringify([ps.map((p) => [p.uid, p.name, p.style, p.seed, p.color]), [...chosen], [...specs]]);
-    if (!force && sig === this.winSig) return;
-    this.winSig = sig;
-    box.innerHTML = ps.map((p) => {
-      const state = chosen.has(p.uid) ? 'winner' : specs.has(p.uid) ? 'spectator' : 'player';
-      const label = tr(`tv.idle.state.${state}`);
-      return `
-      <button type="button" class="win-av win-av--${state}" data-win="${esc(p.uid)}" aria-pressed="${state === 'winner'}" title="${esc(p.name)}: ${label}">
-        ${state === 'winner' ? ICONS.crown : ''}${avatarHTML(p, '2.2rem')}<span>${esc(p.name)}</span>
-        <small class="win-state">${label}</small>
-      </button>`;
-    }).join('');
-  },
-
-  /** Riga "Dall’armadio": i giochi non ancora giocati stasera, da toccare, e i modi per scegliere il prossimo. */
-  paintLib(force = false) {
-    const box = $('#libPick');
-    if (!box) return;
-    const card = box.closest('.next-card');
-    if (!hasLib()) { box.hidden = true; return; }
-    const items = libraryItems();
-    const played = playedTonight();
-    const table = onTable();
-    const w = wishes();
-    const pool = poolIds();
-    const nTable = Object.keys(table).length;
-    const sig = JSON.stringify([items.map((i) => [i.id, i.name, (i.image || '').length, i.minPlayers, i.maxPlayers, i.status, i.loanTo, isSel(i)]), [...played], S.draft.libraryId, activePlayers(S.players).length, Object.keys(table), w, S.plan, S.poolAll, armadioName()]);
-    if (!force && sig === this.libSig) return;
-    this.libSig = sig;
-    const n = activePlayers(S.players).length;
-    const inPool = (it) => !pool || pool.has(it.id);
-    const fresh = items.filter((it) => !played.has(nameKey(it.name)));
-    const fit = fresh.filter((it) => libOk(it, n) && inPool(it));
-    const rest = fresh.filter((it) => !fit.includes(it));
-    card.classList.toggle('has-lib', items.length > 0);
-    if (!items.length) {
-      box.innerHTML = `<p class="lib-hint">${ICONS.books}<span>${tr('tv.idle.libEmpty', { btn: `<button type="button" class="inline-link" id="openLib">${tr('tv.idle.libEmptyBtn')}</button>` })}</span></p>`;
-      return;
-    }
-    const onT = (it) => (table[it.id] ? 1 : 0);
-    const byTable = (a, b) => onT(b) - onT(a) || (w[b.id] || 0) - (w[a.id] || 0) || String(a.name).localeCompare(String(b.name), 'it');
-    const chip = (it) => {
-      const isPlayed = played.has(nameKey(it.name));
-      const isUnfit = !isPlayed && (!libOk(it, n) || !inPool(it));
-      const tip = isPlayed ? tr('tv.idle.tipPlayed') : !isAvailable(it) ? awayLabel(it) : !libOk(it, n) ? tr('tv.idle.tipUnfit', { n: String(n), info: libInfo(it) }) : !inPool(it) ? tr('tv.idle.tipPool') : libInfo(it);
-      return `
-      <button type="button" class="lib-chip ${isPlayed ? 'is-played' : ''} ${isUnfit ? 'is-unfit' : ''}" data-lib="${esc(it.id)}" aria-pressed="${S.draft.libraryId === it.id}" ${tip ? `title="${esc(tip)}"` : ''}>
-        ${gameImageHTML(it, 'game-img--chip')}<span>${table[it.id] ? '⭐ ' : ''}${esc(it.name)}${w[it.id] ? ` <em class="wish-n">♥${w[it.id]}</em>` : ''}</span>
-      </button>`;
-    };
-    const playedItems = items.filter((it) => played.has(nameKey(it.name)));
-    box.innerHTML = `
-      <div class="lib-pick-head">
-        <span class="field-label">${tr('tv.idle.pickNext')} <span class="muted">${tr('tv.idle.pickInfo', { n: fit.length, arm: esc(armadioName()) })}</span></span>
-        ${nTable >= 2 ? `<span class="pool-switch" role="group" aria-label="${tr('tv.idle.poolAria')}">
-          <button type="button" class="pool-opt" data-pool="tonight" aria-pressed="${!S.poolAll}">${tr('tv.idle.poolTonight', { n: String(nTable) })}</button>
-          <button type="button" class="pool-opt" data-pool="all" aria-pressed="${Boolean(S.poolAll)}">${tr('tv.idle.poolAll')}</button></span>` : ''}
-      </div>
-      <div class="pick-modes">
-        <button type="button" class="pick-mode" id="pickRandom" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.randomTitle')}">🎲<b>${tr('tv.idle.random')}</b></button>
-        <button type="button" class="pick-mode" id="openWheel" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.wheelTitle')}">🎡<b>${tr('tv.idle.wheel')}</b></button>
-        <button type="button" class="pick-mode" id="startPoll" ${fit.length >= 2 ? '' : 'disabled'} title="${tr('tv.idle.pollTitle')}">📱<b>${tr('tv.idle.poll')}</b></button>
-        <button type="button" class="pick-mode" id="openReco" title="${tr('tv.idle.recoTitle')}">💡<b>${tr('tv.idle.reco')}</b></button>
-        <button type="button" class="pick-mode" id="openLib" title="${tr('tv.idle.libTitle')}">📦<b>${tr('tv.armadio')}</b></button>
-      </div>
-      ${planNextHTML()}
-      ${this.bestHTML(fit)}
-      <div class="lib-chips">${[...fit.sort(byTable), ...rest.sort(byTable)].map(chip).join('')}</div>
-      ${playedItems.length ? `<details class="lib-played"><summary>${tr('tv.idle.playedList', { n: String(playedItems.length) })}</summary><div class="lib-chips">${playedItems.map(chip).join('')}</div></details>` : ''}`;
-  },
-
-  /** Tra i giochi adatti e non ancora giocati, sceglie la TV: i nomi lampeggiano e poi si ferma. */
-  async randomPick() {
-    if (this.rolling) return;
-    const n = activePlayers(S.players).length;
-    const played = playedTonight();
-    const pool = poolIds();
-    const list = libraryItems().filter((it) => !played.has(nameKey(it.name)) && libOk(it, n) && (!pool || pool.has(it.id)));
-    if (list.length < 2) { toast(tr('tv.idle.randomNeed'), 'warn'); return; }
-    this.rolling = true;
-    const pick = list[Math.floor(Math.random() * list.length)];
-    const chips = () => [...document.querySelectorAll('#libPick .lib-chips .lib-chip')].filter((c) => list.some((it) => it.id === c.dataset.lib));
-    const steps = prefersReducedMotion() ? 1 : 16;
-    drumroll(1.4);
-    for (let i = 0; i < steps; i++) {
-      const cs = chips();
-      cs.forEach((c) => c.classList.remove('is-rolling'));
-      const c = i === steps - 1 ? cs.find((x) => x.dataset.lib === pick.id) : cs[Math.floor(Math.random() * cs.length)];
-      c?.classList.add('is-rolling');
-      await new Promise((r) => setTimeout(r, 60 + i * i * 1.6));
-    }
-    chips().forEach((c) => c.classList.remove('is-rolling'));
-    this.rolling = false;
-    this.pickLib(pick.id);
-    ding();
-    toast(tr('tv.idle.randomDone', { name: pick.name }));
-  },
-
-  /** Mette nel modulo un gioco dell'armadio. */
-  pickLib(id) {
-    const it = S.library?.[id];
-    if (!it) return;
-    S.draft = { ...S.draft, name: it.name, image: it.image || it.thumb || null, libraryId: id, quick: Boolean(it.quick) };
-    upgradeDraftImage(id);
-    $('#gameName').value = it.name;
-    $('#quickChk').checked = S.draft.quick;
-    saveDraft();
-    this.mode = 'drop';
-    this.error('');
-    this.paintDrop();
-    this.paintLib(true);
-  },
-
-  /** Timer della partita in corso (dopo "Inizia la partita"). */
-  paintTimer() {
-    const t = $('#playTimer');
-    const start = Number(S.state?.playStart) || 0;
-    const btn = $('#startPlayTxt');
-    if (btn) btn.textContent = start ? tr('tv.idle.restart') : tr('tv.tour.i4.t');
-    if (!t) return;
-    t.hidden = !start;
-    const nb = Object.keys((S.state?.playId && S.bets?.[S.state.playId]) || {}).length;
-    const betLeft = start ? start + 5 * 60000 - serverNow() : 0;
-    const betTxt = betLeft > 0 ? `${tr('tv.idle.betsOpen', { time: clockText(betLeft) })}${nb ? ` · ${nb}` : ''}` : nb ? tr('tv.idle.betsClosed', { n: nb }) : '';
-    if (start) t.innerHTML = `${ICONS.clock}<span>${tr('tv.idle.playing', { name: esc(S.state.playName || tr('tv.idle.match')), time: clockText(playElapsed()) })}</span>${betTxt ? `<span class="bet-count">${betTxt}</span>` : ''}`;
-    // Segnapunti dal vivo e "sfida nella sfida" tra i giocatori della partita
-    const box = $('#liveBox');
-    if (box) {
-      const rv = start ? rivalryLine(Object.keys(S.state.playPlayers || {}).length ? Object.keys(S.state.playPlayers) : activePlayers(S.players).map((p) => p.uid)) : '';
-      const html = start ? `${liveScoresHTML()}${rv ? `<p class="rival-line">${esc(rv)}</p>` : ''}` : '';
-      if (html !== this.liveSig) { this.liveSig = html; box.innerHTML = html; }
-    }
-  },
-
-  update() {
-    this.paintTimer();
-    this.paintLib();
-    this.paintWinners();
-    const p = S.pendingImage;
-    if (p && isImageSource(p.data) && /^data:image\//.test(p.data)) {
-      S.draft.image = p.data;
-      this.mode = 'drop';
-      this.paintDrop();
-      toast(tr('tv.idle.photoIn'));
-      remove(roomRef(S.code, 'pendingImage')).catch(() => {});
-    }
-  },
-
-  unmount() {
-    clearInterval(this.tick);
-    document.removeEventListener('paste', this.onPaste);
-  },
-
-  error(msg) {
-    const e = $('#nextErr');
-    if (e) e.textContent = msg;
-  },
-
-  async useFile(file) {
-    this.error('');
-    try {
-      S.draft.image = await gameImage(file);
-      this.mode = 'drop';
-      this.paintDrop();
-    } catch (err) {
-      this.error(err.message);
-    }
-  },
-
-  paintDrop() {
-    const dz = $('#dropzone');
-    if (!dz) return;
-    saveDraft();
-    const phoneBtn = $('#fromPhone');
-    phoneBtn?.setAttribute('aria-pressed', String(this.mode === 'phone'));
-    dz.classList.toggle('has-img', Boolean(S.draft.image) && this.mode === 'drop');
-    dz.classList.toggle('is-phone', this.mode === 'phone');
-    if (this.mode === 'phone') {
-      dz.innerHTML = `<div class="phone-drop"><div class="qr qr--sm" id="photoQr"></div><p>${tr('tv.idle.phoneDrop')}</p></div>`;
-      renderQR($('#photoQr'), playUrl({ foto: '1' }));
-    } else if (S.draft.image) {
-      dz.innerHTML = `<img src="${esc(S.draft.image)}" alt="${tr('tv.idle.preview')}"><button type="button" class="drop-clear" id="clearImg" aria-label="${tr('tv.idle.clearImg')}">${ICONS.x}</button>`;
-    } else {
-      dz.innerHTML = `<div class="drop-hint">${ICONS.image}<span>${tr('tv.idle.dropHint')}</span></div>`;
-    }
-  },
-
-  async openVoting() {
-    const name = cleanName($('#gameName').value);
-    if (!name) {
-      this.error(tr('tv.lib.needName'));
-      $('#gameName').focus();
-      return;
-    }
-    const btn = $('#openVote');
-    btn.disabled = true;
-    try {
-      await openVotingWith({ ...S.draft, name });
-    } catch (err) {
-      this.error(explainError(err));
-      btn.disabled = false;
-    }
-  }
-};
 
 /**
  * Apre la votazione di un gioco. Usata dal modulo della TV e dalla regia sul telefono.
@@ -5125,6 +4491,8 @@ async function openVotingWith(d) {
   const bets = Object.fromEntries(Object.entries(betsRaw).filter(([uid, t]) => S.players[uid] && typeof t === 'string' && S.players[t]));
   await set(gRef, {
     name, image, libraryId, winners, quick: quick || null, playedMin: measured, order, status: 'voting', createdAt: serverTimestamp(),
+    // 2.1 (idea 7): domande della modalità del gioco (se la serata ne ha una per quella modalità), fissate nel gioco
+    voting: (() => { const it = libraryId ? S.library?.[libraryId] : findLibrary(name); return S.meta?.votingByMode && it?.mode ? votingForMode(S.meta, it.mode) : null; })(),
     bets: Object.keys(bets).length ? bets : null,
     scores: Object.keys(scores).length ? scores : null,
     // Solo se qualcuno guardava: altrimenti hanno giocato tutti i presenti
@@ -5174,6 +4542,33 @@ function maybeCleanup() {
   if (!gid || !days || !S.groupAdmin || S.cleanedFor === `${gid}|${days}` || S.meta?.demo) return;
   S.cleanedFor = `${gid}|${days}`;
   cleanupOldRooms(gid, days).catch(() => {});
+}
+
+/**
+ * Scadenza delle foto dell'album (2.1, idea 61): le foto delle serate più vecchie di N giorni si tolgono
+ * (il riassunto e le statistiche restano). Solo proprietario e admin; spiegato prima di attivarla.
+ */
+async function cleanupOldPhotos(gid, days) {
+  if (!days) return 0;
+  const photos = (await get(groupRef(gid, 'photos')).catch(() => null))?.val() || {};
+  const nights = S.nights || {};
+  const limit = Date.now() - days * 86400000;
+  const patch = {};
+  let n = 0;
+  for (const [room, list] of Object.entries(photos)) {
+    const at = Number(nights[room]?.at) || 0;
+    if (!at || at > limit || room === S.code) continue;
+    for (const pid of Object.keys(list || {})) { patch[`${room}/${pid}`] = null; n++; }
+  }
+  if (n) await update(groupRef(gid, 'photos'), patch);
+  return n;
+}
+function maybePhotoCleanup() {
+  const gid = S.meta?.groupId;
+  const days = Number(S.privacy?.photosDays) || 0;
+  if (!gid || !days || !S.groupAdmin || S.photoCleanedFor === `${gid}|${days}` || S.meta?.demo || !Object.keys(S.nights || {}).length) return;
+  S.photoCleanedFor = `${gid}|${days}`;
+  cleanupOldPhotos(gid, days).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -5234,8 +4629,12 @@ function chaosEvent() {
   const rec = recommend({ library: S.library, nights: S.nights, present: ps.map((p) => ({ key: personKey(p), name: p.name })), playedTonight: new Set([...played].map((k) => dbKey(k))) });
   if (rec.all[0]) events.push({ k: 'reco', p: { name: rec.all[0].item.name, score: String(rec.all[0].score) }, title: `La TV decide: ${rec.all[0].item.name}`, text: `Compatibilità con i presenti: ${rec.all[0].score}%.`, libraryId: rec.all[0].id }); // i18n-ok
   events.push({ k: 'swap', p: {}, title: 'Scambio di posti!', text: 'Ognuno si sposta di due posti a sinistra prima della prossima partita.' }); // i18n-ok
-  const ev = pick(events);
-  return { id: Math.random().toString(36).slice(2, 9), ...ev };
+  // 2.1 (idea 4): solo gli imprevisti ammessi nel pannello "Regia dello show" (mai una ruota vuota)
+  const ok = allowedChaos(events, S.meta?.chaosOff);
+  const ev = pick(ok);
+  // Gli altri spicchi della ruota (solo i codici: il testo si traduce sui dispositivi)
+  const alts = S.meta?.chaosWheel === false ? null : wheelSlices(ok, ev).slice(0, -1).map((e) => e.k);
+  return { id: Math.random().toString(36).slice(2, 9), ...ev, ...(alts?.length ? { alts } : {}) };
 }
 
 /** Prepara un gioco dell’armadio nel modulo "Prossimo gioco". */
@@ -5277,7 +4676,23 @@ function paintEvent() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  fanfare();
+  // 2.1 (idea 4): la ruota degli imprevisti gira prima di svelare quello uscito (si salta con "Meno animazioni")
+  const card = $('.event-card', el);
+  if (Array.isArray(ev.alts) && ev.alts.length && fxAllowed()) {
+    card.classList.add('is-spinning');
+    const labels = [...ev.alts.map((k) => tr(`show.ch.k.${k}`)), tr(`show.ch.k.${ev.k}`)];
+    card.insertAdjacentHTML('afterbegin', `<div class="ev-wheel" aria-hidden="true"><span class="ev-wheel-ico">🎡</span><b class="ev-wheel-label"></b></div>`);
+    const lab = $('.ev-wheel-label', card);
+    let i = 0; let delay = 70;
+    const step = () => {
+      lab.textContent = labels[i % labels.length];
+      tick();
+      if (delay > 380 && i % labels.length === labels.length - 1) { setTimeout(() => { card.classList.remove('is-spinning'); $('.ev-wheel', card)?.remove(); fanfare(); }, 500); return; }
+      i++; delay *= 1.16;
+      setTimeout(step, delay);
+    };
+    step();
+  } else fanfare();
   const close = () => { S.eventSeen = ev.id; el.remove(); };
   $('#evOk', el)?.addEventListener('click', close);
   $('#evUse', el)?.addEventListener('click', () => { useLibraryGame(ev.libraryId); close(); });
@@ -5378,12 +4793,24 @@ const RecoPanel = {
     rec.top = boostWishes(rec.top);
     const shown = new Set(rec.top.slice(0, 3).map((r) => r.id));
     const off = rec.favUnavailable.length ? `<section class="rc-sec rc-sec--off"><h3>${esc(tr('rec.secFavOff'))}</h3><ul class="rc-off">${rec.favUnavailable.map((f) => `<li>${esc(f.item.name)} <span class="muted">· ${esc(tr(f.why === 'loan' ? 'rec.offLoan' : 'rec.offStatus'))}</span></li>`).join('')}</ul></section>` : '';
-    const body = (poolIds() ? `<p class="muted">${esc(tr('rec.pool'))}</p>` : '') + sec(tr('rec.secTop'), rec.top) + sec(tr('rec.secFavs'), rec.favs.filter((r) => !shown.has(r.id)).slice(0, 4))
-      + sec(tr('rec.secNew'), rec.tryNew) + sec(tr('rec.secDusty'), rec.dusty.filter((d) => !shown.has(d.id))) + off;
+    // 2.0: meno consigli tutti insieme. Prima i 3 migliori, poi UNA sezione in più (la più utile adesso:
+    // preferiti, poi novità, poi giochi dimenticati), il resto si apre a richiesta. Mai lo stesso gioco due volte.
+    const used = new Set(shown);
+    const uniq = (list, n) => list.filter((r) => !used.has(r.id)).slice(0, n).map((r) => { used.add(r.id); return { ...r, reasons: r.reasons.slice(0, 2) }; });
+    const top = rec.top.slice(0, 3).map((r) => ({ ...r, reasons: r.reasons.slice(0, 2) }));
+    const extra = [[tr('rec.secFavs'), rec.favs], [tr('rec.secNew'), rec.tryNew], [tr('rec.secDusty'), rec.dusty]].map(([title, list]) => [title, uniq(list, 3)]).filter(([, l]) => l.length);
+    const [first, ...more] = extra;
+    // 2.1 (idea 35): confronto diretto tra i primi tre, riga per riga (✔ il migliore, · il meno adatto)
+    const cmp = compareTop(top, ps.length);
+    const cell = (k, v) => (!Number.isFinite(v) ? '—' : k === 'score' ? `${v}%` : k === 'fit' ? (v ? tr('cmp.yes') : tr('cmp.no')) : k === 'time' ? tr('cmp.min', { n: v }) : k === 'weight' ? String(v).replace('.', ',') : tr('cmp.ago', { n: v }));
+    const cmpHTML = cmp ? `<details class="rc-cmp"><summary>⚖️ ${esc(tr('cmp.title'))}</summary><div class="am-bgg-table-wrap"><table class="ins-table rc-cmp-table"><thead><tr><th></th>${cmp.cols.map((c) => `<th scope="col">${esc(c.name)}</th>`).join('')}</tr></thead><tbody>${cmp.rows.map((r) => `<tr><th scope="row">${esc(tr(`cmp.k.${r.k}`))}</th>${r.values.map((v, i) => `<td class="${r.best === i ? 'is-best' : r.worst === i ? 'is-worst' : ''}">${esc(cell(r.k, v))}${r.best === i ? ' ✔' : ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="muted small">${esc(tr('cmp.note'))}</p></details>` : '';
+    const body = (poolIds() ? `<p class="muted">${esc(tr('rec.pool'))}</p>` : '') + sec(tr('rec.secTop'), top) + cmpHTML + (first ? sec(first[0], first[1]) : '')
+      + (more.length || off ? `<details class="rc-more"><summary>${esc(tr('rec.more', { n: more.reduce((a, [, l]) => a + l.length, 0) }))}</summary>${more.map(([title, l]) => sec(title, l)).join('')}${off}</details>` : '');
     $('#rcBody', this.el).innerHTML = body || `<p class="muted">${esc(tr('rec.none', { n: ps.length }))}</p>`;
   },
   close() { this.el?.remove(); this.el = null; }
 };
+
 
 /** Domande della serata, criteri attivi e modalità Chaos. */
 const VotingPanel = {
@@ -5406,6 +4833,9 @@ const VotingPanel = {
         <input class="input" id="vpC2" maxlength="40" placeholder="${tr('tv.vp.ph', { q: sugg[1] })}" value="${esc(custom[1]?.label || '')}">
         <div class="rg-chips">${sugg.map((q) => `<button type="button" class="lib-chip" data-sugg="${esc(q)}">${esc(q)}</button>`).join('')}</div>
         <label class="quick-toggle chaos-toggle"><input type="checkbox" id="vpChaos" ${S.meta.chaos ? 'checked' : ''}><span>${tr('tv.vp.chaos')}</span></label>
+        <h3>⏳ ${esc(tr('lim.title'))}</h3><p class="muted small">${esc(tr('lim.lead'))}</p>
+        <div class="lim-row"><label><span class="field-label">${esc(tr('lim.minutes'))}</span><input class="input input--sm" id="vpMaxMin" type="number" min="30" max="600" step="15" inputmode="numeric" placeholder="—" value="${esc(S.meta.maxMinutes || '')}"></label>
+          <label><span class="field-label">${esc(tr('lim.games'))}</span><input class="input input--sm" id="vpMaxGames" type="number" min="1" max="20" inputmode="numeric" placeholder="—" value="${esc(S.meta.maxGames || '')}"></label></div>
         <div class="claim-actions"><button type="button" class="btn btn-big" id="vpSave">${ICONS.check}<span>${tr('tv.save')}</span></button></div>
       </div>`;
     document.body.appendChild(el);
@@ -5420,7 +4850,9 @@ const VotingPanel = {
         voting.custom = [cleanName($('#vpC1', el).value), cleanName($('#vpC2', el).value)].filter(Boolean).map((label) => ({ label }));
         if (!voting.custom.length) voting.custom = null;
         try {
-          await update(roomRef(S.code, 'meta'), { voting, chaos: $('#vpChaos', el).checked || null });
+          // 2.1 (idea 31): durata massima e numero massimo di giochi (vuoto = nessun limite)
+          const lim = (sel, lo, hi) => { const n = Math.round(Number($(sel, el).value)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+          await update(roomRef(S.code, 'meta'), { voting, chaos: $('#vpChaos', el).checked || null, maxMinutes: lim('#vpMaxMin', 30, 600), maxGames: lim('#vpMaxGames', 1, 20) });
           toast(tr('tv.vp.saved'));
           this.close();
         } catch (err) { toast(explainError(err), 'error'); }
@@ -5700,7 +5132,12 @@ function seededShuffle(list, seed) {
 
 SCREENS.reveal = {
   mount(el) {
+    this.el = el;
+    // 2.0: un voto aggiunto dopo (o cambiato con il permesso della regia) ridisegna il reveal senza rifare lo show
+    const quiet = Boolean(this.remount);
+    this.remount = false;
     const id = S.state.gameId;
+    this.voteSig = JSON.stringify(S.votes?.[id] || {});
     const g = S.games[id];
     const st = gameStats(S.votes[id], g.players);
     const board = buildBoard(S.games, S.votes);
@@ -5716,7 +5153,9 @@ SCREENS.reveal = {
     const spread0 = st.max !== st.min;
     // Reveal cinematico: luci basse, riflettore su ogni carta, ralenti sul voto più basso e più alto.
     const cine = cinematicOn() && !isSafeMode() && !prefersReducedMotion() && n > 0;
-    const start = cine ? 1.5 : 0.6;
+    // 2.1 (idea 1): ritmo del reveal scelto nella scena (lento, normale, veloce)
+    const k = paceScale(currentScene().pace);
+    const start = (cine ? 1.5 : 0.6) * k;
     const delays = [];
     const slowSet = new Set();
     let t = start;
@@ -5728,13 +5167,15 @@ SCREENS.reveal = {
       else if (!slow && i === lastPlayer && lastPlayer >= 2) t += 0.45;
       delays.push(t);
       if (slow) slowSet.add(i);
-      t += Math.max(minStep, (cine ? 0.85 : 0.62) * Math.pow(0.8, i)) + (slow ? 1.1 : 0);
+      t += (Math.max(minStep, (cine ? 0.85 : 0.62) * Math.pow(0.8, i)) + (slow ? 1.1 : 0)) * k;
     });
     const after = t + (cine ? 0.6 : 0.2);
-    drumroll(cine ? 1.3 : 0.6);
-    delays.forEach((d, i) => { pop(d + (slowSet.has(i) ? 0.8 : 0.25)); if (slowSet.has(i)) cymbal(d + 0.9); });
-    if (st.n && st.avg < 5) sadTrombone(after + 0.2); else fanfare(after);
-    if (g.winners) victory(after + 1.1);
+    if (!quiet) {
+      drumroll(cine ? 1.3 : 0.6);
+      delays.forEach((d, i) => { pop(d + (slowSet.has(i) ? 0.8 : 0.25)); if (slowSet.has(i)) cymbal(d + 0.9); });
+      if (st.n && st.avg < 5) sadTrombone(after + 0.2); else fanfare(after);
+      if (g.winners) victory(after + 1.1);
+    }
     S.revealQuietUntil = Date.now() + (after + 4) * 1000;
     const br = betResults(g);
     const cols = n <= 4 ? Math.max(n, 1) : n <= 8 ? 4 : 6;
@@ -5759,7 +5200,7 @@ SCREENS.reveal = {
     }).join('');
 
     el.innerHTML = `
-      <section class="reveal ${cine ? 'reveal--cine' : ''}" style="--after:${after.toFixed(2)}s">
+      <section class="reveal ${cine && !quiet ? 'reveal--cine' : ''} ${quiet ? 'reveal--static' : ''} ${finaleClass(st)}" style="--after:${after.toFixed(2)}s">
         ${cine ? '<div class="cine-dim" aria-hidden="true"></div>' : ''}
         <div class="reveal-left">
           <span class="chip chip--tomato">${tr('tv.rv.verdict', { n: String(g.order || '') })}</span>
@@ -5772,6 +5213,7 @@ SCREENS.reveal = {
           ${g.winners ? `<p class="win-chip">${ICONS.trophy}<span>${tr('tv.rv.won', { names: esc(namesList(Object.keys(g.winners).map((uid) => playerOrGhost(uid).name))) })}</span></p>` : ''}
           <div class="reveal-chips">
           ${st.audience.n ? `<p class="aud-chip">${tr('tv.rv.audVote', { avg: fmt(st.audience.avg), votes: tr('tv.rv.nVotes', { n: st.audience.n }) })}</p>` : ''}
+          ${lateCount(S.votes?.[id]) ? `<p class="aud-chip late-chip">🗳️ ${esc(tr('lv.chip', { n: lateCount(S.votes?.[id]) }))}</p>` : ''}
           ${matchNumber(g) > 1 ? `<p class="aud-chip">${tr('tv.rv.match', { n: String(matchNumber(g)), name: esc(g.name) })}</p>` : ''}
           ${st.consensus !== null ? `<p class="aud-chip">${tr('tv.rv.consensus', { n: String(st.consensus) })}</p>` : ''}
           ${g.winners && br.total ? `<p class="bet-chip"><span aria-hidden="true">🔮</span><span>${br.hits.length ? tr('tv.rv.betHit', { names: esc(namesList(br.hits.map((u) => playerOrGhost(u).name))), hits: String(br.hits.length), total: String(br.total) }) : tr('tv.rv.betNone', { n: br.total })}</span></p>` : ''}
@@ -5785,13 +5227,14 @@ SCREENS.reveal = {
         <div class="reveal-right">
           <div class="reveal-head"><h2>${tr('tv.rv.votes')}</h2><span class="muted">${tr('tv.rv.nVotes', { n })}</span></div>
           <div class="vcards ${cols === 6 ? 'vcards--dense' : n <= 4 ? 'vcards--one' : ''}" style="--cols:${cols}">${cards || `<p class="muted">${tr('tv.rv.noVotes')}</p>`}</div>
-          <div class="crit-row ${g.quick ? 'crit-row--quick' : ''}" style="${g.quick ? '' : `grid-template-columns: repeat(${activeCriteria(S.meta.voting).length + 1}, minmax(0, 1fr))`}">
-            ${g.quick ? `<div class="quick-note">${tr('tv.rv.quick')}</div>` : activeCriteria(S.meta.voting).map((c) => critTile(c, st.crit[c.key])).join('')}
+          <div class="crit-row ${g.quick ? 'crit-row--quick' : ''}" style="${g.quick ? '' : `grid-template-columns: repeat(${activeCriteria(gameVoting(g, S.meta)).length + 1}, minmax(0, 1fr))`}">
+            ${g.quick ? `<div class="quick-note">${tr('tv.rv.quick')}</div>` : activeCriteria(gameVoting(g, S.meta)).map((c) => critTile(c, st.crit[c.key])).join('')}
             ${mvpTile(st)}
           </div>
           <div class="reveal-actions">
             <button type="button" class="btn-sec" id="reopenVote" title="${tr('tv.rv.reopenTitle')}">${tr('tv.rv.reopen')}</button>
             <button type="button" class="btn-sec" id="rematchBtn" title="${tr('tv.rv.rematchTitle')}">${tr('tv.rv.rematch')}</button>
+            <button type="button" class="btn-sec" id="lateVotes" title="${esc(tr('lv.btnTitle'))}">🗳️ <span>${esc(tr('lv.btn'))}</span></button>
             <button type="button" class="btn-sec" id="toBoard">${ICONS.trophy}<span>${tr('tv.ic.board')}</span></button>
             <button type="button" class="btn btn-big" id="nextGame">${tr('tv.rv.next')}</button>
           </div>
@@ -5801,17 +5244,21 @@ SCREENS.reveal = {
     $('#toBoard', el).addEventListener('click', () => setPhase('board'));
     $('#nextGame', el).addEventListener('click', () => goNext());
     $('#rematchBtn', el).addEventListener('click', () => rematch(id).catch((err) => toast(explainError(err), 'error')));
+    $('#lateVotes', el).addEventListener('click', () => LateVotePanel.open(id));
     $('#reopenVote', el).addEventListener('click', () => {
       if (confirm(tr('tv.rv.reopenConfirm', { name: g.name }))) reopenVoting(id).catch((err) => toast(explainError(err), 'error'));
     });
-    if (st.avg >= 8.5) {
+    if (st.avg >= 8.5 && !quiet) {
       this.timer = setTimeout(() => {
         confetti();
         if (st.avg >= 9) { fireworks(4, 1.6); [0.9, 1.4, 2].forEach((d) => fireworkSound(d)); }
       }, (after + 0.3) * 1000);
     }
+    // 2.1 (idea 2): messa in scena del finale secondo il verdetto (solo grafica e suoni)
+    const fin = finaleClass(st);
+    if (!quiet && fin === 'finale--divisive') this.timer2 = setTimeout(() => cymbal(), (after + 0.3) * 1000);
     const mode = commentatorMode();
-    if (mode !== 'off' && !isMuted() && st.n) {
+    if (mode !== 'off' && !isMuted() && st.n && !quiet) {
       const by = (val) => st.list.filter((v) => v.overall === val).map((v) => playerOrGhost(v.uid).name);
       const line = revealComment({
         game: g.name, avg: st.avg, n: st.n, min: st.min, max: st.max, minNames: by(st.min), maxNames: by(st.max),
@@ -5823,8 +5270,18 @@ SCREENS.reveal = {
     }
   },
 
+  update() {
+    const id = S.state?.gameId;
+    if (!this.el || !id) return;
+    const sig = JSON.stringify(S.votes?.[id] || {});
+    if (sig === this.voteSig) return;
+    this.remount = true;
+    this.mount(this.el);
+  },
+
   unmount() {
     clearTimeout(this.timer);
+    clearTimeout(this.timer2);
     clearTimeout(this.speakTimer);
   }
 };
@@ -5833,294 +5290,11 @@ SCREENS.reveal = {
 // Classifica
 // ---------------------------------------------------------------------------
 
-SCREENS.board = {
-  mount(el) {
-    this.render(el);
-  },
-
-  render(el) {
-    const board = buildBoard(S.games, S.votes);
-    this.sig = board.map((r) => r.id + r.stats.n).join('|');
-    const two = board.length > 6;
-    const rows = board.map((r, i) => `
-      <li class="brow brow--r${Math.min(r.rank, 4)}" style="--i:${i}">
-        <span class="brank">${r.rank}</span>
-        ${gameImageHTML(r, 'game-img--thumb')}
-        <span class="bname">
-          <b>${esc(r.name)}</b>
-          <span class="bbar" aria-hidden="true"><i style="width:${Math.max(4, r.stats.avg * 10)}%"></i></span>
-        </span>
-        <span class="bcrit">${CRITERIA.map((c) => `<span class="bcrit-item" style="--cc:${c.color}" title="${c.label}">${c.short} ${fmt(r.stats.crit[c.key])}</span>`).join('')}</span>
-        <span class="bavg">${fmt(r.stats.avg)}</span>
-        <span class="brow-tools">
-          <button type="button" class="brow-reopen" data-edit-game="${esc(r.id)}" title="${tr('tv.bd.editTitle', { name: esc(r.name) })}">${tr('tv.bd.edit')}</button>
-          <button type="button" class="brow-reopen" data-reopen="${esc(r.id)}" title="${tr('tv.bd.reopenTitle', { name: esc(r.name) })}">${tr('tv.bd.reopen')}</button>
-        </span>
-      </li>`).join('');
-
-    el.innerHTML = `
-      <section class="board">
-        <div class="board-head">
-          <h1>${tr('tv.ic.board')}</h1>
-          <span class="muted">${tr('tv.rec.games', { n: board.length })}</span>
-        </div>
-        ${board.length
-          ? `<ol class="board-list ${two ? 'board-list--two' : ''}" style="--rows:${Math.ceil(board.length / 2)}">${rows}</ol>`
-          : `<div class="empty-board"><p class="empty-title">${tr('tv.idle.emptyTitle')}</p></div>`}
-        <div class="board-actions">
-          ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
-          ${board.length ? `<button type="button" class="btn-sec" id="endNight">${tr('tv.end.end')}</button>` : ''}
-          <button type="button" class="btn btn-big" id="nextGame">${tr('tv.rv.next')}</button>
-        </div>
-      </section>`;
-    $('#endNight', el)?.addEventListener('click', endNight);
-    $('#showAllTime', el)?.addEventListener('click', () => openAllTime());
-    $('#nextGame', el).addEventListener('click', () => goNext());
-    el.querySelector('.board-list')?.addEventListener('click', (e) => {
-      const ed = e.target.closest('[data-edit-game]');
-      if (ed) { EditGame.open(ed.dataset.editGame); return; }
-      const b = e.target.closest('[data-reopen]');
-      const g = b && S.games[b.dataset.reopen];
-      if (g && confirm(tr('tv.rv.reopenConfirm', { name: g.name }))) reopenVoting(b.dataset.reopen).catch((err) => toast(explainError(err), 'error'));
-    });
-  }
-};
 
 // ---------------------------------------------------------------------------
 // Premiazione
 // ---------------------------------------------------------------------------
 
-SCREENS.awards = {
-  mount(el) {
-    this.el = el;
-    this.board = buildBoard(S.games, S.votes);
-    this.awards = buildAwards(this.board, S.votes, S.players);
-    this.gameAwards = this.awards.filter((a) => a.kind === 'game');
-    this.playerAwards = this.awards.filter((a) => a.kind === 'player');
-    // Traguardi sbloccati con questa serata (calcolati con il riassunto di stasera)
-    const nightsNow = { ...(S.nights || {}), [S.code]: nightSummary(this.board, S.players, S.meta, this.awards) };
-    this.achAwards = [];
-    if (S.meta.groupId) {
-      for (const p of sortedPlayers(S.players)) {
-        for (const a of newAchievements(nightsNow, personKey(p), S.code, S.library)) {
-          this.achAwards.push({ key: 'ach', kind: 'ach', title: `${a.icon} ${a.name}`, players: [{ uid: p.uid, ...p }], value: a.desc, color: '#8AC926' });
-        }
-      }
-    }
-    this.awards = [...this.awards, ...this.achAwards.slice(0, 8)];
-    const podium = this.board.slice(0, 3);
-    // Campioni della serata: i giocatori che salgono sul podio (vittorie, voti MVP, pronostici, medie indovinate).
-    this.champs = nightChampions(this.board).filter((c) => c.rank <= 3).slice(0, 3);
-    // Classifica della stagione (gruppi): chi sale grazie a stasera
-    this.seasonHTML = S.meta.groupId && !S.meta.demo ? seasonStageHTML() : '';
-    // Prima il podio dei giochi dal terzo al primo, poi i campioni, poi i premi speciali uno alla volta.
-    this.steps = [
-      ...podium.map((_, i) => ({ type: 'pod', index: i })).reverse(),
-      ...(this.champs.length ? [{ type: 'pstage' }, ...this.champs.map((_, i) => ({ type: 'ppod', index: i })).reverse()] : []),
-      ...(this.seasonHTML ? [{ type: 'sstage' }] : []),
-      ...(this.awards.length ? [{ type: 'stage' }] : []),
-      ...this.awards.map((_, i) => ({ type: 'award', index: i }))
-    ];
-    this.step = 0;
-
-    if (!this.board.length) {
-      el.innerHTML = `
-        <section class="awards awards--empty">
-          <h1>${tr('tv.aw.title')}</h1>
-          <div class="empty-board"><p class="empty-title">${tr('tv.aw.emptyTitle')}</p><p class="muted">${tr('tv.aw.emptyText')}</p></div>
-          <div class="awards-actions"><button type="button" class="btn btn-big" id="backIdle">${tr('tv.aw.back')}</button></div>
-        </section>`;
-      $('#backIdle', el).addEventListener('click', () => setPhase('idle'));
-      return;
-    }
-
-    const podCol = (i) => {
-      const r = podium[i];
-      if (!r) return '<div class="pod pod--none" aria-hidden="true"></div>';
-      return `
-        <div class="pod pod--${i + 1}">
-          <div class="pod-card is-hidden" data-pod="${i}">
-            ${gameImageHTML(r, 'game-img--pod')}
-            <b class="pod-name">${esc(r.name)}</b>
-            <span class="pod-avg">${fmt(r.stats.avg)}</span>
-          </div>
-          <div class="pod-base"><span>${r.rank}</span></div>
-        </div>`;
-    };
-
-    const medals = ['🏆', '🥈', '🥉'];
-    const champCol = (i) => {
-      const c = this.champs[i];
-      if (!c) return '<div class="champ champ--none" aria-hidden="true"></div>';
-      const p = playerOrGhost(c.uid);
-      const bits = [c.wins ? tr('tv.aw.wins', { n: c.wins }) : '', c.mvp ? `${c.mvp} MVP` : '', c.seer ? tr('tv.aw.seer', { n: c.seer }) : '', c.oracle ? tr('tv.aw.oracle', { n: c.oracle }) : ''].filter(Boolean);
-      return `
-        <div class="champ champ--${i + 1}" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : '#FFC93C'}">
-          <div class="champ-who is-hidden" data-champ="${i}">
-            <span class="champ-trophy" aria-hidden="true">${medals[c.rank - 1] || '🏅'}</span>
-            <span class="champ-av">${avatarHTML(p, i === 0 ? '8.4rem' : '6.6rem')}</span>
-            <b class="champ-name">${esc(p.name)}</b>
-            <span class="champ-pts">${tr('tv.aw.points', { n: c.points })}</span>
-            <small class="champ-why">${esc(bits.join(' · '))}</small>
-          </div>
-          <div class="champ-base champ-base--r${Math.min(c.rank, 3)}"><span>${c.rank}</span></div>
-        </div>`;
-    };
-
-    const awardCard = (a) => {
-      const i = this.awards.indexOf(a);
-      const body = a.game
-        ? `${gameImageHTML(a.game, 'game-img--award')}<b class="award-name">${esc(a.game.name)}</b>`
-        : `<div class="award-people">${a.players.slice(0, 3).map((p) => `<span class="${a.key === 'mvp' ? 'crowned' : 'person'}">${a.key === 'mvp' ? ICONS.crown : ''}${avatarHTML(p, '4.2rem')}</span>`).join('')}</div><b class="award-name">${esc(namesList(a.players.map((p) => p.name)))}</b>`;
-      return `
-        <article class="award" data-award="${i}" style="--ac:${a.color}">
-          <div class="award-inner">
-            <div class="award-back">${ICONS.trophy}</div>
-            <div class="award-front">
-              <h3>${esc(a.title)}</h3>
-              ${body}
-              <span class="award-value">${esc(a.value)}</span>
-            </div>
-          </div>
-        </article>`;
-    };
-    const row = (title, list) => list.length ? `
-      <div class="prize-row">
-        <h2 class="prize-title">${title}</h2>
-        <div class="award-grid" style="--n:${list.length}">${list.map(awardCard).join('')}</div>
-      </div>` : '';
-
-    el.innerHTML = `
-      <section class="awards stage-podium" id="awSec">
-        <div class="awards-head">
-          <div class="awards-title"><h1 id="awTitle">${tr('tv.aw.title')}</h1><div id="awStages"></div></div>
-          <div class="awards-actions" id="awardsActions"></div>
-        </div>
-        <div class="podium">${[1, 0, 2].map(podCol).join('')}</div>
-        ${this.champs.length ? `<div class="champions" id="awChamps">${[1, 0, 2].map(champCol).join('')}</div>
-        <p class="champ-rule">${tr('tv.aw.rule')}</p>` : ''}
-        ${this.seasonHTML ? `<div class="season-wrap">${this.seasonHTML}</div>` : ''}
-        <div class="prizes ${this.achAwards.length ? 'prizes--dense' : ''}">
-          ${row(tr('tv.aw.toGames'), this.gameAwards)}
-          ${row(tr('tv.aw.toPlayers'), this.playerAwards)}
-          ${row(tr('tv.aw.ach'), this.achAwards.slice(0, 8))}
-        </div>
-      </section>`;
-    this.stage = 'podium';
-
-    // Si riprende dal punto raggiunto (es. dopo aver ricaricato la pagina), o tutto scoperto se era finita.
-    const target = S.state?.done ? this.steps.length : Math.min(Number(S.state?.step) || 0, this.steps.length);
-    if (!target) endNightSound();
-    while (this.step < target) this.next(true);
-    this.paintActions();
-  },
-
-  setStage(stage) {
-    const sec = $('#awSec', this.el);
-    sec.classList.toggle('stage-podium', stage === 'podium');
-    sec.classList.toggle('stage-players', stage === 'players');
-    sec.classList.toggle('stage-season', stage === 'season');
-    sec.classList.toggle('stage-prizes', stage === 'prizes');
-    $('#awTitle', this.el).textContent = stage === 'prizes' ? tr('tv.aw.prizes') : stage === 'players' ? tr('tv.aw.champs') : stage === 'season' ? tr('tv.aw.season') : tr('tv.aw.title');
-    this.stage = stage;
-  },
-
-  paintActions() {
-    const box = $('#awardsActions', this.el);
-    if (!box) return;
-    const stagesBox = $('#awStages', this.el);
-    if (stagesBox) stagesBox.innerHTML = '';
-    if (this.step < this.steps.length) {
-      const nextStep = this.steps[this.step];
-      const label = this.step === 0 ? tr('tv.aw.podium') : nextStep.type === 'stage' ? tr('tv.aw.prizes') : nextStep.type === 'pstage' ? tr('tv.aw.champs') : nextStep.type === 'sstage' ? tr('tv.aw.seasonBoard') : tr('tv.aw.next');
-      box.innerHTML = `<span class="muted key-hint">${tr('tv.aw.space')}</span><button type="button" class="btn btn-big" id="stepBtn">${label}</button>`;
-      $('#stepBtn', box).addEventListener('click', () => this.next());
-      $('#stepBtn', box).focus();
-      return;
-    }
-    const stages = [['podium', tr('tv.aw.stPodium')], ...(this.champs.length ? [['players', tr('tv.aw.stChamps')]] : []), ...(this.seasonHTML ? [['season', tr('tv.aw.season')]] : []), ...(this.awards.length ? [['prizes', tr('tv.aw.prizes')]] : [])];
-    if (stagesBox && stages.length > 1) stagesBox.innerHTML = `<div class="seg seg--stage" role="group" aria-label="${tr('tv.aw.stAria')}">${stages.map(([k, l]) => `<button type="button" data-stage="${k}" aria-pressed="${this.stage === k}">${l}</button>`).join('')}</div>`;
-    box.innerHTML = `
-      <button type="button" class="btn-sec" id="shareImg">${ICONS.share}<span>${tr('tv.aw.share')}</span></button>
-      <button type="button" class="btn-sec" id="recapBtn" title="${tr('tv.aw.recapTitle')}">🎙️ <span>${tr('tv.aw.recap')}</span></button>
-      <a class="btn-sec" id="reportLink" href="resoconto.html?room=${esc(S.code)}${S.meta.groupId ? `&g=${esc(S.meta.groupId)}` : ''}" target="_blank" rel="noopener" title="${tr('tv.aw.reportTitle')}">📋 <span>${tr('tv.aw.report')}</span></a>
-      ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openAlbum">📸 <span>Album${photoList(S.photos).length ? ` (${photoList(S.photos).length})` : ''}</span></button>` : ''}
-      ${S.meta.groupId ? `<button type="button" class="btn-sec" id="toAllTime">${ICONS.star}<span>${tr('tv.aw.allTime')}</span></button>` : ''}
-      <button type="button" class="btn" id="newNight2">${tr('tv.create.title')}</button>`;
-    stagesBox?.querySelectorAll('[data-stage]').forEach((b) => b.addEventListener('click', () => { this.setStage(b.dataset.stage); this.paintActions(); }));
-    $('#shareImg', box).addEventListener('click', () => ExportPanel.open(this.board, this.awards));
-    $('#recapBtn', box).addEventListener('click', () => {
-      const mode = commentatorMode() === 'off' ? 'festa' : commentatorMode();
-      if (isMuted()) toast(tr('tv.aw.muted'), 'warn');
-      speak(nightRecap(recapData(this.board, this.awards), mode), { captions: true });
-    });
-    $('#openAlbum', box)?.addEventListener('click', () => AlbumPanel.open());
-    $('#toAllTime', box)?.addEventListener('click', () => openAllTime());
-    $('#newNight2', box).addEventListener('click', newNight);
-  },
-
-  next(silent = false) {
-    const s = this.steps[this.step];
-    if (!s) return;
-    if (s.type === 'pod') {
-      if (this.stage !== 'podium') this.setStage('podium');
-      $(`[data-pod="${s.index}"]`, this.el)?.classList.remove('is-hidden');
-      if (s.index === 0 && !silent) {
-        confetti(140);
-        if (!this.champs.length) { fireworks(6); [0.9, 1.4, 1.9, 2.5].forEach((d) => fireworkSound(d)); }
-        fanfare();
-        const mode = commentatorMode();
-        if (mode !== 'off' && !isMuted()) setTimeout(() => speak(podiumLine(this.board[0].name, this.board[0].stats.avg, mode)), 900);
-      } else if (!silent) pop();
-    } else if (s.type === 'pstage') {
-      this.setStage('players');
-      if (!silent) drumroll(1.2);
-    } else if (s.type === 'ppod') {
-      if (this.stage !== 'players') this.setStage('players');
-      const who = $(`[data-champ="${s.index}"]`, this.el);
-      who?.classList.remove('is-hidden');
-      if (!silent) {
-        who?.classList.add('is-climbing');
-        stepUp(0.29, 1); stepUp(0.6, 2); stepUp(0.94, 3);
-        if (s.index === 0) {
-          fanfare(0.9);
-          victory(1.6);
-          setTimeout(() => {
-            const r = who?.getBoundingClientRect();
-            if (r) confettiBurst(160, { x: r.left + r.width / 2, y: r.top + r.height * 0.3 });
-            fireworks(8, 3.2);
-          }, 950);
-          [1.8, 2.3, 2.9, 3.4, 4].forEach((d) => fireworkSound(d));
-          const mode = commentatorMode();
-          if (mode !== 'off' && !isMuted()) setTimeout(() => speak(tr('tv.aw.champSpeak', { name: playerOrGhost(this.champs[0].uid).name, n: this.champs[0].points })), 2600);
-        } else pop(0.95);
-      }
-    } else if (s.type === 'sstage') {
-      this.setStage('season');
-      if (!silent) ding();
-    } else if (s.type === 'stage') {
-      this.setStage('prizes');
-    } else {
-      $(`[data-award="${s.index}"]`, this.el)?.classList.add('is-shown');
-      if (!silent) pop();
-    }
-    this.step++;
-    if (silent) return;
-    this.paintActions();
-    update(roomRef(S.code, 'state'), this.step >= this.steps.length ? { step: this.step, done: true } : { step: this.step }).catch(() => {});
-  },
-
-  onKey(e) {
-    // Su un pulsante con il focus ci pensa già il click nativo.
-    if (e.target instanceof HTMLButtonElement && (e.key === ' ' || e.key === 'Enter')) return;
-    if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter') {
-      if (this.step < this.steps.length) {
-        e.preventDefault();
-        this.next();
-      }
-    }
-  }
-};
 
 // ---------------------------------------------------------------------------
 // Cosa giochiamo adesso? (sondaggio dai telefoni)
@@ -6179,131 +5353,6 @@ function pollTally(poll) {
 }
 const pollMaxPref = () => { try { return Math.min(POLL_MAX_VOTES, Math.max(1, Number(localStorage.getItem('gnr_poll_max')) || 1)); } catch { return 1; } };
 
-SCREENS.poll = {
-  mount(el) {
-    this.sig = '';
-    this.timer = null;
-    this.shown = false;
-    const n = asList(S.poll?.options).length;
-    const cols = n <= 4 ? n : n <= 6 ? 3 : 4;
-    el.innerHTML = `
-      <section class="poll" id="pollBox">
-        <div class="poll-head">
-          <div>
-            <h1>${tr('tv.po.title')}</h1>
-            <p class="lead-line" id="pollLead">${tr('tv.po.lead')}</p>
-            <div class="poll-max" id="pollMax"></div>
-            <p class="muted poll-excluded" id="pollExcluded"></p>
-          </div>
-          <span class="chip chip-lg" id="pollCount" aria-live="polite"></span>
-        </div>
-        <div class="poll-grid ${n > 8 ? 'poll-grid--dense' : ''}" id="pollGrid" style="--cols:${cols}"></div>
-        <div class="poll-actions">
-          <button type="button" class="btn-sec" id="pollCancel">${tr('tv.cancel')}</button>
-          <button type="button" class="btn btn-big" id="pollClose">${tr('tv.po.close')}</button>
-        </div>
-      </section>
-      <section class="poll-win" id="pollWin" hidden></section>`;
-    $('#pollCancel', el).addEventListener('click', async () => {
-      clearTimeout(this.timer);
-      await setPhase('idle');
-      remove(roomRef(S.code, 'poll')).catch(() => {});
-    });
-    $('#pollClose', el).addEventListener('click', () => this.close());
-    $('#pollMax', el).addEventListener('click', async (e) => {
-      const b = e.target.closest('[data-pmax]');
-      if (!b || b.disabled) return;
-      const v = Number(b.dataset.pmax);
-      try { localStorage.setItem('gnr_poll_max', String(v)); } catch { /* niente */ }
-      await update(roomRef(S.code, 'poll'), { max: v }).catch((err) => toast(explainError(err), 'error'));
-    });
-  },
-
-  update() {
-    const poll = S.poll;
-    if (!poll) return;
-    if (!poll.open) { this.showWinner(); return; }
-    const opts = asList(poll.options).filter((id) => S.library?.[id]);
-    const { tally, voted, total, cast } = pollTally(poll);
-    const max = Math.max(0, ...Object.values(tally));
-    const pm = Math.max(1, Number(poll.max) || 1);
-    const limit = Math.min(POLL_MAX_VOTES, opts.length - 1);
-    const pmSig = JSON.stringify([pm, cast > 0, limit]);
-    if ($('#pollMax').dataset.sig !== pmSig) {
-      $('#pollMax').dataset.sig = pmSig;
-      $('#pollMax').innerHTML = limit >= 2 ? `<span class="field-label">${tr('tv.po.perHead')}</span><span class="seg" role="group" aria-label="${tr('tv.po.perHead')}">${Array.from({ length: limit }, (_, i) => i + 1).map((v) => `<button type="button" data-pmax="${v}" aria-pressed="${pm === v}" ${cast > 0 && pm !== v ? 'disabled' : ''}>${v}</button>`).join('')}</span>${cast > 0 ? `<small class="muted">${tr('tv.po.locked')}</small>` : ''}` : '';
-      $('#pollLead').textContent = pm > 1 ? tr('tv.po.leadMulti', { n: String(pm) }) : tr('tv.po.lead');
-    }
-    const sig = JSON.stringify([opts, tally, opts.map((id) => (S.library[id].image || '').length)]);
-    if (sig !== this.sig) {
-      this.sig = sig;
-      $('#pollGrid').innerHTML = opts.map((id) => {
-        const it = S.library[id];
-        const c = tally[id] || 0;
-        return `
-          <div class="poll-card ${c && c === max ? 'is-lead' : ''}">
-            ${gameImageHTML(it, 'game-img--poll')}
-            <div class="poll-info"><span class="poll-text"><b class="poll-name">${esc(it.name)}</b>${libInfo(it) ? `<span class="poll-meta">${esc(libInfo(it))}</span>` : ''}${freshnessLabel(it, lastPlayed(S.nights)) ? `<span class="poll-fresh">${esc(freshnessLabel(it, lastPlayed(S.nights)))}</span>` : ''}</span><span class="poll-votes" aria-label="${tr('tv.ic.nVotes', { n: String(c) })}">${c}</span></div>
-            <span class="poll-bar" aria-hidden="true"><i style="width:${max ? Math.round((c / max) * 100) : 0}%"></i></span>
-          </div>`;
-      }).join('');
-    }
-    const n = activePlayers(S.players).length;
-    const played = playedTonight();
-    const out = libraryItems().filter((it) => !played.has(nameKey(it.name)) && isAvailable(it) && !libFits(it, n)).map((it) => it.name);
-    $('#pollExcluded').textContent = out.length ? tr('tv.po.excluded', { n: String(n), list: namesList(out) }) : '';
-    const all = total > 0 && voted === total;
-    $('#pollCount').textContent = all ? tr('tv.po.all') : tr('tv.po.count', { n: `${voted} / ${total}` });
-    $('#pollClose').disabled = voted === 0;
-    if (all && !S.state?.paused) {
-      if (!this.timer) this.timer = setTimeout(() => this.close(), 2000);
-    } else if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  },
-
-  async close() {
-    clearTimeout(this.timer);
-    this.timer = null;
-    const poll = S.poll;
-    if (!poll?.open) return;
-    const { tally } = pollTally(poll);
-    const max = Math.max(0, ...Object.values(tally));
-    if (!max) return;
-    const top = Object.keys(tally).filter((id) => tally[id] === max);
-    const winner = top[Math.floor(Math.random() * top.length)];
-    await update(roomRef(S.code, 'poll'), { open: false, winner, tie: top.length > 1 })
-      .catch((err) => toast(explainError(err), 'error'));
-  },
-
-  showWinner() {
-    if (this.shown) return;
-    this.shown = true;
-    clearTimeout(this.timer);
-    const poll = S.poll;
-    const it = S.library?.[poll.winner] || { name: tr('tv.po.chosen') };
-    $('#pollBox').hidden = true;
-    const box = $('#pollWin');
-    box.hidden = false;
-    box.innerHTML = `
-      <div class="poll-win-art">${gameImageHTML(it, 'game-img--win tilt-left')}</div>
-      <div class="poll-win-text">
-        <span class="chip chip--tomato">${poll.tie ? tr('tv.po.tie') : tr('tv.po.youChose')}</span>
-        <h1 class="win-title">${tr('tv.po.winTitle', { name: esc(it.name) })}</h1>
-        <p class="lead-line">${tr('tv.po.winLead')}</p>
-        <button type="button" class="btn btn-big" id="pollGo">${ICONS.play}<span>${tr('tv.po.go')}</span></button>
-      </div>`;
-    confetti(110);
-    fanfare();
-    $('#pollGo').addEventListener('click', () => pollGo());
-    $('#pollGo').focus();
-  },
-
-  unmount() {
-    clearTimeout(this.timer);
-  }
-};
 
 // ---------------------------------------------------------------------------
 // Classifica di sempre (tutte le serate del gruppo)
@@ -6325,332 +5374,15 @@ function playerByName(name) {
   return sortedPlayers(S.players).find((p) => nameKey(p.name) === k) || { name };
 }
 
-SCREENS.alltime = {
-  TABS: ['rank', 'season', 'rivals', 'cards', 'stats', 'pairs', 'hof', 'memories', 'wrapped', 'calendar'],
-
-  mount(el) {
-    this.sig = '';
-    this.view = 'rank';
-    this.night = null;
-    this.pair = null;
-    this.year = null;
-    this.slide = 0;
-    el.innerHTML = '<section class="alltime" id="atBox"></section>';
-    const box = $('#atBox', el);
-    box.addEventListener('click', (e) => {
-      const go = (patch) => { Object.assign(this, patch); this.sig = ''; this.update(); };
-      if (e.target.closest('#atBack')) { backFromAllTime(); return; }
-      const v = e.target.closest('[data-view]');
-      if (v) { go({ view: v.dataset.view, slide: 0 }); return; }
-      const n = e.target.closest('[data-night]');
-      if (n) { go({ view: 'night', night: n.dataset.night }); return; }
-      const p = e.target.closest('[data-pair]');
-      if (p) { go({ pair: p.dataset.pair }); return; }
-      const y = e.target.closest('[data-year]');
-      if (y) { go({ year: Number(y.dataset.year), slide: 0 }); return; }
-      const s = e.target.closest('[data-slide]');
-      if (s) { go({ slide: this.slide + Number(s.dataset.slide) }); return; }
-      const ys = e.target.closest('[data-yearshare]');
-      if (ys) { this.shareYear(Number(ys.dataset.yearshare), ys); return; }
-      const al = e.target.closest('[data-album]');
-      if (al) { AlbumPanel.open(al.dataset.album, al.dataset.title || tr('tv.tl.album')); return; }
-      if (e.target.closest('#nxIcs')) { downloadICS(S.next, S.meta.groupName || 'Game Night', libraryUrl()); return; }
-      if (e.target.closest('#nxClear')) { if (confirm(tr('tv.nx.clearConfirm'))) remove(groupRef(S.meta.groupId, 'next')).catch((err) => toast(explainError(err), 'error')); }
-    });
-    box.addEventListener('submit', async (e) => {
-      if (e.target.id !== 'nxForm') return;
-      e.preventDefault();
-      try { await saveNextNight($('#nxAt').value, $('#nxPlace').value); toast(tr('tv.nx.saved')); } catch (err) { toast(explainError(err), 'error'); }
-    });
-  },
-
-  onKey(e) {
-    if (this.view !== 'wrapped') return;
-    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); this.slide++; this.sig = ''; this.update(); }
-    if (e.key === 'ArrowLeft') { e.preventDefault(); this.slide = Math.max(0, this.slide - 1); this.sig = ''; this.update(); }
-  },
-
-  head(title, sub = '') {
-    const active = this.view === 'night' ? 'memories' : this.view;
-    return `
-      <div class="alltime-head">
-        <div><h1>${title}</h1>${sub ? `<p class="muted">${sub}</p>` : ''}</div>
-        <button type="button" class="btn btn-big" id="atBack">${tr('tv.aw.back')}</button>
-      </div>
-      <nav class="at-tabs" aria-label="${tr('tv.at.sections')}">${this.TABS.map((k) => `<button type="button" data-view="${k}" aria-pressed="${k === active}">${tr(`tv.at.tab.${k}`)}</button>`).join('')}</nav>`;
-  },
-
-  update() {
-    const sig = JSON.stringify([this.view, this.night, this.pair, this.year, this.slide, Object.keys(S.nights || {}).length, JSON.stringify(S.nights || {}).length, Object.keys(S.library || {}).length, S.next, Object.keys(S.games || {}).length, S.identity]);
-    if (sig === this.sig) return;
-    this.sig = sig;
-    const paint = { rank: this.paintRank, season: this.paintSeason, rivals: this.paintRivals, cards: this.paintCards, stats: this.paintStats, pairs: this.paintPairs, hof: this.paintHof, memories: this.paintMemories, night: this.paintNight, wrapped: this.paintWrapped, calendar: this.paintCalendar }[this.view] || this.paintRank;
-    paint.call(this);
-  },
-
-  paintSeason() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.season'), tr('tv.at.seasonSub', { group: this.groupLabel() }))}${seasonTabHTML()}`; },
-  paintRivals() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.rivals'), tr('tv.at.rivalsSub'))}${rivalsTabHTML()}`; },
-  paintCards() { $('#atBox').innerHTML = `${this.head(tr('tv.at.tab.cards'), this.groupLabel())}${cardsTabHTML()}`; bindCards($('#atBox')); },
-
-  groupLabel() {
-    return `${S.identity?.emblem && !S.identity?.logo ? `${esc(S.identity.emblem)} ` : ''}${esc(S.meta.groupName || tr('tv.create.group'))}`;
-  },
-
-  paintRank() {
-    const at = buildAllTime(S.nights, S.library);
-    const games = at.games.slice(0, 7);
-    const rows = games.map((g, i) => `
-      <li class="brow brow--at brow--r${Math.min(g.rank, 4)}" style="--i:${i}">
-        <span class="brank">${g.rank}</span>
-        ${gameImageHTML(g, 'game-img--thumb')}
-        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${tr('tv.at.votesIn', { votes: tr('tv.rv.nVotes', { n: g.n }), nights: tr('tv.at.nNights', { n: g.nights }) })}</span></span>
-        <span class="bavg">${fmt(g.avg)}</span>
-      </li>`).join('');
-    const row = (i, name, val) => `<li class="at-row"><span class="at-pos">${i + 1}</span>${avatarHTML(playerByName(name), '2.6rem')}<span class="at-name">${esc(name)}</span><span class="at-val">${val}</span></li>`;
-    const wins = at.wins.slice(0, 3).map((w, i) => row(i, w.name, tr('tv.aw.wins', { n: w.wins }))).join('');
-    const mvp = at.mvp.slice(0, 3).map((m, i) => row(i, m.name, tr('tv.rv.nVotes', { n: m.votes }))).join('');
-    const most = at.mostPlayed.slice(0, 3).map((g) => `<li class="at-row"><span class="at-name">${esc(g.name)}</span><span class="at-val">${tr('tv.nNights', { n: g.nights })}</span></li>`).join('');
-    $('#atBox').innerHTML = `
-      ${this.head(tr('tv.idle.allTime'), tr('tv.at.rankSub', { group: this.groupLabel(), nights: tr('tv.at.nNights', { n: at.nights }), games: tr('tv.rec.games', { n: at.games.length }) }))}
-      ${at.games.length ? `
-        <div class="alltime-body">
-          <div class="alltime-main"><ol class="board-list">${rows}</ol>${at.games.length > games.length ? `<p class="muted">${tr('tv.idle.more', { n: at.games.length - games.length })}</p>` : ''}</div>
-          <aside class="card alltime-side">
-            <h2>${tr('tv.pl.mvpEver')}</h2>${mvp ? `<ol class="at-list">${mvp}</ol>` : `<p class="muted">${tr('tv.at.noMvp')}</p>`}
-            ${wins ? `<h2>${tr('tv.at.mostWins')}</h2><ol class="at-list">${wins}</ol>` : ''}
-            ${most ? `<h2>${tr('tv.at.mostPlayed')}</h2><ol class="at-list">${most}</ol>` : ''}
-          </aside>
-        </div>` : `<div class="empty-board"><p class="empty-title">${tr('tv.at.noNights')}</p><p class="muted">${tr('tv.at.noNightsText')}</p></div>`}`;
-  },
-
-  /** Andamento della serata e statistiche del gruppo su tutte le serate. */
-  paintStats() {
-    const board = buildBoard(S.games, S.votes).sort((a, b) => (a.order || 0) - (b.order || 0));
-    const W = 560, H = 210, P = 34;
-    const pts = board.map((r, i) => ({ x: board.length > 1 ? P + (i * (W - 2 * P)) / (board.length - 1) : W / 2, y: H - P - ((r.stats.avg - 1) / 9) * (H - 2 * P), r }));
-    const chart = board.length ? `
-      <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('tv.at.trendAria')}">
-        ${[2, 4, 6, 8, 10].map((v) => { const y = H - P - ((v - 1) / 9) * (H - 2 * P); return `<line x1="${P}" x2="${W - P}" y1="${y}" y2="${y}" class="trend-grid"/><text x="${P - 8}" y="${y + 4}" class="trend-axis" text-anchor="end">${v}</text>`; }).join('')}
-        <polyline points="${pts.map((p) => `${p.x},${p.y}`).join(' ')}" class="trend-line"/>
-        ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="7" class="trend-dot"/><text x="${p.x}" y="${p.y - 14}" text-anchor="middle" class="trend-val">${fmt(p.r.stats.avg)}</text><text x="${p.x}" y="${H - 8}" text-anchor="middle" class="trend-axis">${esc(p.r.name.length > 12 ? p.r.name.slice(0, 11) + '…' : p.r.name)}</text>`).join('')}
-      </svg>` : `<p class="muted">${tr('tv.at.noGamesTonight')}</p>`;
-    const ins = groupInsights(S.nights, S.library);
-    const played = lastPlayed(S.nights);
-    const dusty = libraryItems().map((it) => ({ name: it.name, label: freshnessLabel(it, played), n: played[dbKey(it.name)] ?? 999 })).filter((x) => x.label).sort((a, b) => b.n - a.n).slice(0, 3);
-    const card = (title, list, val, empty) => `<section class="card stat-card stat-card--sm"><h2>${title}</h2>${list.length ? `<ol class="at-list">${list.map((g) => `<li class="at-row"><span class="at-name">${esc(g.name)}</span><span class="at-val">${val(g)}</span></li>`).join('')}</ol>` : `<p class="muted">${empty}</p>`}</section>`;
-    const few = tr('tv.st.few');
-    $('#atBox').innerHTML = `
-      ${this.head(tr('tv.at.tab.stats'), this.groupLabel())}
-      <div class="stats-body stats-body--grid">
-        <section class="card stat-card stat-card--chart"><h2>${tr('tv.st.trend')}</h2>${chart}</section>
-        ${card(tr('tv.st.loved'), ins.loved, (g) => fmt(g.avg), few)}
-        ${card(tr('tv.st.everyone'), ins.everyone, (g) => tr('tv.st.everyoneVal', { n: String(g.minVote) }), tr('tv.st.everyoneNone'))}
-        ${card(tr('tv.st.divisive'), ins.divisive, (g) => tr('tv.st.consensus', { n: String(g.consensus) }), tr('tv.st.divisiveNone'))}
-        ${card(tr('tv.st.overrated'), ins.overrated, () => tr('tv.st.overratedVal'), few)}
-        ${card(tr('tv.st.underrated'), ins.underrated, () => tr('tv.st.underratedVal'), few)}
-        ${card(tr('tv.st.longer'), ins.longer, (g) => tr('tv.st.longerVal', { real: String(Math.round(g.realMin)), declared: String(g.declared) }), tr('tv.st.longerNone'))}
-        ${card(tr('tv.st.perMinute'), ins.perMinute, (g) => tr('tv.st.perMinuteVal', { avg: fmt(g.avg), min: String(Math.round(g.realMin)) }), tr('tv.st.perMinuteNone'))}
-        ${card(tr('tv.st.never'), ins.never, (g) => fmt(g.avg), tr('tv.st.neverNone'))}
-        ${card(tr('tv.st.replay'), ins.replay, (g) => tr('tv.st.replayVal', { n: g.ago }), tr('tv.st.replayNone'))}
-        ${card(tr('tv.st.dusty'), dusty, (g) => esc(g.label), tr('tv.st.dustyNone'))}
-      </div>`;
-  },
-
-  /** Mappa delle coppie: compatibilità, rivalità, duo imbattibili. */
-  paintPairs() {
-    const pm = pairsMap(S.nights);
-    const people = pm.people.slice(0, 9);
-    const find = (a, b) => pm.pairs.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a));
-    const hl = (icon, title, p, text) => `<button type="button" class="card pair-hl" ${p ? `data-pair="${esc(p.a)}|${esc(p.b)}"` : 'disabled'}><span class="pair-ico">${icon}</span><b>${title}</b>${p ? `<span>${esc(p.aName)} + ${esc(p.bName)}</span><small>${text(p)}</small>` : `<small>${tr('tv.pr.few')}</small>`}</button>`;
-    const heat = (c) => (c === null ? 'transparent' : `hsl(${Math.round((c / 100) * 130)}, 70%, 62%)`);
-    const matrix = people.length >= 2 ? `
-      <table class="pair-matrix"><thead><tr><th></th>${people.map((p) => `<th>${avatarHTML(playerByName(p.name), '2rem')}<span>${esc(p.name)}</span></th>`).join('')}</tr></thead>
-      <tbody>${people.map((r) => `<tr><th>${esc(r.name)}</th>${people.map((c) => {
-        if (r.key === c.key) return '<td class="is-self"></td>';
-        const p = find(r.key, c.key);
-        return `<td><button type="button" class="${p?.compat === null || p?.compat === undefined ? 'is-na' : ''}" data-pair="${esc(r.key)}|${esc(c.key)}" style="--h:${heat(p?.compat ?? null)}" aria-label="${esc(namesList([r.name, c.name]))}">${p?.compat ?? '—'}${p?.compat !== null && p?.compat !== undefined ? '%' : ''}</button></td>`;
-      }).join('')}</tr>`).join('')}</tbody></table>` : `<p class="muted">${tr('tv.pr.needTwo')}</p>`;
-    let detail = `<p class="muted">${tr('tv.pr.tap')}</p>`;
-    if (this.pair) {
-      const [a, b] = this.pair.split('|');
-      const p = find(a, b);
-      if (p) {
-        const x = p.a === a ? { n1: p.aName, n2: p.bName, w1: p.aWins, w2: p.bWins } : { n1: p.bName, n2: p.aName, w1: p.bWins, w2: p.aWins };
-        const gname = (k) => S.library && libraryItems().find((it) => dbKey(it.name) === k)?.name || k;
-        detail = `
-          <h2>${esc(x.n1)} + ${esc(x.n2)}</h2>
-          <p class="pair-compat">${p.compat !== null && p.compat !== undefined ? tr('tv.pr.compat', { n: String(p.compat) }) : tr('tv.pr.compatNone')}</p>
-          <ul class="pair-facts">
-            <li>${tr('tv.pr.together', { n: String(p.together) })}</li>
-            <li>${tr('tv.pr.h2h', { a: `<b>${esc(x.n1)} ${x.w1}</b>`, b: `<b>${x.w2} ${esc(x.n2)}</b>` })}</li>
-            <li>${tr('tv.pr.both', { n: String(p.both) })}</li>
-            ${p.lovedBoth?.length ? `<li>${tr('tv.pr.loved', { list: esc(p.lovedBoth.slice(0, 4).map(gname).join(', ')) })}</li>` : ''}
-            ${p.opposite?.length ? `<li>${tr('tv.pr.opposite', { list: esc(p.opposite.slice(0, 4).map(gname).join(', ')) })}</li>` : ''}
-          </ul>`;
-      }
-    }
-    $('#atBox').innerHTML = `
-      ${this.head(tr('tv.at.tab.pairs'), this.groupLabel())}
-      <div class="pairs-hl">
-        ${hl('🔥', tr('tv.pr.duo'), pm.duo, (p) => tr('tv.pr.duoVal', { n: String(p.both) }))}
-        ${hl('⚔️', tr('tv.pr.rivalry'), pm.rivalry, (p) => tr('tv.pr.rivalryVal', { a: String(p.aWins), b: String(p.bWins) }))}
-        ${hl('❤️', tr('tv.pr.souls'), pm.souls, (p) => tr('tv.pr.compatVal', { n: String(p.compat) }))}
-        ${hl('💀', tr('tv.pr.enemies'), pm.enemies, (p) => tr('tv.pr.compatVal', { n: String(p.compat) }))}
-      </div>
-      <div class="pairs-body"><div class="card stat-card pair-matrix-wrap">${matrix}</div><div class="card stat-card">${detail}</div></div>`;
-  },
-
-  /** Hall of Fame: livello del gruppo, record, livelli e traguardi dei giocatori. */
-  paintHof() {
-    const gl = groupLevel(S.nights);
-    const rec = records(S.nights);
-    const people = {};
-    for (const n of Object.values(S.nights || {})) for (const [k, pp] of Object.entries(n?.people || {})) people[k] = pp.name || people[k];
-    const rows = Object.entries(people).map(([k, name]) => ({ k, name, pr: progressFor(S.nights, k, S.library) })).sort((a, b) => b.pr.xp - a.pr.xp).slice(0, 8);
-    $('#atBox').innerHTML = `
-      ${this.head('Hall of Fame', tr('tv.hof.sub', { group: this.groupLabel(), level: String(gl.level), nights: tr('tv.at.nNights', { n: gl.nights }), games: String(gl.games) }))}
-      <div class="stats-body stats-body--hof">
-        <section class="card stat-card stat-card--wide"><h2>${tr('tv.hof.levels')}</h2>${rows.length ? `<ol class="hof-list">${rows.map((r, i) => `
-          <li class="hof-row">
-            <span class="at-pos">${i + 1}</span>
-            ${avatarHTML(playerByName(r.name), '2.8rem')}
-            <span class="hof-who"><b>${esc(r.name)}</b><small>${tr('tv.hof.level', { n: String(r.pr.level) })} · ${esc(r.pr.levelName)} · ${r.pr.xp} XP</small>
-              <span class="xp-bar" aria-hidden="true"><i style="width:${Math.round(r.pr.levelProgress * 100)}%"></i></span></span>
-            <span class="hof-ach" title="${tr('tv.hof.ach')}">${r.pr.achievements.filter((a) => a.got).map((a) => a.icon).join(' ')}</span>
-          </li>`).join('')}</ol>` : `<p class="muted">${tr('tv.at.noNights')}.</p>`}</section>
-        <section class="card stat-card"><h2>${tr('tv.hof.records')}</h2>${rec.length ? `<ol class="at-list">${rec.map((r) => `<li class="at-row at-row--stack"><span class="muted">${esc(r.title)}</span><b>${esc(r.value)}</b></li>`).join('')}</ol>` : `<p class="muted">${tr('tv.hof.noRecords')}</p>`}</section>
-      </div>`;
-  },
-
-  /** Ricordi: tutte le serate del gruppo, dalla più recente. */
-  paintMemories() {
-    const list = nightsList(S.nights).reverse();
-    const otd = onThisDay(S.nights);
-    const date = (at) => fmtDateL(Number(at), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-    const banner = otd ? `<div class="otd">${otd.anniversary ? tr('tv.mem.anniv', { years: tr('tv.mem.years', { n: otd.anniversary.years }), date: esc(date(otd.anniversary.at)) }) : ''}${otd.yearAgo ? tr('tv.mem.yearAgo', { date: esc(date(otd.yearAgo.at)), games: esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', ')) }) : ''}</div>` : '';
-    $('#atBox').innerHTML = `
-      ${this.head(tr('tv.at.tab.memories'), `${this.groupLabel()}: ${tr('tv.at.nNights', { n: list.length })}`)}
-      ${banner}
-      ${list.length ? `<div class="mem-grid">${list.slice(0, 12).map((n) => `
-        <button type="button" class="card mem-card" data-night="${esc(n.room)}">
-          <span class="mem-num">Game Night #${n.number}${n.room === S.code ? tr('tv.mem.tonight') : ''}</span>
-          <b class="mem-date">${esc(date(n.at))}</b>
-          <span class="mem-facts">${nightFacts(n)}</span>
-          ${n.topGame ? `<span>⭐ ${esc(n.topGame.name)} ${fmt(n.topGame.avg)}</span>` : ''}
-          ${n.winners.length ? `<span>🏆 ${esc(namesList(n.winners))}</span>` : ''}
-          ${n.mvpNames.length ? `<span>👑 MVP ${esc(namesList(n.mvpNames))}</span>` : ''}
-        </button>`).join('')}</div>` : `<div class="empty-board"><p class="empty-title">${tr('tv.mem.none')}</p><p class="muted">${tr('tv.mem.noneText')}</p></div>`}`;
-  },
-
-  /** Pagina di una serata. */
-  paintNight() {
-    const list = nightsList(S.nights);
-    const n = list.find((x) => x.room === this.night);
-    if (!n) { this.view = 'memories'; this.paintMemories(); return; }
-    const names = Object.fromEntries(Object.entries(n.people || {}).map(([k, pp]) => [k, pp.name]));
-    const titles = {};
-    for (const [k, ts] of Object.entries(n.titles || {})) for (const tt of (Array.isArray(ts) ? ts : Object.values(ts))) (titles[awardTitle(tt)] ||= []).push(names[k] || k);
-    const imgByKey = Object.fromEntries(libraryItems().map((it) => [dbKey(it.name), it]));
-    const games = [...n.gamesSorted].sort((a, b) => (b.n ? b.sum / b.n : 0) - (a.n ? a.sum / a.n : 0)).map((g, i) => `
-      <li class="brow brow--at brow--r${Math.min(i + 1, 4)}">
-        <span class="brank">${i + 1}</span>
-        ${gameImageHTML(imgByKey[g.key] || g, 'game-img--thumb')}
-        <span class="bname"><b>${esc(g.name)}</b><span class="bsub">${tr('tv.ic.nVotes', { n: String(g.n) })}${g.playedMin ? ` · ${g.playedMin} min` : ''}${(g.w || []).length ? ` · 🏆 ${esc(namesList((Array.isArray(g.w) ? g.w : Object.values(g.w)).map((k) => names[k] || k)))}` : ''}</span></span>
-        <span class="bavg">${g.n ? fmt(g.sum / g.n) : '—'}</span>
-      </li>`).join('');
-    const photos = n.room === S.code ? photoList(S.photos).length : null;
-    $('#atBox').innerHTML = `
-      ${this.head(`Game Night #${n.number}`, `${esc(fmtDateL(Number(n.at), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${nightFacts(n)}`)}
-      <div class="alltime-body">
-        <div class="alltime-main"><ol class="board-list">${games}</ol></div>
-        <aside class="card alltime-side night-side">
-          ${n.topGame ? `<p>${tr('tv.ng.top', { name: esc(n.topGame.name), avg: fmt(n.topGame.avg) })}</p>` : ''}
-          ${n.mvpNames.length ? `<p>👑 MVP: <b>${esc(namesList(n.mvpNames))}</b></p>` : ''}
-          ${n.winners.length ? `<p>${tr('tv.ng.winner', { names: esc(namesList(n.winners)) })}</p>` : ''}
-          ${Object.keys(titles).length ? `<h2>${tr('tv.ng.awards')}</h2><ul class="at-list">${Object.entries(titles).map(([tt, ns]) => `<li class="at-row at-row--stack"><span class="muted">${esc(tt)}</span><b>${esc(namesList(ns))}</b></li>`).join('')}</ul>` : ''}
-          ${(n.quotes || []).length ? `<h2>${tr('tv.ng.quotes')}</h2><ul class="quote-list">${(Array.isArray(n.quotes) ? n.quotes : Object.values(n.quotes)).slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
-          <button type="button" class="btn-sec" data-album="${esc(n.room)}" data-title="Album · Game Night #${n.number}">📸 ${tr('tv.al.title')}${photos !== null ? ` (${photos})` : ''}</button>
-          <button type="button" class="link-btn" data-view="memories">${tr('tv.ng.allMem')}</button>
-        </aside>
-      </div>`;
-  },
-
-  /** "Il vostro anno": recap una scheda alla volta (frecce ← →) e immagine da condividere. Solo dati veri. */
-  paintWrapped() {
-    const years = yearsOf(S.nights);
-    if (!years.length) { $('#atBox').innerHTML = `${this.head(tr('year.title'))}<div class="empty-board"><p class="empty-title">${esc(tr('year.empty'))}</p></div>`; return; }
-    const year = years.includes(this.year) ? this.year : years[0];
-    const w = wrapped(S.nights, year);
-    const day = (ts) => fmtDateL(Number(ts), { day: 'numeric', month: 'long' });
-    const slides = [
-      { k: tr('year.k.intro', { year: String(year) }), big: tr('year.nights', { n: w.nights }), small: [tr('year.matches', { n: w.matches }), tr('year.games', { n: w.distinctGames }), w.hours ? tr('year.hours', { n: w.hours }) : '', tr('year.players', { n: w.players })].filter(Boolean).join(' · ') + (w.inProgress ? ` (${tr('year.soFar')})` : '') },
-      w.topGames.length > 1 && { k: tr('year.k.top'), list: w.topGames.map((g) => `${g.name} · ${tr('year.matchesShort', { n: g.matches })}${g.avg !== null ? ` · ⭐ ${fmt(g.avg)}` : ''}`) },
-      w.mostPlayed && w.topGames.length <= 1 && { k: tr('year.k.mostPlayed'), big: w.mostPlayed.name, small: tr('year.matches', { n: w.mostPlayed.matches }) },
-      w.loved && { k: tr('year.k.loved'), big: w.loved.name, small: tr('year.avg', { avg: fmt(w.loved.avg) }) },
-      w.newGames && { k: tr('year.k.new'), big: String(w.newGames), small: tr('year.newGames', { n: w.newGames }) },
-      w.longestMatch && { k: tr('year.k.longestMatch'), big: w.longestMatch.name, small: tr('year.minutes', { n: w.longestMatch.minutes }) },
-      w.longestNight && { k: tr('year.k.longestNight'), big: tr('year.hm', { h: Math.floor(w.longestNight.minutes / 60), m: w.longestNight.minutes % 60 }), small: day(w.longestNight.at) },
-      w.deadliest && { k: tr('year.k.deadliest'), big: w.deadliest.name, small: tr('year.wins', { n: w.deadliest.wins }) },
-      w.mostPresent && { k: tr('year.k.present'), big: w.mostPresent.name, small: tr('year.presence', { n: w.mostPresent.nights, total: w.nights }) },
-      w.mvp && { k: tr('year.k.mvp'), big: w.mvp.name, small: tr('year.mvpVotes', { n: w.mvp.mvp }) },
-      w.oracle && { k: tr('year.k.oracle'), big: w.oracle.name, small: tr('year.oracle', { n: w.oracle.oracle }) },
-      w.seer && { k: tr('year.k.seer'), big: w.seer.name, small: tr('year.seer', { n: w.seer.seer }) },
-      w.critic && { k: tr('year.k.critic'), big: w.critic.name, small: tr('year.given', { avg: fmt(w.critic.sum / w.critic.n) }) },
-      w.generous && { k: tr('year.k.generous'), big: w.generous.name, small: tr('year.given', { avg: fmt(w.generous.sum / w.generous.n) }) },
-      w.bestMonth && { k: tr('year.k.month'), big: w.bestMonth.name, small: tr('year.nights', { n: w.bestMonth.nights }) },
-      { k: tr('year.k.thanks'), big: S.meta.groupName || tr('year.yourGroup'), small: S.next?.at ? tr('year.nextOn', { date: day(S.next.at) }) : tr('year.next') }
-    ].filter(Boolean);
-    const i = Math.max(0, Math.min(this.slide, slides.length - 1));
-    this.slide = i;
-    const sl = slides[i];
-    const colors = ['#FF5A4E', '#2EC4B6', '#7B5CFA', '#FFC93C', '#FF8FB1', '#4D96FF', '#8AC926', '#FF924C'];
-    $('#atBox').innerHTML = `
-      ${this.head(tr('year.titleN', { year: String(year) }), this.groupLabel())}
-      <div class="rg-row">${years.length > 1 ? years.map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('') : ''}
-        <button type="button" class="btn-sec btn-sec--sm" data-yearshare="${year}">📤 <span>${esc(tr('year.share'))}</span></button></div>
-      ${w.nights < 3 ? `<p class="muted small">${esc(tr('year.few'))}</p>` : ''}
-      <div class="wrapped">
-        <button type="button" class="wr-nav" data-slide="-1" aria-label="${esc(tr('year.prev'))}" ${i === 0 ? 'disabled' : ''}>‹</button>
-        <article class="wr-slide" style="--wc:${colors[i % colors.length]}">
-          <p class="wr-k">${esc(sl.k)}</p>
-          ${sl.list ? `<ol class="wr-list">${sl.list.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : `<h2 class="wr-big">${esc(sl.big)}</h2><p class="wr-small">${esc(sl.small)}</p>`}
-          <p class="wr-dots">${slides.map((_, j) => `<span class="${j === i ? 'on' : ''}"></span>`).join('')}</p>
-        </article>
-        <button type="button" class="wr-nav" data-slide="1" aria-label="${esc(tr('year.next'))}" ${i === slides.length - 1 ? 'disabled' : ''}>›</button>
-      </div>`;
-  },
-
-  async shareYear(year, btn) {
-    const w = wrapped(S.nights, year);
-    if (!w) return;
-    if (btn) btn.disabled = true;
-    try {
-      const blob = await renderYearImage(w, { group: S.meta?.groupName || '', emblem: S.identity?.emblem || '', color: S.identity?.color || undefined });
-      await shareOrDownload(blob, `gamenight_anno_${year}.png`, tr('year.shareText', { year: String(year) }));
-    } catch (err) { toast(explainError(err), 'error'); } finally { if (btn) btn.disabled = false; }
-  },
-
-  /** Calendario: prossima serata con presenze, serate per mese, ricorrenze. */
-  paintCalendar() {
-    const years = yearsOf(S.nights);
-    const year = this.year || new Date().getFullYear();
-    const months = nightsByMonth(S.nights, year);
-    const MONTHS = Array.from({ length: 12 }, (_, i) => { const m = fmtDateL(new Date(2020, i, 1), { month: 'short' }).replace('.', ''); return m.charAt(0).toUpperCase() + m.slice(1); });
-    const now = new Date();
-    const thisMonth = nightsByMonth(S.nights, now.getFullYear())[now.getMonth()].length;
-    const otd = onThisDay(S.nights);
-    $('#atBox').innerHTML = `
-      ${this.head(tr('tv.at.tab.calendar'), this.groupLabel())}
-      <div class="cal-body">
-        ${nextNightHTML(true)}
-        <section class="card stat-card">
-          <div class="cal-head"><h2>${tr('tv.cal.title', { year: String(year) })}</h2>${[...new Set([now.getFullYear(), ...years])].sort((a, b) => b - a).map((y) => `<button type="button" class="lib-chip" data-year="${y}" aria-pressed="${y === year}">${y}</button>`).join('')}</div>
-          <div class="cal-grid">${months.map((m, i) => `<div class="cal-month ${m.length ? 'has' : ''}"><b>${MONTHS[i]}</b><span class="cal-dots">${m.map((n) => `<button type="button" class="cal-dot" data-night="${esc(n.room)}" title="Game Night #${n.number}, ${new Date(Number(n.at)).getDate()} ${MONTHS[i]}">${new Date(Number(n.at)).getDate()}</button>`).join('')}</span></div>`).join('')}</div>
-          <p class="muted">${tr('tv.cal.month', { n: thisMonth, year: String(year), total: String(months.flat().length) })}</p>
-          ${otd?.anniversary ? `<p>${tr('tv.cal.anniv', { years: tr('tv.cal.years', { n: otd.anniversary.years }) })}</p>` : ''}
-          ${otd?.yearAgo ? `<p>${tr('tv.cal.yearAgo', { games: esc(otd.yearAgo.gamesSorted.map((g) => g.name).slice(0, 3).join(', ')) })}</p>` : ''}
-        </section>
-      </div>`;
-  }
-};
-
+// Schermate in tv-screens.js (2.1, idea 76): si collegano qui, dopo che tutto host.js è stato letto.
+SCREENS.idle = IdleScreen;
+SCREENS.board = BoardScreen;
+SCREENS.awards = AwardsScreen;
+SCREENS.poll = PollScreen;
+SCREENS.alltime = AlltimeScreen;
+bindScreens({
+  AlbumPanel, EditGame, ExportPanel, GameSheet, Interval, LibPanel, RecoPanel, S, armadioName, awayLabel, backFromAllTime, boostWishes, clockText, endNight, findLibrary, goNext, hasLib, isSel, libOk, libraryItems, libraryUrl, miniBoardHTML, namesList, newNight, nextNightHTML, openAllTime, openVotingWith, paintHouseNote, photoList, playElapsed, playState, playUrl, playedTonight, playerByName, playerOrGhost, pollGo, pollTally, poolLibrary, recapData, renderQR, reopenVoting, saveDraft, saveNextNight, setPhase, startPoll, teamBoardHTML, upgradeDraftImage, useLibraryGame
+});
+bindPanels({
+  QrPanel, S, addToLibrary, armReadOnly, armadioKey, armadioName, armadioPhoneUrl, awayLabel, discordText, durationOptions, ensureArmadioAdmin, filterChips, findLibrary, hasLib, inRoom, isSel, knownPeople, libRef, libraryItems, libraryUrl, logEvent, namesList, nightNumber, photoList, playedTonight, playerOrGhost, playersOptions, prettyKey, recapData, recentArmadi, registerMembers, selectedIds, sendDiscordNow, sessionsHTML, switchArmadio, syncMusic, writeSel
+});

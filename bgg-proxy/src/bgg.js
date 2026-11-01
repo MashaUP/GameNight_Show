@@ -121,6 +121,9 @@ export function parseThings(xml) {
     const weight = num(valueOf(ratings, 'averageweight'));
     const usersRated = num(valueOf(ratings, 'usersrated')) || 0;
     const rating = num(valueOf(ratings, 'average'));
+    // Posizione nella classifica generale di BGG ("Not Ranked" = nessuna posizione)
+    const rankTag = tags(ratings, 'rank').find((t) => attr(t, 'name') === 'boardgame');
+    const rank = rankTag ? posInt(attr(rankTag, 'value')) : null;
     const minTime = posInt(valueOf(body, 'minplaytime'));
     const maxTime = posInt(valueOf(body, 'maxplaytime'));
     const isExpansion = type === 'boardgameexpansion';
@@ -145,6 +148,12 @@ export function parseThings(xml) {
       usersRated,
       categories: pick('boardgamecategory', 8).map((l) => l.name),
       mechanics: pick('boardgamemechanic', 10).map((l) => l.name),
+      // Autori ed editori (i primi: BGG elenca anche decine di edizioni locali). "(Uncredited)" non è un nome.
+      designers: pick('boardgamedesigner', 6).map((l) => l.name).filter((n) => !/^\(uncredited\)$/i.test(n)).slice(0, 4),
+      publishers: pick('boardgamepublisher', 6).map((l) => l.name).filter((n) => !/^\((unknown|self-published|public domain)\)$/i.test(n)).slice(0, 3),
+      rank,
+      // La descrizione NON si restituisce: è un testo protetto (di BGG e degli autori) che i termini d'uso
+      // non permettono di copiare o modificare. L'app mostra il link alla pagina di BGG.
       expansions: links.filter((l) => l.type === 'boardgameexpansion' && !l.inbound && l.id).slice(0, 40).map((l) => ({ id: l.id, name: l.name })),
       baseGames: isExpansion ? links.filter((l) => l.type === 'boardgameexpansion' && l.inbound && l.id).slice(0, 5).map((l) => ({ id: l.id, name: l.name })) : [],
       image: httpsUrl(text(body, 'image')),
@@ -178,4 +187,20 @@ export function rankResults(list, query) {
 /** Testo di ricerca normalizzato (minuscole, senza accenti né spazi doppi). */
 export function norm(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/**
+ * Collezione di un utente BGG (/xmlapi2/collection?own=1): i giochi posseduti, senza dati personali oltre
+ * al nome del gioco (niente commenti, prezzi, voti privati). 2.1 (idea 51): solo lettura.
+ */
+export function parseCollection(xml) {
+  if (!looksLikeItems(xml)) throw Object.assign(new Error('bad_xml'), { code: 'bgg_bad_response' });
+  return items(xml).map(({ head, body }) => ({
+    id: posInt(attr(head, 'objectid')),
+    type: attr(head, 'subtype') || 'boardgame',
+    name: text(body, 'name'),
+    year: posInt(text(body, 'yearpublished')),
+    thumb: httpsUrl(text(body, 'thumbnail')),
+    plays: posInt(valueOf(body, 'numplays')) || posInt(text(body, 'numplays')) || 0
+  })).filter((x) => x.id && x.name);
 }

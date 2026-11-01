@@ -26,6 +26,14 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 
+            <!-- 2.0: "Apri nell'app" dal sito (gamenight://open?to=play.html?room=…): la stanza si apre qui -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="gamenight" android:host="open" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -44,6 +52,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Vibrazione del telefono durante il voto. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 2.1: promemoria delle serate (notifiche locali, Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Fotocamera: QR della stanza e codici a barre dei giochi (chiesta solo quando serve). -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

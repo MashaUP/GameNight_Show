@@ -74,7 +74,7 @@ export default {
   'prep.scan.manual': 'Barcode numbers',
   'prep.scan.manualPh': 'E.g. 3760175513909',
   'prep.scan.search': 'Search',
-  'prep.scan.digits': 'The code has 8 to 14 digits.',
+  'prep.scan.digits': 'Invalid code: check the digits (8, 12 or 13).',
   'prep.scan.noCamera': 'Camera not available: type the barcode numbers.',
   'prep.scan.onTable': '{name}: on the table! 🎲',
   'prep.scan.unknown': 'Code <b>{code}</b>: first time I’ve seen it. Which game is it? From now on I’ll recognise it by myself.',
@@ -185,5 +185,9 @@ export default {
   'library.rec.owner': '<b>{v}</b> owner',
   'library.rec.publisher': '<b>{v}</b> publisher and year',
   'library.noMatch': 'No game matches your search.',
-  'library.empty': 'The shelf is still empty.'
+  'library.empty': 'The shelf is still empty.',
+
+  'prep.plan.late': 'You’re about {n} min behind the planned end ({end}).',
+  'prep.plan.suggest': 'To catch up you could drop: {list} (ending at {end}).',
+  'prep.plan.drop': 'Drop {name}'
 };

@@ -8,7 +8,7 @@ import {
   isConfigured, connect, roomRef, groupRef, armadioRef, secretRef, memberRef, get, set, update, remove, push, serverTimestamp, explainError,
   dbRef as pathRef
 } from './fb.js';
-import { $, esc, randomCode, applyTheme, ICONS, normalizeCode, isImageSource, downloadFile } from './util.js';
+import { $, esc, randomCode, applyTheme, ICONS, normalizeCode, isImageSource, downloadFile, exportName } from './util.js';
 import { APP_VERSION } from './version.js';
 import { t, fmtDate, langToggleHTML } from './i18n.js';
 
@@ -502,7 +502,7 @@ function done() {
     const lines = [`# ${t('selftest.md.title', { v: String(APP_VERSION) })}`, t('selftest.md.date', { d: when }), t('selftest.md.project', { p: firebaseConfig?.projectId || '—' }), '',
       `| ${cols.join(' | ')} |`, '|---|---|---|---|',
       ...results.map((r) => `| ${r.area} › ${r.title} | ${label[r.status]} | ${r.how.replace(/\|/g, '/')} | ${String(r.detail).replace(/\|/g, '/')} |`)];
-    downloadFile(`verifica_gamenight_${new Date().toISOString().slice(0, 10)}.md`, lines.join('\n'), 'text/markdown');
+    downloadFile(exportName({ kind: t('exp.k.check'), ext: 'md' }), lines.join('\n'), 'text/markdown');
   });
 }
 

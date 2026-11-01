@@ -1,6 +1,7 @@
 // Calcolo di medie, classifica e premi finali.
 import { fmt, dbKey } from './util.js';
 import { t, lang, fmtList, fmtDate } from './i18n.js';
+import { AWARD_EMOJI } from './templates.js';
 
 // Testi dei criteri nella lingua scelta (js/lang: crit.<chiave>.label/short/hint).
 const crit = (key, color) => ({
@@ -362,15 +363,23 @@ export function personKey(player) {
 }
 
 /** Riassunto della serata da salvare nel gruppo (somme, così si possono unire più serate). */
-export function nightSummary(board, players, meta, awards = []) {
+export function nightSummary(board, players, meta, awards = [], extra = {}) {
   const quotes = [];
+  // 1.12 (idea 48): modalità e peso del gioco copiati dall'armadio, così le statistiche per modalità
+  // restano vere anche se il gioco poi esce dall'armadio.
+  const lib = extra.library || {};
+  const libByName = new Map(Object.values(lib).filter((it) => it?.name).map((it) => [dbKey(it.name), it]));
   let end = 0;
   const games = {};
   const voters = new Set();
   const people = {};
+  // 1.11 (idea 5): gli ospiti contano nelle medie dei giochi, ma nel gruppo non resta niente di loro
+  // (niente statistiche personali, nomi, commenti firmati, titoli): solo quanti erano.
+  const named = (uid) => { const p = players?.[uid]; return p?.name && !p.guest ? p : null; };
+  const guests = Object.values(players || {}).filter((p) => p?.guest).length;
   const person = (uid) => {
-    const p = players?.[uid];
-    if (!p?.name) return null;
+    const p = named(uid);
+    if (!p) return null;
     const k = personKey(p);
     return people[k] ||= { name: p.name, memberId: p.memberId || null, n: 0, sumGiven: 0, wins: 0, mvp: 0, given: {}, games: 0, played: {}, with: {}, oracle: 0, rebel: 0, nightWins: 0, seer: 0, bets: 0 };
   };
@@ -395,12 +404,15 @@ export function nightSummary(board, players, meta, awards = []) {
       v: {}, pl: [], w: []
     };
     const gEntry = games[r.id];
+    const it = (r.libraryId && lib[r.libraryId]) || libByName.get(gk);
+    if (it && GAME_MODE_KEYS.includes(it.mode)) gEntry.mode = it.mode;
+    if (it && Number(it.weight) >= 1 && Number(it.weight) <= 5) gEntry.weight = Math.round(Number(it.weight) * 10) / 10;
     for (const v of r.stats.list) {
-      const p = players?.[v.uid];
-      if (p?.name) gEntry.v[personKey(p)] = v.overall;
-      if (v.comment && p?.name && quotes.length < 30) quotes.push({ name: p.name, game: r.name, text: String(v.comment).slice(0, 80) });
+      const p = named(v.uid);
+      if (p) gEntry.v[personKey(p)] = v.overall;
+      if (v.comment && p && quotes.length < 30) quotes.push({ name: p.name, game: r.name, text: String(v.comment).slice(0, 80) });
     }
-    for (const uid of Object.keys(r.winners || {})) if (players?.[uid]?.name) gEntry.w.push(personKey(players[uid]));
+    for (const uid of Object.keys(r.winners || {})) if (named(uid)) gEntry.w.push(personKey(players[uid]));
     if (Number(r.revealedAt) > end) end = Number(r.revealedAt);
     for (const v of r.stats.list) {
       voters.add(v.uid);
@@ -420,7 +432,7 @@ export function nightSummary(board, players, meta, awards = []) {
     }
     // Chi ha giocato (se non indicato: chi ha votato), con chi, e a cosa
     const playing = r.players && Object.keys(r.players).length ? Object.keys(r.players) : r.stats.list.map((v) => v.uid);
-    const keys = playing.map((uid) => (players?.[uid]?.name ? personKey(players[uid]) : null)).filter(Boolean);
+    const keys = playing.map((uid) => (named(uid) ? personKey(players[uid]) : null)).filter(Boolean);
     gEntry.pl = keys;
     for (const uid of playing) {
       const pp = person(uid);
@@ -453,15 +465,44 @@ export function nightSummary(board, players, meta, awards = []) {
   const titles = {};
   for (const a of awards) {
     for (const pl of a.players || []) {
-      const p = players?.[pl.uid];
-      if (!p?.name) continue;
+      const p = named(pl.uid);
+      if (!p) continue;
       (titles[personKey(p)] ||= []).push(a.key || a.title);
     }
   }
   const at = Number(meta?.createdAt) || Date.now();
   const duration = end > at ? Math.round((end - at) / 60000) : null;
   const names = Object.values(people).map((pp) => pp.name);
-  return { at, end: end || null, duration, voters: voters.size, names, games, mvp, wins, people, titles, quotes };
+  // 1.11: chi ha creato la serata (copiato dalla stanza): serve alle regole per lasciarla cancellare solo a lui
+  const owner = {};
+  if (typeof meta?.creatorUid === 'string') owner.creatorUid = meta.creatorUid;
+  if (typeof meta?.creatorPid === 'string') owner.creatorPid = meta.creatorPid;
+  // 1.12 (idea 23): premi del gruppo assegnati a mano dalla regia (mai agli ospiti)
+  const custom = customAwardList(extra.custom).map((a) => {
+    const p = named(a.uid);
+    return p ? { t: a.t, ...(a.e ? { e: a.e } : {}), k: personKey(p), name: p.name } : null;
+  }).filter(Boolean);
+  return { at, end: end || null, duration, voters: voters.size, names, games, mvp, wins, people, titles, quotes, ...owner, ...(guests ? { guests } : {}), ...(custom.length ? { custom } : {}) };
+}
+
+export const CUSTOM_AWARD_MAX = 6;
+export const CUSTOM_AWARD_EMOJI = AWARD_EMOJI;
+
+/** Nome di un premio del gruppo: testo breve, senza simboli di pagina. '' se non valido. */
+export function cleanAwardTitle(s) {
+  return String(s ?? '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 32);
+}
+
+/**
+ * Premi del gruppo della stanza (rooms/<codice>/customAwards/<id> = { t, e, uid, at }) in ordine di
+ * assegnazione, controllati: [{ id, t, e, uid }]. Al massimo CUSTOM_AWARD_MAX.
+ */
+export function customAwardList(obj) {
+  return Object.entries(obj || {}).map(([id, a]) => {
+    const t = cleanAwardTitle(a?.t);
+    if (!t || typeof a?.uid !== 'string' || !a.uid) return null;
+    return { id, t, e: AWARD_EMOJI.includes(a.e) ? a.e : '', uid: a.uid, at: Number(a.at) || 0 };
+  }).filter(Boolean).sort((a, b) => a.at - b.at || a.id.localeCompare(b.id)).slice(0, CUSTOM_AWARD_MAX);
 }
 
 /** Statistiche personali di una persona su tutte le serate del gruppo. */
@@ -817,10 +858,10 @@ export function records(nights) {
       if (pp.nightWins && (!bestWins || pp.nightWins > bestWins.wins)) bestWins = { name: pp.name, wins: pp.nightWins };
     }
   }
-  if (bestGame) rec.push({ title: t('rec2.bestAvg'), value: `${bestGame.name}: ${fmt(bestGame.avg)}` });
-  if (longest) rec.push({ title: t('rec2.longest'), value: `${longest.name}: ${t('rec2.minutes', { n: longest.min })}` });
-  if (busiest?.count) rec.push({ title: t('rec2.busiest'), value: t('ph.mem.games', { n: busiest.count }) });
-  if (bestWins) rec.push({ title: t('rec2.wins'), value: `${bestWins.name}: ${bestWins.wins}` });
+  if (bestGame) rec.push({ key: 'bestAvg', def: t('rec2.def.bestAvg'), title: t('rec2.bestAvg'), value: `${bestGame.name}: ${fmt(bestGame.avg)}` });
+  if (longest) rec.push({ key: 'longest', def: t('rec2.def.longest'), title: t('rec2.longest'), value: `${longest.name}: ${t('rec2.minutes', { n: longest.min })}` });
+  if (busiest?.count) rec.push({ key: 'busiest', def: t('rec2.def.busiest'), title: t('rec2.busiest'), value: t('ph.mem.games', { n: busiest.count }) });
+  if (bestWins) rec.push({ key: 'wins', def: t('rec2.def.wins'), title: t('rec2.wins'), value: `${bestWins.name}: ${bestWins.wins}` });
   return rec;
 }
 
@@ -840,7 +881,8 @@ export function groupLevel(nights) {
 // Stato e modalità: i codici (posseduto, cooperativo…) restano nel database, le etichette sono nella lingua scelta.
 const labels = (prefix, codes) => Object.defineProperties({}, Object.fromEntries(codes.map((c) => [c, { enumerable: true, get: () => t(`${prefix}.${c.replace(/\s+/g, '_')}`) }])));
 export const GAME_STATUS = labels('status', ['posseduto', 'prestato', 'non disponibile', 'venduto']); // i18n-ok: codici
-export const GAME_MODES = labels('mode', ['competitivo', 'cooperativo', 'squadre', 'misto']);
+export const GAME_MODE_KEYS = ['competitivo', 'cooperativo', 'squadre', 'misto'];
+export const GAME_MODES = labels('mode', GAME_MODE_KEYS);
 
 export function isAvailable(item) {
   return !item?.status || item.status === 'posseduto';

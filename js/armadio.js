@@ -3,14 +3,16 @@
 // armadio.html?p=TOKEN         catalogo pubblico in sola lettura (link condiviso)
 // &g=ID apre la scheda di un gioco (QR delle etichette), &pos=… filtra uno scaffale, #inv=CODICE invito, #ak=CHIAVE chiave
 import {
-  isConfigured, connect, armadioRef, dbRef, groupRef, get, set, update, remove, onValue, explainError
+  isConfigured, connect, useSession, armadioRef, dbRef, groupRef, get, set, update, remove, onValue, explainError, push, serverTimestamp
 } from './fb.js';
+import { makeProposal, proposalsHTML, proposeFormHTML } from './arm-proposals.js';
+import { pdfPages, searchPages, highlight, searchBoxHTML } from './manual-search.js';
 import {
   $, esc, param, normalizeCode, cleanName, toast, applyTheme, registerSW, ErrLog, gameImage, gameImageFromUrl, gameImageHTML,
-  qrSVG, downloadFile, randomCode, installImageFallback, showFatal, showNotConfigured, themeSwitchHTML
+  qrSVG, downloadFile, randomCode, installImageFallback, showFatal, showNotConfigured, themeSwitchHTML, exportName
 } from './util.js';
 import { GAME_STATUS, GAME_MODES, tagsOf } from './stats.js';
-import { publicUrl } from './native.js';
+import { publicUrl, isApp } from './native.js';
 import { Person } from './person.js';
 import { exportLabels } from './report.js';
 import {
@@ -24,8 +26,9 @@ import { Favs, missingFavs } from './favs.js';
 import { initSpatialNav, isTvDevice } from './spatialnav.js';
 // Su un televisore (Android TV) le frecce del telecomando spostano il fuoco.
 if (isTvDevice()) initSpatialNav();
-import { bggEnabled, bggSearch, bggThing, bggToGame, mergePlan, applyMerge, bggIdOf, bggPage, BGG_SITE } from './bgg.js';
+import { bggEnabled, bggSearch, bggThing, bggToGame, mergePlan, applyMerge, bggIdOf, bggPage, BGG_SITE, bggCollection, collectionPlan, bggExtId, bggThings } from './bgg.js';
 import { LocalManuals, manualSearchLinks, isManualUrl } from './manuals.js';
+import { scanBarcode, barcodeKey, cleanBarcode, validBarcode, BarcodeMap } from './barcode.js';
 import { t, lang, fmtDate as fmtDateI, fmtNum, langSwitchHTML } from './i18n.js';
 // Le voci della cronologia finiscono nel database (dati condivisi): restano in italiano, con i testi del dizionario italiano.
 import itArm from './lang/it-arm.js';
@@ -62,7 +65,12 @@ const tIt = (k, p = {}) => {
 /** Peso (difficoltà) nella lingua scelta: 2,5 / 2.5. */
 const fmtW = (w) => fmtNum(Number(w));
 /** Stato al ritorno di un prestito (codice salvato nel database: ok, incompleto, danneggiato). */
-const armHref = (aid, g = '') => `armadio.html?a=${aid}${g ? `&g=${g}` : ''}`; // i18n-ok: indirizzo della pagina
+// Aperto dalla TV (&s=regia, 2.0): stessa sessione della regia, che ha creato l'armadio e ne è proprietaria.
+// Il proprietario lascia la chiave sul dispositivo: aperto poi dalla Home (sessione giocatore) si entra come collaboratore.
+const SESSION = new URLSearchParams(location.search).get('s') === 'regia' ? 'regia' : '';
+if (SESSION) useSession('regia');
+const sParam = SESSION ? '&s=regia' : '';
+const armHref = (aid, g = '') => `armadio.html?a=${aid}${g ? `&g=${g}` : ''}${sParam}`; // i18n-ok: indirizzo della pagina
 const retState = (s) => ({ incompleto: t('arm.ret.incomplete'), danneggiato: t('arm.ret.damaged') })[s] || s;
 
 // ---------------------------------------------------------------------------
@@ -135,7 +143,7 @@ async function boot() {
   if (gid) setTimeout(() => openGame(gid), 300);
   if (param('add') === '1' && canAdd()) setTimeout(() => openEditor(null), 300);
   // Ricaricando la pagina non si riapre la finestra di prima
-  if (gid || pos || param('add') || lid) history.replaceState(null, '', `${location.pathname}?a=${A.aid}`);
+  if (gid || pos || param('add') || lid) history.replaceState(null, '', `${location.pathname}?a=${A.aid}${sParam}`);
 }
 
 const keyStore = () => `gnr_akey_${A.aid}`;
@@ -211,12 +219,26 @@ function watch() {
       }
     });
     on('trash', 'trash', () => { paintTabs(); if (A.tab === 'trash') paintTab(); });
-    on('log', 'log', () => { if (A.tab === 'log') paintTab(); });
+    on('proposals', 'props', () => { paintTabs(); if (A.tab === 'props') paintTab(); });
+    on('log', 'log', () => { if (A.tab === 'log') paintTab(); if (!A.pruned) { A.pruned = true; pruneLog(Number(A.info?.keepLogDays) || 0).catch(() => {}); } });
     on('share', 'share', () => { loadPubPrev(); if (A.tab === 'tools') paintTab(); }, null);
     if (A.role === 'owner') on('invites', 'invites', () => { if (A.tab === 'tools') paintTab(); });
   }
 }
 function refresh() { paintHero(); paintTabs(); if (A.tab === 'games') paintGames(); else paintTab(); }
+
+/**
+ * Scadenza della cronologia (2.1, idea 61): con "tieni N giorni" il proprietario toglie le voci più vecchie
+ * (le regole lasciano cancellare la cronologia solo a lui). Giochi, prestiti e cestino non si toccano.
+ */
+async function pruneLog(days) {
+  if (!days || A.role !== 'owner') return 0;
+  const limit = Date.now() - days * 86400000;
+  const old = Object.entries(A.log || {}).filter(([, ev]) => Number(ev?.at) && Number(ev.at) < limit).map(([id]) => id);
+  if (!old.length) return 0;
+  await update(armadioRef(A.aid, 'log'), Object.fromEntries(old.slice(0, 400).map((id) => [id, null])));
+  return old.length;
+}
 
 /** Foto vecchie (dentro il gioco) spostate a parte, poche alla volta: l'armadio diventa leggero. */
 let migrating = false;
@@ -327,7 +349,8 @@ function paintTabs() {
   const s = summary(A.lib, A.loans);
   const nt = Object.keys(A.trash || {}).length;
   const tab = (k, l) => `<button type="button" class="am-tab" data-tab="${k}" aria-pressed="${A.tab === k}">${l}</button>`;
-  n.innerHTML = tab('games', esc(t('arm.tab.games'))) + tab('loans', `${esc(t('arm.tab.loans'))}${s.lent ? ` <small>${s.lent}</small>` : ''}`) + tab('log', esc(t('arm.tab.log'))) + tab('trash', `${esc(t('arm.tab.trash'))}${nt ? ` <small>${nt}</small>` : ''}`) + tab('tools', esc(t('arm.tab.tools')));
+  const np = Object.keys(A.props || {}).length;
+  n.innerHTML = tab('games', esc(t('arm.tab.games'))) + tab('loans', `${esc(t('arm.tab.loans'))}${s.lent ? ` <small>${s.lent}</small>` : ''}`) + (np ? tab('props', `💡 ${esc(t('prop.tab'))} <small>${np}</small>`) : '') + tab('log', esc(t('arm.tab.log'))) + tab('trash', `${esc(t('arm.tab.trash'))}${nt ? ` <small>${nt}</small>` : ''}`) + tab('tools', esc(t('arm.tab.tools')));
 }
 
 function paintTab() {
@@ -338,6 +361,46 @@ function paintTab() {
   else if (A.tab === 'log') b.innerHTML = logHTML();
   else if (A.tab === 'trash') b.innerHTML = trashHTML();
   else if (A.tab === 'tools') b.innerHTML = toolsHTML();
+  else if (A.tab === 'props') { b.innerHTML = proposalsHTML(A.props, A.lib); bindProposals(b); }
+}
+
+/** Proposte (2.1, idea 64): accettare = si applica alla scheda e va in cronologia; rifiutare = si toglie. */
+function bindProposals(b) {
+  b.onclick = async (e) => {
+    const ok = e.target.closest('[data-prop-ok]');
+    const no = e.target.closest('[data-prop-no]');
+    const id = ok?.dataset.propOk || no?.dataset.propNo;
+    if (!id) return;
+    const p = A.props?.[id];
+    try {
+      if (ok && p && A.lib[p.item]) {
+        await saveGame(A.aid, p.item, { ...p.patch });
+        logEvent(A.aid, { op: 'edit', item: p.item, name: A.lib[p.item].name, msg: `proposta di ${p.name}: ${p.why}`.slice(0, 120), by: me() }); // i18n-ok: cronologia nel database
+        toast(t('prop.applied'));
+      }
+      await remove(armadioRef(A.aid, `proposals/${id}`));
+    } catch (err) { toast(explainError(err), 'error'); }
+  };
+}
+
+/** Chi non può modificare propone una correzione (con il motivo). */
+function openPropose(id) {
+  const it = A.lib[id];
+  if (!it) return;
+  const el = Sheet.open(`${head(`💡 ${esc(t('prop.title', { name: it.name }))}`)}${proposeFormHTML(it)}`);
+  $('#propForm', el).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = { itemId: id };
+    el.querySelectorAll('[data-pf]').forEach((x) => { input[x.dataset.pf] = x.value; });
+    try {
+      const p = makeProposal(it, input, { uid: A.uid, name: Person.data?.info?.name || '' });
+      await set(push(armadioRef(A.aid, 'proposals')), { ...p, at: serverTimestamp() });
+      Sheet.close(el);
+      toast(t('prop.sent'));
+    } catch (err) {
+      $('#propErr', el).textContent = err.code && ['range', 'minmax', 'empty', 'why'].includes(err.code) ? t(`prop.err.${err.code}`, { field: err.field ? t(`prop.f.${err.field}`) : '' }) : explainError(err);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +733,7 @@ function act(name, el) {
     case 'export-json': exportJSON(); break;
     case 'export-csv': exportCSV(); break;
     case 'import': $('#amImport')?.click(); break;
+    case 'bggColl': openBggCollection(); break;
     case 'labels-all': printLabels(filtered()); break;
     case 'share': openShare(); break;
     case 'invite': createInvite(el); break;
@@ -719,6 +783,7 @@ async function openGame(id) {
           ${!A.pub ? row(esc(t('arm.game.acq')), it.acq ? fmtDateI(it.acq, { day: 'numeric', month: 'numeric', year: 'numeric' }) : '') : ''}
           ${tagsOf(it).length ? row(esc(t('arm.game.tags')), tagsOf(it).map((tg) => `#${esc(tg)}`).join(' ')) : ''}
         </div>
+        ${bggInfoHTML(it)}
       </div>
     </div>
     <section class="am-sec">
@@ -746,11 +811,13 @@ async function openGame(id) {
         <button type="button" class="btn-sec" data-move="${esc(id)}">🚚 ${esc(t('arm.sel.move'))}</button>
         <button type="button" class="btn-sec am-danger" data-trash="${esc(id)}">🗑️ ${esc(t('arm.sel.trash'))}</button>` : ''}
       ${!canEdit() && canAdd() ? `<button type="button" class="btn-sec" data-edit="${esc(id)}">✏️ ${esc(t('arm.game.complete'))}</button>` : ''}
+      ${!canEdit() && !A.pub ? `<button type="button" class="btn-sec" data-propose="${esc(id)}">💡 ${esc(t('prop.btn'))}</button>` : ''}
     </div>`, { wide: true });
   if (!A.pub) paintLocalManual(el, it);
   el.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-edit],[data-lend],[data-return],[data-label],[data-move],[data-trash]');
+    const b = e.target.closest('[data-edit],[data-lend],[data-return],[data-label],[data-move],[data-trash],[data-propose]');
     if (!b) return;
+    if (b.dataset.propose) { Sheet.close(el); openPropose(b.dataset.propose); return; }
     if (b.dataset.edit) { Sheet.close(el); openEditor(b.dataset.edit, { focus: b.dataset.focus }); }
     else if (b.dataset.lend) openLend(b.dataset.lend);
     else if (b.dataset.return) openReturn(b.dataset.return);
@@ -788,7 +855,8 @@ async function paintLocalManual(el, it) {
   if (!box.isConnected) return;
   const size = (n) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   box.innerHTML = info
-    ? `<p><button type="button" class="btn-sec btn-sec--sm" data-man="open">📂 <span>${esc(t('man.openLocal'))}</span></button> <span class="muted small">${esc(info.name)} · ${esc(size(info.size))}</span> <button type="button" class="link-btn" data-man="del">${esc(t('man.removeLocal'))}</button></p>`
+    ? `<p><button type="button" class="btn-sec btn-sec--sm" data-man="open">📂 <span>${esc(t('man.openLocal'))}</span></button> <span class="muted small">${esc(info.name)} · ${esc(size(info.size))}</span> <button type="button" class="link-btn" data-man="del">${esc(t('man.removeLocal'))}</button></p>
+       ${info.type === 'application/pdf' ? `<div class="ms-box"><p class="field-label">📖 ${esc(t('ms.title'))}</p>${searchBoxHTML()}</div>` : `<p class="muted small">${esc(t('ms.noText'))}</p>`}`
     : `<p><button type="button" class="btn-sec btn-sec--sm" data-man="add">💾 <span>${esc(t('man.saveLocal'))}</span></button></p><p class="muted small">${esc(t('man.localHint'))}</p>`;
   box.insertAdjacentHTML('beforeend', '<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden data-manfile>');
   box.onclick = async (e) => {
@@ -798,6 +866,34 @@ async function paintLocalManual(el, it) {
     if (b.dataset.man === 'open' && !(await LocalManuals.open(A.aid, it.id))) toast(t('man.missing'), 'warn');
     if (b.dataset.man === 'del' && confirm(t('man.removeConfirm'))) { await LocalManuals.remove(A.aid, it.id).catch(() => {}); paintLocalManual(el, it); }
   };
+  // 2.1 (idea 42): ricerca nel PDF salvato qui, con il numero di pagina (niente risposte inventate)
+  box.onsubmit = async (e) => {
+    const f = e.target.closest('[data-msform]');
+    if (!f) return;
+    e.preventDefault();
+    const q = f.querySelector('input').value.trim();
+    const res = box.querySelector('.ms-res');
+    if (q.length < 2) { res.innerHTML = `<p class="muted small">${esc(t('ms.short'))}</p>`; return; }
+    res.innerHTML = `<p class="muted small">${esc(t('ms.reading'))}</p>`;
+    try {
+      const rec = await LocalManuals.get(A.aid, it.id);
+      if (!rec?.blob) { res.innerHTML = `<p class="muted small">${esc(t('man.missing'))}</p>`; return; }
+      const pages = await pdfPages(rec.blob, `${A.aid}/${it.id}/${rec.at}`);
+      const hits = searchPages(pages, q);
+      const empty = pages.every((p) => !p.text);
+      res.innerHTML = empty ? `<p class="muted small">${esc(t('ms.scanned'))}</p>` : hits.length
+        ? `<ul class="ms-hits">${hits.map((h) => `<li><button type="button" class="link-btn" data-mspage="${h.page}">${esc(t('ms.page', { n: h.page }))}</button> ${highlight(h.snippet, q)}</li>`).join('')}</ul><p class="muted small">${esc(t('ms.note'))}</p>`
+        : `<p class="muted small">${esc(t('ms.none', { q }))}</p>`;
+    } catch (err) { console.warn(err); res.innerHTML = `<p class="form-error">${esc(t('ms.fail'))}</p>`; }
+  };
+  box.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-mspage]');
+    if (!b) return;
+    const rec = await LocalManuals.get(A.aid, it.id);
+    if (!rec?.blob) return;
+    if (isApp()) { await LocalManuals.open(A.aid, it.id); toast(t('ms.goPage', { n: b.dataset.mspage })); return; }
+    window.open(`${URL.createObjectURL(rec.blob)}#page=${Number(b.dataset.mspage)}`, '_blank');
+  });
   box.querySelector('[data-manfile]').onchange = async (e) => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
@@ -809,8 +905,8 @@ async function paintLocalManual(el, it) {
 // BoardGameGeek (1.8): ricerca, confronto "prima / dopo", nessuna sovrascrittura silenziosa
 // ---------------------------------------------------------------------------
 
-const BGG_LABEL = { name: 'bgg.f.name', year: 'bgg.f.year', minPlayers: 'bgg.f.min', maxPlayers: 'bgg.f.max', duration: 'bgg.f.duration', weight: 'bgg.f.weight', tags: 'bgg.f.tags', extId: 'bgg.f.extId' };
-const BGG_INPUT = { name: '#edName', year: '#edYear', minPlayers: '#edMin', maxPlayers: '#edMax', duration: '#edDur', weight: '#edWeight', tags: '#edTags', extId: '#edExt' };
+const BGG_LABEL = { name: 'bgg.f.name', year: 'bgg.f.year', minPlayers: 'bgg.f.min', maxPlayers: 'bgg.f.max', duration: 'bgg.f.duration', weight: 'bgg.f.weight', tags: 'bgg.f.tags', publisher: 'bgg.f.publisher', extId: 'bgg.f.extId' };
+const BGG_INPUT = { name: '#edName', year: '#edYear', minPlayers: '#edMin', maxPlayers: '#edMax', duration: '#edDur', weight: '#edWeight', tags: '#edTags', publisher: '#edPub', extId: '#edExt' };
 const bggErr = (err) => t(`bgg.err.${['off', 'network', 'timeout', 'bgg_busy', 'rate_limited', 'bgg_unreachable', 'no_token', 'bgg_auth', 'forbidden_origin', 'not_found', 'short'].includes(err?.code) ? err.code : 'other'}`);
 const showVal = (v) => (Array.isArray(v) ? v.join(', ') : v === null || v === undefined || v === '' ? '—' : String(v));
 
@@ -821,12 +917,12 @@ function formValues(form) {
     const inp = $(sel, form);
     if (!inp) continue;
     const v = inp.value.trim();
-    out[k] = k === 'tags' ? (v ? v.split(',').map((x) => x.trim()).filter(Boolean) : []) : ['name', 'extId'].includes(k) ? v : (v === '' ? null : Number(v.replace(',', '.')));
+    out[k] = k === 'tags' ? (v ? v.split(',').map((x) => x.trim()).filter(Boolean) : []) : ['name', 'extId', 'publisher'].includes(k) ? v : (v === '' ? null : Number(v.replace(',', '.')));
   }
   return out;
 }
 
-function openBggSearch(form, editingId, setImage, wantImage) {
+function openBggSearch(form, editingId, setImage, wantImage, { thingId = null, code = '' } = {}) {
   const q0 = $('#edName', form)?.value.trim() || '';
   const el = Sheet.open(`${head(`🔎 ${esc(t('bgg.title'))}`)}
     <form class="am-bgg-form" id="bgForm"><label class="sr-only" for="bgQ">${esc(t('bgg.search'))}</label>
@@ -864,14 +960,89 @@ function openBggSearch(form, editingId, setImage, wantImage) {
     try {
       const thing = await bggThing(Number(b.dataset.bgg));
       if (!el.isConnected) return;
-      reviewBgg(el, form, bggToGame(thing), setImage, wantImage);
+      reviewBgg(el, form, bggToGame(thing), setImage, wantImage, el.dataset.code || '');
     } catch (err) { toast(bggErr(err), 'error'); b.disabled = false; }
   });
+  if (thingId) {
+    // Codice a barre già abbinato su questo dispositivo: si apre direttamente la scheda, sempre da confermare.
+    $('#bgRes', el).innerHTML = `<p class="muted">${esc(t('bgg.searching'))}</p>`;
+    bggThing(Number(thingId)).then((thing) => { if (el.isConnected) reviewBgg(el, form, bggToGame(thing), setImage, wantImage, code); })
+      .catch((err) => { if (el.isConnected) $('#bgRes', el).innerHTML = `<p class="form-error">${esc(bggErr(err))}</p>`; });
+    return;
+  }
+  el.dataset.code = code;
   if (q0.length >= 2) run(); else $('#bgQ', el).focus();
 }
 
+/**
+ * Importa la collezione di un utente BoardGameGeek (2.1, idea 51): anteprima con la scelta dei giochi; quelli
+ * già nell'armadio si vedono ma non si toccano. Si importano nome, anno, numero BGG e miniatura; il resto
+ * (giocatori, durata…) si completa poi dalla scheda con "Cerca su BGG". Su BGG non si scrive mai niente.
+ */
+function openBggCollection() {
+  if (!canEdit()) return;
+  const el = Sheet.open(`${head(`🎲 ${esc(t('bggc.title'))}`)}
+    <p class="muted small">${esc(t('bggc.lead'))}</p>
+    <form class="am-bgg-form" id="cbForm"><label class="sr-only" for="cbUser">${esc(t('bggc.user'))}</label><input class="input" id="cbUser" maxlength="40" autocomplete="off" placeholder="${esc(t('bggc.userPh'))}" value="${esc(localStorage.getItem('gnr_bgg_user') || '')}"><button type="submit" class="btn">${esc(t('bggc.load'))}</button></form>
+    <div id="cbRes" aria-live="polite"></div>
+    <p class="muted small">${esc(t('bgg.credit'))} <a href="${BGG_SITE}" target="_blank" rel="noopener noreferrer">BoardGameGeek</a></p>`, { wide: true });
+  let plan = [];
+  $('#cbForm', el).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = $('#cbUser', el).value.trim();
+    const box = $('#cbRes', el);
+    box.innerHTML = `<p class="muted">${esc(t('bggc.loading'))}</p>`;
+    try {
+      const list = await bggCollection(user);
+      try { localStorage.setItem('gnr_bgg_user', user); } catch { /* niente */ }
+      plan = collectionPlan(list, A.lib);
+      const nNew = plan.filter((g) => g.state === 'new').length;
+      box.innerHTML = plan.length ? `<p><b>${esc(t('bggc.found', { n: plan.length, fresh: nNew }))}</b></p>
+        <div class="rg-row"><button type="button" class="link-btn" data-cball="1">${esc(t('bk2.all'))}</button><button type="button" class="link-btn" data-cball="0">${esc(t('bk2.none'))}</button></div>
+        <ul class="gr-list">${plan.map((g, i) => `<li><label class="quick-toggle ${g.state === 'have' ? 'is-off' : ''}"><input type="checkbox" data-cb="${i}" ${g.state === 'have' ? 'disabled' : g.state === 'new' ? 'checked' : ''}><span><b>${esc(g.name)}</b>${g.year ? ` (${g.year})` : ''}${g.state === 'have' ? ` · <em>${esc(t('bggc.have'))}</em>` : g.state === 'exp' ? ` · 🧩 ${esc(t('bgg.expansion'))}` : ''}${g.plays ? ` <small class="muted">${esc(t('bggc.plays', { n: g.plays }))}</small>` : ''}</span></label></li>`).join('')}</ul>
+        <button type="button" class="btn btn-block" id="cbGo">📥 ${esc(t('bggc.import'))}</button>` : `<p class="muted">${esc(t('bggc.empty'))}</p>`;
+    } catch (err) { box.innerHTML = `<p class="form-error">${esc(err.code === 'bad_user' ? t('bggc.badUser') : bggErr(err))}</p>`; }
+  });
+  el.addEventListener('click', async (e) => {
+    const all = e.target.closest('[data-cball]');
+    if (all) { el.querySelectorAll('[data-cb]:not(:disabled)').forEach((c) => { c.checked = all.dataset.cball === '1'; }); return; }
+    if (!e.target.closest('#cbGo')) return;
+    const chosen = [...el.querySelectorAll('[data-cb]:checked')].map((c) => plan[Number(c.dataset.cb)]).filter((g) => g && g.state !== 'have');
+    if (!chosen.length) { toast(t('bggc.none'), 'warn'); return; }
+    const btn = e.target.closest('#cbGo');
+    let ok = 0, failed = 0, filled = 0;
+    const made = [];
+    await busy(btn, async () => {
+      for (const g of chosen.slice(0, 300)) {
+        const id = newGameId(A.aid);
+        const item = { name: cleanName(g.name, 40), extId: bggExtId(g.id), ...(g.year && g.year >= 1900 && g.year <= 2100 ? { year: g.year } : {}), ...(g.thumb && g.thumb.length < 400 ? { thumb: g.thumb } : {}), isNew: true, updatedAt: Date.now() };
+        try { await saveGame(A.aid, id, item, { create: true }); ok++; made.push([id, g.id]); } catch { failed++; }
+      }
+      // Completamento dalle schede di BGG (20 alla volta): giocatori, durata, peso, categorie, editore e le
+      // informazioni di BGG. Sono giochi appena creati, quindi si riempiono solo campi vuoti.
+      for (let i = 0; i < made.length; i += 20) {
+        const part = made.slice(i, i + 20);
+        btn.textContent = t('bggc.filling', { n: Math.min(i + 20, made.length), all: made.length });
+        let things = [];
+        try { things = await bggThings(part.map(([, b]) => b)); } catch { break; }
+        for (const [id, b] of part) {
+          const th = things.find((x) => Number(x?.id) === Number(b));
+          if (!th) continue;
+          const g = bggToGame(th);
+          const patch = {};
+          for (const k of ['minPlayers', 'maxPlayers', 'duration', 'weight', 'tags', 'publisher', 'bggInfo']) if (g[k] !== undefined && g[k] !== null) patch[k] = g[k];
+          if (Object.keys(patch).length) { try { await saveGame(A.aid, id, patch); filled++; } catch { /* resta il minimo */ } }
+        }
+      }
+    });
+    logEvent(A.aid, { op: 'import', msg: `collezione BoardGameGeek: ${ok} giochi`, by: me() }); // i18n-ok: cronologia nel database
+    Sheet.close(el);
+    toast(t('bggc.done', { n: ok }) + (filled ? ` ${t('bggc.filled', { n: filled })}` : '') + (failed ? ` ${t('bggc.failed', { n: failed })}` : ''), failed ? 'warn' : 'info');
+  });
+}
+
 /** Confronto "nella scheda / su BGG": i campi vuoti si riempiono, quelli diversi solo se spuntati. */
-function reviewBgg(sheet, form, bgg, setImage, wantImage) {
+function reviewBgg(sheet, form, bgg, setImage, wantImage, code = '') {
   const cur = formValues(form);
   const plan = mergePlan(cur, bgg).filter((p) => BGG_INPUT[p.field] && $(BGG_INPUT[p.field], form));
   const rows = plan.map((p) => `<tr class="is-${p.state}"><th scope="row">${esc(t(BGG_LABEL[p.field]))}</th><td>${esc(showVal(p.current))}</td><td>${esc(showVal(p.bgg))}</td>
@@ -886,6 +1057,8 @@ function reviewBgg(sheet, form, bgg, setImage, wantImage) {
   $('#bgApply', sheet).addEventListener('click', async () => {
     const chosen = new Set([...sheet.querySelectorAll('[data-take]:checked')].map((c) => c.dataset.take));
     const next = applyMerge(cur, plan, chosen);
+    // Informazioni di BGG (autori, età, voto, posizione): si salvano con la scheda, a parte dai campi della persona
+    if (bgg.bggInfo) form._bggInfo = bgg.bggInfo;
     for (const k of next._changed) {
       const inp = $(BGG_INPUT[k], form);
       if (inp) inp.value = Array.isArray(next[k]) ? next[k].join(', ') : String(next[k]);
@@ -893,9 +1066,28 @@ function reviewBgg(sheet, form, bgg, setImage, wantImage) {
     if ($('#bgImg', sheet)?.checked) {
       try { const r = await gameImageFromUrl(bgg.imageUrl || bgg.thumbUrl); setImage(r.image); } catch { /* foto non leggibile: si tiene il resto */ }
     }
+    // Codice a barre confermato con questa scheda: la prossima scatola uguale si riconosce subito (solo su questo dispositivo)
+    const ean = cleanBarcode($('#edEan', form)?.value || code);
+    if (ean && validBarcode(ean) && bggIdOf(bgg.extId)) BarcodeMap.set(ean, { bgg: bggIdOf(bgg.extId), name: bgg.name });
     Sheet.close(sheet);
     toast(t('bgg.applied', { n: next._changed.length }));
   });
+}
+
+/** Riquadro "Da BoardGameGeek" nella scheda del gioco (solo dati di BGG, con il link alla pagina). */
+function bggInfoHTML(it) {
+  const b = it.bggInfo;
+  const id = bggIdOf(it.extId);
+  if (!b && !id) return '';
+  const bits = [
+    b?.designers?.length ? `✍️ ${esc(b.designers.join(', '))}` : '',
+    b?.age ? `🎂 ${esc(t('bgg.i.age', { n: b.age }))}` : '',
+    b?.rating ? `⭐ ${esc(t('bgg.i.rating', { v: String(b.rating).replace('.', ',') }))}` : '',
+    b?.rank ? `🏆 ${esc(t('bgg.i.rank', { n: b.rank }))}` : '',
+    b?.mech?.length ? `⚙️ ${esc(b.mech.join(', '))}` : ''
+  ].filter(Boolean);
+  return `<div class="am-bgginfo"><span class="field-label">${esc(t('bgg.i.title'))}</span>${bits.length ? `<p class="small">${bits.join(' · ')}</p>` : ''}
+    ${id ? `<a class="link-btn" href="${esc(bggPage(id))}" target="_blank" rel="noopener noreferrer">${esc(t('bgg.i.desc'))}</a>` : ''}</div>`;
 }
 
 function datalist(id, vals) { return `<datalist id="${id}">${vals.map((v) => `<option value="${esc(v)}">`).join('')}</datalist>`; }
@@ -921,7 +1113,8 @@ function openEditor(id, { focus } = {}) {
           <label class="field-label" for="edName">${esc(t('arm.ed.name'))}</label>
           <input class="input" id="edName" maxlength="40" required value="${f('name')}" placeholder="${esc(t('arm.ed.namePh'))}" autocomplete="off">
           <div class="am-url-row"><input class="input input--sm" id="edUrl" type="url" inputmode="url" placeholder="${esc(t('arm.ed.urlPh'))}"><button type="button" class="btn-sec btn-sec--sm" id="edUrlOk">${esc(t('arm.ed.urlUse'))}</button></div>
-          ${bggEnabled() ? `<button type="button" class="btn-sec btn-sec--sm am-bgg-btn" id="edBgg">🔎 <span>${esc(t('bgg.searchBtn'))}</span></button>` : ''}
+          <div class="am-id-row">${bggEnabled() ? `<button type="button" class="btn-sec btn-sec--sm am-bgg-btn" id="edBgg">🔎 <span>${esc(t('bgg.searchBtn'))}</span></button>` : ''}<button type="button" class="btn-sec btn-sec--sm" id="edScan">📷 <span>${esc(t('bar.btn'))}</span></button></div>
+          <p class="muted small am-scan-msg" id="edScanMsg" aria-live="polite" hidden></p>
         </div>
       </div>
       <fieldset class="am-fs"><legend>${esc(t('arm.ed.howTo'))}</legend>
@@ -977,7 +1170,40 @@ function openEditor(id, { focus } = {}) {
     if (!file) return;
     try { full = await gameImage(file); imgChanged = true; showImg(full); } catch (err) { if (!err.cancelled) toast(err.message, 'error'); }
   });
-  $('#edBgg', el)?.addEventListener('click', () => openBggSearch(el, id, (img) => { full = img; imgChanged = true; showImg(img); }, !full && !cur.thumb && !cur.image));
+  const setImg = (img) => { full = img; imgChanged = true; showImg(img); };
+  $('#edBgg', el)?.addEventListener('click', () => openBggSearch(el, id, setImg, !full && !cur.thumb && !cur.image));
+  // 1.11 · Codice a barre: gioco già nell'armadio, scheda di BGG già confermata su questo dispositivo, oppure ricerca per nome
+  let scannedEan = '';
+  $('#edScan', el).addEventListener('click', async () => {
+    const code = await scanBarcode();
+    if (!code || !el.isConnected) return;
+    scannedEan = code;
+    const msg = $('#edScanMsg', el);
+    const say = (html) => { msg.innerHTML = html; msg.hidden = false; };
+    if ($('#edEan', el)) $('#edEan', el).value = code;
+    const twin = items().find((x) => x.id !== id && x.ean && barcodeKey(x.ean) === barcodeKey(code));
+    if (twin) {
+      say(`${esc(t('bar.inShelf', { name: twin.name, code }))} <button type="button" class="link-btn" data-twin="${esc(twin.id)}">${esc(t('bar.openTwin'))}</button>`);
+      return;
+    }
+    const known = BarcodeMap.get(code);
+    if (known && bggEnabled()) {
+      say(esc(t('bar.known', { name: known.name || `#${known.bgg}`, code })));
+      openBggSearch(el, id, setImg, !full && !cur.thumb && !cur.image, { thingId: known.bgg, code });
+      return;
+    }
+    if (bggEnabled() && $('#edName', el).value.trim().length >= 2) {
+      say(esc(t('bar.searchByName', { code })));
+      openBggSearch(el, id, setImg, !full && !cur.thumb && !cur.image, { code });
+      return;
+    }
+    say(esc(t(bggEnabled() ? 'bar.typeName' : 'bar.savedNoBgg', { code })));
+    $('#edName', el).focus();
+  });
+  el.addEventListener('click', (e) => {
+    const tw = e.target.closest('[data-twin]');
+    if (tw) { Sheet.close(el); openGame(tw.dataset.twin); }
+  });
   $('#edUrlOk', el).addEventListener('click', async () => {
     try { const r = await gameImageFromUrl($('#edUrl', el).value.trim()); full = r.image; imgChanged = true; showImg(full); if (!r.copied) toast(t('arm.ed.urlWarn'), 'warn'); } catch (err) { $('#edErr', el).textContent = err.message; }
   });
@@ -1001,6 +1227,8 @@ function openEditor(id, { focus } = {}) {
       loc: cleanLoc(Object.fromEntries(LOC_KEYS.map((k) => [k, v(`#edLoc_${k}`)])))
     };
     if ($('#edLocOk', el)) patch.locCheck = $('#edLocOk', el).checked ? null : true;
+    if (limited && scannedEan) patch.ean = scannedEan;
+    if (!limited && $('#edForm', el)._bggInfo) patch.bggInfo = $('#edForm', el)._bggInfo;
     if (!limited) {
       const yr = n('#edYear'); if (yr !== null && (yr < 1900 || yr > 2100)) { err.textContent = t('arm.ed.errYear'); return; }
       const cp = n('#edCopies'); if (cp !== null && (cp < 1 || cp > 20)) { err.textContent = t('arm.ed.errCopies'); return; }
@@ -1018,6 +1246,8 @@ function openEditor(id, { focus } = {}) {
       if (st && st !== 'prestato') patch.status = st === 'posseduto' && !cur.status ? null : st;
       if (patch.baseId && expansionsOf(A.lib, id).length) { err.textContent = t('arm.ed.errBase'); return; }
     }
+    // Codice a barre e numero di BGG insieme nella scheda: abbinamento ricordato su questo dispositivo
+    if (patch.ean && bggIdOf(patch.extId)) BarcodeMap.set(patch.ean, { bgg: bggIdOf(patch.extId), name });
     // Possibile doppione (solo per i nuovi o se cambia nome)
     if (!id || normTitle(cur.name) !== normTitle(name)) {
       const same = items().find((x) => x.id !== id && normTitle(x.name) === normTitle(name) && (x.edition || '') === (patch.edition || cur.edition || ''));
@@ -1147,6 +1377,8 @@ function openInfoEditor() {
       <label><span class="field-label">${esc(t('arm.info.desc'))}</span><textarea class="input" id="aiDesc" maxlength="200" rows="2" placeholder="${esc(t('arm.info.descPh'))}">${esc(i.desc || '')}</textarea></label>
       <span class="field-label">${esc(t('arm.info.icon'))}</span>
       <div class="am-emojis" role="radiogroup" aria-label="${esc(t('arm.info.icon'))}">${EMOJI.map((x) => `<button type="button" class="am-emoji-btn" data-emo="${x}" aria-pressed="${(i.emoji || '📦') === x}">${x}</button>`).join('')}</div>
+      <label><span class="field-label">${esc(t('ret.log'))}</span><select class="input select" id="aiKeep">${[0, 90, 180, 365].map((d) => `<option value="${d}" ${Number(i.keepLogDays || 0) === d ? 'selected' : ''}>${esc(d ? t('ret.days', { n: d }) : t('ret.forever'))}</option>`).join('')}</select></label>
+      <p class="muted small">${esc(t('ret.logLead'))}</p>
       <p class="form-error" id="aiErr" role="alert"></p>
       <button type="submit" class="btn btn-block" id="aiSave">${esc(t('common.save'))}</button>
     </form>`);
@@ -1158,7 +1390,10 @@ function openInfoEditor() {
     if (!name) { $('#aiErr', el).textContent = t('arm.info.errName'); return; }
     const desc = cleanName($('#aiDesc', el).value, 200);
     try {
-      await busy($('#aiSave', el), () => update(armadioRef(A.aid, 'info'), { name, desc: desc || null, emoji, updatedAt: Date.now() }));
+      const keep = Number($('#aiKeep', el).value) || 0;
+      if (keep && keep !== Number(i.keepLogDays || 0) && !confirm(t('ret.logAsk', { n: keep }))) return;
+      await busy($('#aiSave', el), () => update(armadioRef(A.aid, 'info'), { name, desc: desc || null, emoji, keepLogDays: keep || null, updatedAt: Date.now() }));
+      if (keep) pruneLog(keep).catch(() => {});
       if (name !== i.name) logEvent(A.aid, { op: 'rename', msg: `da “${i.name}” a “${name}”`, by: me() }); // i18n-ok: cronologia nel database
       Person.linkArmadio(A.aid, name).catch(() => {});
       try {
@@ -1440,6 +1675,7 @@ function toolsHTML() {
     <section class="card am-tool"><h2>${esc(t('arm.tools.io'))}</h2>
       <p class="muted small">${esc(t('arm.tools.ioLead'))}</p>
       <div class="hub-row"><button type="button" class="btn-sec" data-act="export-csv">📤 CSV</button><button type="button" class="btn-sec" data-act="export-json">📤 JSON</button><button type="button" class="btn" data-act="import">📥 ${esc(t('arm.tools.import'))}</button></div>
+      ${bggEnabled() ? `<div class="hub-row"><button type="button" class="btn-sec" data-act="bggColl">🎲 ${esc(t('bggc.btn'))}</button></div>` : ''}
       <input type="file" id="amImport" accept=".csv,.json,text/csv,application/json" hidden>
       ${A.undo ? `<button type="button" class="btn-sec btn-sec--sm" id="amUndo">↶ ${esc(t('arm.tools.undoLast'))}</button>` : ''}</section>
     <section class="card am-tool"><h2>🏷️ ${esc(t('arm.tools.labels'))}</h2>
@@ -1631,8 +1867,7 @@ function openDups() {
 }
 
 // Esporta / importa
-const stamp = () => new Date().toISOString().slice(0, 10);
-const fileName = (ext) => `armadio_${(A.info?.name || A.aid).replace(/[^\w-]+/g, '_').slice(0, 30)}_${stamp()}.${ext}`;
+const fileName = (ext) => exportName({ group: A.info?.name || A.aid, kind: t('exp.k.armadio'), ext });
 function exportCSV() { downloadFile(fileName('csv'), toCSV(A.lib), 'text/csv;charset=utf-8'); toast(t('arm.exp.csv')); }
 function exportJSON() { downloadFile(fileName('json'), toJSON(A.info, A.lib, { withThumbs: true }), 'application/json'); toast(t('arm.exp.json')); }
 async function openImport(file) {

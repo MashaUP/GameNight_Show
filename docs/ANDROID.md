@@ -14,11 +14,11 @@ Nella cartella `android-app/` c'è l'app Android vera e propria (fatta con [Capa
 Non serve installare niente sul computer: l'APK la prepara GitHub, **solo quando pubblichi tu una release**. I caricamenti di file (codice, link, documenti) non la ricostruiscono e non toccano le Releases, quindi non fanno partire i webhook o le notifiche delle release.
 
 1. Aggiorna lo stesso numero in `version.json` (con data e novità in italiano e inglese), `js/version.js` e `sw.js`, e carica i file su GitHub.
-2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v1.10.0`, scegli **Create new tag: v1.10.0 on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
-3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`v1.10` vale come `1.10.0`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
+2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v2.1.0`, scegli **Create new tag: v2.1.0 on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
+3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`v2.1` vale come `2.1.0`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
 4. Alla fine aggiunge **GameNight-Show.apk** alla tua release. Carica solo il file: la release non viene modificata (il tuo testo resta com'è e non partono altri eventi). L'impronta SHA-256 la calcola GitHub.
 
-Un tag creato da terminale (`git push origin v1.10.0`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
+Un tag creato da terminale (`git push origin v2.1.0`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
 
 Nei minuti tra la pubblicazione e la fine del lavoro, le app vedono la nuova versione come **in preparazione**: è normale, basta aspettare. Se il tag non corrisponde a `version.json`, cancella la release e il tag, correggi e pubblica di nuovo.
 
@@ -91,7 +91,7 @@ Poi apri la cartella `android-app/android` in Android Studio. `npm run apk` cost
 
 L'app si può installare anche su Android TV e Google TV (compare tra le app grazie al banner e alla categoria *Leanback*): la stessa APK, nessuna versione a parte. Sul televisore il telecomando funziona con le frecce, OK e Indietro: il fuoco si sposta tra pulsanti e campi e resta ben visibile. Dalla regia, il tasto **A** (o il comando dal telefono) accende lo **schermo ambiente** fra una partita e l'altra. La fotocamera e i telefoni non servono alla TV: i giocatori entrano come sempre dai loro telefoni.
 
-Va provata a mano su un televisore vero (vedi [VERIFICA.md](VERIFICA.md)): nel nostro ambiente di prova non c'è un emulatore Android TV.
+Va provata a mano su un televisore vero (vedi [TODO.md](../TODO.md), "Da provare a mano"): nel nostro ambiente di prova non c'è un emulatore Android TV.
 
 ## Esportazioni dall'app
 
@@ -100,3 +100,8 @@ Nell'app Android non esistono i download e la stampa del browser. Per questo:
 - **CSV, JSON, backup, registro errori, calendario (.ics), video, immagini**: si salvano in **Documenti/GameNight Show**; se il telefono non lo permette si apre **Condividi**;
 - **PDF della serata e resoconto**: l'app costruisce un **PDF vero** (testo selezionabile, foto dell'album), lo salva in Documenti/GameNight Show e lo apre con il lettore PDF del telefono;
 - **manuali salvati sul dispositivo**: si aprono con il lettore del telefono (PDF o foto).
+
+
+## Promemoria delle serate (2.1)
+
+Dalla 2.1 l'app può ricordare la prossima serata con una notifica (Profilo › Prossima serata › Ricordamelo). Usa il plugin `@capacitor/local-notifications` (già in `android-app/package.json`) e il permesso `POST_NOTIFICATIONS`: la prima volta Android chiede se permettere le notifiche. Serve la APK della 2.1 o successiva; le versioni precedenti dell'app ignorano la scelta.

@@ -7,12 +7,12 @@ Tutte gratuite ed eseguite da GitHub a ogni caricamento (workflow **Verifica**, 
 | `tests/check.mjs` | Versioni allineate, file offline del service worker, sintassi dei moduli, import ed export, file usati dalle pagine, **traduzioni** (stesse chiavi e stessi `{parametri}` in italiano e inglese, nessuna chiave usata nel codice che manca nei dizionari), **link ufficiali** (`config/links.json` valido, nessun indirizzo di GitHub, Discord o Ko-fi scritto a mano nelle pagine) | `node tests/check.mjs` |
 | `tests/links.test.mjs` | Sistema dei link (`js/links-core.js`): indirizzi ammessi e rifiutati, schema, voci sbagliate, link spenti, copia remota valida, server giù, JSON rotto, timeout, cache e offline, archivio asincrono come `chrome.storage.local` | `node --test tests/links.test.mjs` |
 | `tests/nightclock.test.mjs` | Pausa della serata e timer condiviso (modello puro): tempo rimasto, pausa e ripresa, +30 s, turno successivo, seguire la pausa della serata, scadenza una volta sola, revisioni | `node --test tests/nightclock.test.mjs` |
-| `tests/features.test.mjs` | Consigliere, preferiti, filtri e ordinamenti dell'armadio, avvisi dei prestiti, catalogo pubblico, esportazione e importazione (formato, file rotti o più nuovi, piano senza sovrascritture), BoardGameGeek (confronto dei campi), ritaglio delle foto, soundboard personalizzata, Il vostro anno, telecomando | `node --test tests/features.test.mjs` |
+| `tests/features.test.mjs` | Consigliere, preferiti, filtri e ordinamenti dell'armadio, avvisi dei prestiti, catalogo pubblico, esportazione e importazione (formato, file rotti o più nuovi, piano senza sovrascritture), BoardGameGeek (confronto dei campi), ritaglio delle foto, soundboard personalizzata, Il vostro anno, telecomando, eliminazione delle serate, codice a barre, modelli di serata, ospiti, ribilanciamento della scaletta | `node --test tests/features.test.mjs` |
 | `tests/pdf.test.mjs` | PDF generato nel dispositivo (`js/pdfdoc.js`): accenti, a capo, struttura del file, più pagine; con `qpdf`/`pdftotext` controlla anche il file | `node --test tests/pdf.test.mjs` |
 | `tests/i18n-scan.mjs` | Testi italiani rimasti scritti nel codice (euristico); `check.mjs` lo usa sui moduli già tradotti | `node tests/i18n-scan.mjs --count js/*.js` |
 | `tests/rules.test.js` | Regole del database (`firebase/database.rules.json`) con il simulatore *targaryen*: chi può leggere e scrivere cosa | `cd tests && npm install && node rules.test.js` |
 | `bgg-proxy/test/` | Proxy BoardGameGeek con risposte simulate | `node --test bgg-proxy/test/worker.test.mjs` |
-| `tests/e2e/` | Il sito vero in Chromium (Playwright) con un **finto Firebase**: serate complete con TV e telefoni, armadio, profilo su più dispositivi, aggiornamenti dell'app, lingue, link ufficiali (`links.py`), pausa, timer e schermo ambiente (`night16.py`), dati, privacy, catalogo, BGG e manuali (`data16.py`), esportazioni dall'app Android (`exports16.py`), impaginazione da 360 a 1920 px | `python3 tests/e2e/run.py` |
+| `tests/e2e/` | Il sito vero in Chromium (Playwright) con un **finto Firebase**: serate complete con TV e telefoni, armadio, profilo su più dispositivi, aggiornamenti dell'app, lingue, link ufficiali (`links.py`), pausa, timer e schermo ambiente (`night16.py`), dati, privacy, catalogo, BGG e manuali (`data16.py`), esportazioni dall'app Android (`exports16.py`), impostazioni e schermate del telefono a 360 px (`mobile17.py`), eliminazione delle serate (`delete17.py`), codice a barre (`barcode17.py`), modelli, modalità pubblico, comandi rapidi e ospiti (`phase17.py`), impaginazione da 360 a 1920 px | `python3 tests/e2e/run.py` |
 
 ## Prove nel browser (tests/e2e)
 
@@ -41,6 +41,6 @@ I browser di prova partono in italiano (`it-IT`): le prove dell'inglese stanno i
 
 ## Cosa non si prova qui
 
-- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v1.10.0`); controlla la spunta verde su GitHub.
+- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v2.1.0`); controlla la spunta verde su GitHub.
 - Firebase vero: lo prova il **tavolo di verifica** `test.html` sul sito pubblicato.
-- Fotocamera, installazione dell'APK, Android TV: vanno provati a mano su un dispositivo vero (vedi `docs/VERIFICA.md`).
+- Fotocamera, installazione dell'APK, Android TV: vanno provati a mano su un dispositivo vero (elenco in `TODO.md`, sezione "Da provare a mano").

@@ -7,11 +7,12 @@
 // - Centro privacy: cosa c'è e dove, e solo le cancellazioni che l'architettura permette davvero.
 // - Centro diagnostico: versione, rete, Firebase, servizi, errori; rapporto scaricabile senza dati personali.
 import { connect, dbRef, armadioRef, groupRef, get, set, update, remove, onValue, isConfigured, explainError } from './fb.js';
-import { esc, toast, downloadFile, ErrLog, randomCode, cleanName } from './util.js';
+import { esc, toast, downloadFile, ErrLog, randomCode, cleanName, exportName } from './util.js';
 import { t, lang, fmtNum } from './i18n.js';
 import { Person } from './person.js';
 import { Favs } from './favs.js';
 import { sealBackup } from './vault.js';
+import { personalStats, personKeysFor } from './insights.js';
 import { applyImport, undoImport, newGameId, normTitle } from './collection.js';
 import {
   buildExport, parseImport, validateImport, planArmadio, planCounts, newArmadioWrites, mapFavs, CATEGORIES
@@ -49,7 +50,9 @@ async function gatherExport() {
     armadi.push({ id: a.id, info, lib, loans: loans || {}, canLoans: loans !== undefined });
   }
   const groups = [];
-  const gids = new Set([...Object.keys(d?.groups || {}), ...Object.keys((() => { try { return JSON.parse(localStorage.getItem('gnr_profiles') || '{}') || {}; } catch { return {}; } })())]);
+  const profs = (() => { try { return JSON.parse(localStorage.getItem('gnr_profiles') || '{}') || {}; } catch { return {}; } })();
+  const memberOf = { ...profs, ...(d?.groups || {}) };
+  const gids = new Set([...Object.keys(d?.groups || {}), ...Object.keys(profs)]);
   for (const gid of [...gids].filter((g) => CODE6.test(g)).slice(0, 20)) {
     const info = await readable(groupRef(gid, 'info'));
     if (!info) continue;
@@ -57,7 +60,15 @@ async function gatherExport() {
     if (nights === undefined) continue; // storico privato e questo dispositivo non è membro
     groups.push(sealBackup({ app: 'GameNight_Show', kind: 'group', at: Date.now(), group: { id: gid, name: info.name || '' }, info, identity: identity || null, library: null, nights: nights || {}, next: next || null, photos: null, armadioImages: null }));
   }
-  return { look: d?.info || null, favs: Favs.all(), armadi, groups };
+  // Le mie statistiche (1.12, idea 60): solo le righe di questa persona, riconosciuta dal profilo del
+  // gruppo (o, senza profilo, dal nome del profilo personale).
+  const keysByGroup = {};
+  for (const g of groups) {
+    const mid = typeof memberOf[g.group.id] === 'string' ? memberOf[g.group.id] : '';
+    keysByGroup[g.group.id] = mid ? personKeysFor({ memberId: mid }) : personKeysFor({ name: d?.info?.name || '' });
+  }
+  const mine = personalStats(groups.map((g) => ({ id: g.group.id, name: g.group.name, nights: g.nights })), keysByGroup);
+  return { look: d?.info || null, favs: Favs.all(), armadi, groups, mine };
 }
 
 export async function openExport() {
@@ -78,6 +89,7 @@ export async function openExport() {
       ${row('armadi', src.armadi.length > 0, t('dc.cat.armadi'), t('dc.cat.armadiSub', { n: src.armadi.length, games: nGames }))}
       ${row('loans', nLoans > 0, t('dc.cat.loans'), t('dc.cat.loansSub', { n: nLoans }))}
       ${row('groups', src.groups.length > 0, t('dc.cat.groups'), t('dc.cat.groupsSub', { n: src.groups.length, nights: nNights }))}
+      ${row('mine', src.mine.length > 0, t('dc.cat.mine'), src.mine.length ? t('dc.cat.mineSub', { n: src.mine.reduce((a, m) => a + m.nights, 0), groups: src.mine.length }) : t('dc.cat.none'))}
     </div>
     <p class="muted small">🔒 ${esc(t('dc.exp.never'))}</p>
     <button type="button" class="btn btn-block" id="dcExpGo">⬇️ <span>${esc(t('dc.exp.go'))}</span></button>`;
@@ -85,7 +97,7 @@ export async function openExport() {
     const cats = [...el.querySelectorAll('[data-cat]:checked')].map((c) => c.dataset.cat).filter((c) => CATEGORIES.includes(c));
     if (!cats.length) { toast(t('dc.exp.pick'), 'warn'); return; }
     const file = buildExport({ ...src, appVersion: APP_VERSION }, cats);
-    downloadFile(`gamenight_dati_${today()}.json`, JSON.stringify(file, null, 1), 'application/json');
+    downloadFile(exportName({ group: Person.data?.info?.name || '', kind: t('exp.k.data'), ext: 'json' }), JSON.stringify(file, null, 1), 'application/json');
     toast(t('dc.exp.done'));
   });
 }
@@ -177,7 +189,7 @@ async function showPlan(el, parsed, v) {
   box.addEventListener('change', () => { refresh(); });
   box.addEventListener('click', (e) => {
     const g = e.target.closest('[data-gdl]');
-    if (g) { const b = v.groups[Number(g.dataset.gdl)]; downloadFile(`gamenight_gruppo_${b.group.id}_${today()}.json`, JSON.stringify(b), 'application/json'); }
+    if (g) { const b = v.groups[Number(g.dataset.gdl)]; downloadFile(exportName({ group: b.group.name || b.group.id, kind: t('exp.k.groupBackup'), ext: 'json' }), JSON.stringify(b), 'application/json'); }
   });
   await refresh();
   box.querySelector('#dcGo').addEventListener('click', async (e) => {
@@ -499,7 +511,7 @@ export async function openDiagnostics() {
       <a class="btn-sec" href="test.html">🧪 <span>${esc(t('dc.diag.full'))}</span></a>
     </div>
     <p class="muted small">🔒 ${esc(t('dc.diag.privacy'))}</p>`;
-  el.querySelector('#dgDl').addEventListener('click', () => downloadFile(`gamenight_diagnostica_${today()}.json`, diagReport(checks), 'application/json'));
+  el.querySelector('#dgDl').addEventListener('click', () => downloadFile(exportName({ kind: t('exp.k.diag'), ext: 'json' }), diagReport(checks), 'application/json'));
   el.querySelector('#dgAgain').addEventListener('click', () => { C.Sheet.close(); openDiagnostics(); });
 }
 

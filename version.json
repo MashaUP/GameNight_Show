@@ -1,19 +1,21 @@
 {
-  "version": "1.10.0",
-  "date": "2026-10-24",
+  "version": "2.1.0",
+  "date": "2026-11-01",
   "minAndroid": "7.0",
   "notes": [
-    "Tutta l’app in italiano e inglese, con lo stesso stile su ogni schermata.",
-    "Pausa della serata e timer condiviso (turno, round, intervallo) su TV e telefoni; schermo ambiente tra una partita e l’altra.",
-    "Armadio: BoardGameGeek, manuali, preferiti, Consigliere, catalogo pubblico con i campi scelti, avvisi dei prestiti, ritaglio delle foto.",
-    "I tuoi dati: esportazione e importazione guidata, privacy e diagnostica; soundboard personalizzata, atmosfere con suono, “Il vostro anno”.",
-    "App Android: PDF veri della serata, del resoconto e delle etichette; si installa anche su Android TV."
+    "Regia dello show sulla TV: scene per ogni fase, cinque volumi separati, profili (famiglia, competitiva, party, minimal), vista da lontano, tema, pacchetti di atmosfera, anteprima del reveal.",
+    "Imprevisti scelti e ruota degli imprevisti, domande diverse per modalità di gioco, finali diversi per verdetto, classifica a squadre.",
+    "Presenze e spettatori, limiti della serata, checklist «Pronti?», ospiti anonimi a fine serata.",
+    "Correzione del riassunto di una serata chiusa, controllo dello storico, confronto dei primi tre consigli.",
+    "Bacheca e suggerimenti per la prossima serata, promemoria nell'app, centro avvisi nella home.",
+    "Armadio: proposte di modifica, collezione di BoardGameGeek, ricerca nei manuali PDF. Discord, CSV per altri tracker, sfide fra gruppi, demo senza Firebase."
   ],
   "notesEn": [
-    "The whole app in Italian and English, with the same look on every screen.",
-    "Night pause and a shared timer (turn, round, break) on the TV and phones; ambient screen between games.",
-    "Shelf: BoardGameGeek, rulebooks, favourites, the Advisor, a public catalogue with the fields you choose, loan reminders, photo cropping.",
-    "Your data: guided export and import, privacy and diagnostics; custom soundboard, atmospheres with sound, “Your year”.",
-    "Android app: real PDFs of the night, the report and the labels; it also installs on Android TV."
+    "Show control on the TV: scenes for each phase, five separate volumes, profiles (family, competitive, party, minimal), far view, theme, atmosphere packs, reveal preview.",
+    "Chosen twists and a twist wheel, different questions per game type, finales by verdict, team leaderboard.",
+    "Attendance and spectators, night limits, “Ready?” checklist, guests anonymised at the end of the night.",
+    "Correct a closed night's summary, history check, compare the top three suggestions.",
+    "Board and suggestions for the next night, reminders in the app, notice centre on the home page.",
+    "Shelf: change suggestions, BoardGameGeek collection, search in PDF manuals. Discord, CSV for other trackers, group challenges, demo without Firebase."
   ]
 }

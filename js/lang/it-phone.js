@@ -52,5 +52,10 @@ export default {
   'phx.season.won': 'Stagioni vinte: <b>{list}</b>',
 
   // Invito
-  'phx.ics.add': 'Aggiungi al calendario'
+  'phx.ics.add': 'Aggiungi al calendario',
+
+  'ph.guest.label': 'Partecipo come ospite',
+  'ph.guest.hintGroup': 'Stasera voti come tutti, ma nel gruppo non resta niente di te: niente profilo, statistiche, commenti firmati o titoli.',
+  'ph.guest.hint': 'Stasera voti come tutti, senza creare un profilo su questo telefono.',
+  'ph.guest.you': 'Sei ospite: stasera il tuo voto conta, ma nel gruppo non si salva niente di te.'
 };

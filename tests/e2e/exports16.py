@@ -62,7 +62,7 @@ async def main():
         await pg.evaluate('window.__calls = []'); await pg.click('#rsPrint'); await pg.wait_for_timeout(1500)
         cs = await calls(pg)
         docs = [c for c in cs if c[0] == 'Filesystem' and c[2].get('directory') == 'DOCUMENTS']
-        ok(docs and docs[0][2]['path'].startswith('GameNight Show/GameNight_resoconto_') and docs[0][2]['path'].endswith('.pdf'), f'PDF salvato in Documenti/GameNight Show {[c[2].get("path") for c in docs]}')
+        ok(docs and docs[0][2]['path'].startswith('GameNight Show/GameNight_') and '_Resoconto' in docs[0][2]['path'] and docs[0][2]['path'].endswith('.pdf'), f'PDF salvato in Documenti/GameNight Show {[c[2].get("path") for c in docs]}')
         files = await pg.evaluate('window.__files')
         b64 = next((v for k, v in files.items() if k.startswith('DOCUMENTS:') and k.endswith('.pdf')), '')
         good, raw = pdf_ok(b64)
@@ -136,7 +136,7 @@ async def main():
           return exportLabels('<html></html>', { heading: 'Etichette di prova', labels });
         })()""")
         files = await pg.evaluate('window.__files')
-        b64 = next((v for k, v in files.items() if 'etichette' in k and k.endswith('.pdf')), '')
+        b64 = next((v for k, v in files.items() if 'Etichette' in k and k.endswith('.pdf')), '')
         good, raw = pdf_ok(b64)
         ok(r == 'pdf' and good and b'/Count 2' in raw and raw.count(b' re') > 2000, f'etichette in PDF con QR vettoriali su 2 pagine ({len(raw)} byte)')
         open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'out', 'labels16.pdf'), 'wb').write(raw)

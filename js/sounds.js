@@ -4,13 +4,17 @@ import { SFX_META } from './sfx.js';
 import { isSafeMode } from './safe.js';
 import { t } from './i18n.js';
 const KEY = 'gnr_sounds';
-const VOL_KEY = { fx: 'gnr_vol_fx', music: 'gnr_vol_music' };
-const VOL_DEFAULT = { fx: 0.8, music: 0.45 };
+// 2.1 (idea 16): cinque volumi separati. voice = commentatore, notify = segnali (ingressi, voti, timer),
+// atmo = suoni d'ambiente. Restano sotto "Silenzioso" e Safe Mode.
+const VOL_KEY = { fx: 'gnr_vol_fx', music: 'gnr_vol_music', voice: 'gnr_vol_voice', notify: 'gnr_vol_notify', atmo: 'gnr_vol_atmo' };
+const VOL_DEFAULT = { fx: 0.8, music: 0.45, voice: 1, notify: 0.8, atmo: 0.6 };
 const MUTE_KEY = 'gnr_mute';
 let ctx = null;
 let master = null;
 let fxBus = null;
 let musicBus = null;
+let notifyBus = null;
+let atmoBus = null;
 let duckGain = null;
 let noiseBuf = null;
 
@@ -39,10 +43,12 @@ export function getVolume(kind) {
   return Number.isFinite(v) && store.get(VOL_KEY[kind]) !== null ? Math.max(0, Math.min(1, v)) : VOL_DEFAULT[kind];
 }
 export function setVolume(kind, v) {
+  if (!VOL_KEY[kind]) return;
   const val = Math.max(0, Math.min(1, Number(v) || 0));
   store.set(VOL_KEY[kind], String(val));
-  const bus = kind === 'fx' ? fxBus : musicBus;
+  const bus = { fx: fxBus, music: musicBus, notify: notifyBus, atmo: atmoBus }[kind];
   if (bus && ctx) bus.gain.setTargetAtTime(val, ctx.currentTime, 0.05);
+  window.dispatchEvent(new CustomEvent('gnr-volume', { detail: { kind, v: val } }));
 }
 
 /** Contesto audio condiviso (creato al primo gesto: i browser non permettono l'audio prima). */
@@ -61,19 +67,33 @@ export function audioCtx() {
       musicBus = ctx.createGain();
       musicBus.gain.value = getVolume('music');
       musicBus.connect(duckGain);
+      notifyBus = ctx.createGain();
+      notifyBus.gain.value = getVolume('notify');
+      notifyBus.connect(master);
+      atmoBus = ctx.createGain();
+      atmoBus.gain.value = getVolume('atmo');
+      atmoBus.connect(duckGain);
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return ctx;
   } catch { return null; }
 }
 export function musicOut() { audioCtx(); return musicBus; }
+/** Uscita dei suoni d'ambiente (volume "atmosfere", abbassata insieme alla musica). */
+export function atmoOut() { audioCtx(); return atmoBus; }
 export function audioRunning() { return Boolean(ctx && ctx.state === 'running'); }
 
-/** Abbassa la musica mentre parla il commentatore. */
-export function duck(on) {
+/**
+ * Abbassa musica e atmosfere. Più motivi insieme (commentatore che parla, regole del silenzio della scena):
+ * la musica torna su solo quando non ne resta nessuno. Non tocca mai "Silenzioso".
+ */
+const ducks = new Set();
+export function duck(on, why = 'speech') {
+  if (on) ducks.add(why); else ducks.delete(why);
   if (!duckGain || !ctx) return;
-  duckGain.gain.setTargetAtTime(on ? 0.25 : 1, ctx.currentTime, 0.25);
+  duckGain.gain.setTargetAtTime(ducks.size ? 0.25 : 1, ctx.currentTime, 0.25);
 }
+export const ducked = () => ducks.size > 0;
 
 function audio() {
   if (!soundsOn() || isMuted() || isSafeMode()) return null;
@@ -156,7 +176,7 @@ function noise(start, dur, vol = 0.12) {
 }
 
 /** Rumore filtrato con inviluppo (applausi, piatti, colpi). */
-function burst(start, dur, { vol = 0.1, type = 'bandpass', freq = 1500, q = 1, attack = 0.002 } = {}) {
+function burst(start, dur, { vol = 0.1, type = 'bandpass', freq = 1500, q = 1, attack = 0.002, out = null } = {}) {
   const a = audio();
   if (!a) return;
   const t = a.currentTime + start;
@@ -170,7 +190,7 @@ function burst(start, dur, { vol = 0.1, type = 'bandpass', freq = 1500, q = 1, a
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(vol, t + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(f).connect(g).connect(fxBus);
+  src.connect(f).connect(g).connect(out || fxBus);
   src.start(t, Math.random());
   src.stop(t + dur + 0.05);
 }
@@ -212,7 +232,7 @@ function glide(f0, f1, start, dur, { type = 'sine', vol = 0.15, lp = 0, vib = 0,
 }
 
 /** Un voto in arrivo. */
-export function ding() { tone(880, 0, 0.18, 'triangle', 0.12); tone(1320, 0.07, 0.2, 'triangle', 0.08); }
+export function ding() { tone(880, 0, 0.18, 'triangle', 0.12, notifyBus); tone(1320, 0.07, 0.2, 'triangle', 0.08, notifyBus); }
 /** Una carta che si gira. */
 export function pop(delay = 0) { tone(420, delay, 0.09, 'square', 0.06); tone(640, delay + 0.03, 0.08, 'triangle', 0.08); }
 /** Rullo di tamburi prima del reveal. */
@@ -227,7 +247,7 @@ export function fanfare(delay = 0) {
   tone(1047, delay + 0.5, 0.7, 'sine', 0.12);
 }
 /** Qualcuno entra nella stanza. */
-export function joinSound() { tone(660, 0, 0.12, 'sine', 0.1); tone(990, 0.08, 0.16, 'sine', 0.08); }
+export function joinSound() { tone(660, 0, 0.12, 'sine', 0.1, notifyBus); tone(990, 0.08, 0.16, 'sine', 0.08, notifyBus); }
 /** Fischio dell'arbitro per il time-out. */
 export function whistle() {
   const a = audio();
@@ -278,11 +298,11 @@ export function endNightSound() {
   [523, 659, 784, 1047].forEach((f) => tone(f, 1.3, 1.6, 'triangle', 0.07));
 }
 /** Ticchettio dell'orologio (conto alla rovescia). */
-export function tick() { burst(0, 0.03, { vol: 0.12, type: 'highpass', freq: 3000 }); }
+export function tick() { burst(0, 0.03, { vol: 0.12, type: 'highpass', freq: 3000, out: notifyBus }); }
 /** Lancetta del timer del voto: negli ultimi secondi il tic diventa più acuto e insistente. */
 export function clockTick(urgent = false) {
-  tone(urgent ? 1560 : 1180, 0, 0.045, 'square', urgent ? 0.06 : 0.035);
-  if (urgent) tone(780, 0.02, 0.06, 'triangle', 0.05);
+  tone(urgent ? 1560 : 1180, 0, 0.045, 'square', urgent ? 0.06 : 0.035, notifyBus);
+  if (urgent) tone(780, 0.02, 0.06, 'triangle', 0.05, notifyBus);
 }
 /** Tempo scaduto: sirena che scende. */
 export function timeUp() {

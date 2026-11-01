@@ -15,9 +15,9 @@
 //   ALLOWED_ORIGINS  origini ammesse, separate da virgole
 //   RATE_LIMIT       richieste per indirizzo IP ogni 10 minuti (predefinito 120)
 
-import { parseSearch, parseThings, rankResults, norm, looksLikeItems, xmlError } from './bgg.js';
+import { parseSearch, parseThings, parseCollection, rankResults, norm, looksLikeItems, xmlError } from './bgg.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.2.0';
 const BGG = 'https://boardgamegeek.com/xmlapi2';
 const SEARCH_TTL = 24 * 3600; // ricerche: 24 ore
 const THING_TTL = 7 * 24 * 3600; // schede: 7 giorni
@@ -206,6 +206,18 @@ export async function handle(request, env = {}, ctx = {}, deps = {}) {
       const items = await getThings(ids, env, opts);
       if (!items.length) return fail('not_found', 404, allow);
       return json({ ok: true, items, source: 'BoardGameGeek' }, 200, allow);
+    }
+    if (url.pathname === '/collection') {
+      // 2.1 (idea 51): giochi posseduti da un utente BGG (pubblici su BGG), per importarli nell'armadio
+      const user = String(url.searchParams.get('user') || '').trim();
+      if (!/^[A-Za-z0-9_ .-]{3,40}$/.test(user)) return fail('bad_request', 400, allow);
+      const key = user.toLowerCase();
+      const hit = await cacheGet(cache, 'coll', key);
+      if (hit) return json({ ok: true, user, items: hit, source: 'BoardGameGeek' }, 200, allow);
+      const xml = await callBgg(`/collection?username=${encodeURIComponent(user)}&own=1`, env, { ...opts, retries: 4 });
+      const list = parseCollection(xml).slice(0, 1000);
+      await cachePut(cache, 'coll', key, list, 6 * 3600);
+      return json({ ok: true, user, items: list, source: 'BoardGameGeek' }, 200, allow);
     }
     return fail('not_found', 404, allow);
   } catch (err) {

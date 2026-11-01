@@ -102,5 +102,14 @@ export default {
 
   'report.pdf.building': 'Making the PDF…',
   'report.pdf.failed': 'I couldn’t create the PDF: try again.',
-  'report.rs.pdf': 'PDF'
+  'report.rs.pdf': 'PDF',
+
+  'report.del.title': 'Delete the night',
+  'report.del.lead': 'You can do this because you’re the host who created it. Votes, games, report, album and the night’s place in the all-time board and group stats all disappear. This can’t be undone: to keep a copy, download the PDF or the group backup from the TV first.',
+  'report.del.btn': 'Delete the night for good',
+  'report.del.confirm': 'To delete night {code} for good (votes, report, album and group stats), type its code: {code}',
+  'report.del.wrongCode': 'The code doesn’t match: the night was not deleted.',
+  'report.del.done': 'Night deleted',
+  'report.del.doneText': 'Night {code} is gone: the all-time board and group stats are already up to date.',
+  'report.del.denied': 'The database didn’t allow it: only the host who created the night can delete it. Nothing has changed.'
 };

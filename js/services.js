@@ -3,7 +3,7 @@
 // BGG_PROXY_URL: indirizzo del proxy BoardGameGeek (Cloudflare Worker, cartella bgg-proxy).
 // Vuoto = integrazione con BoardGameGeek spenta: tutto il resto funziona, e l'importazione
 // del file CSV di BGG resta disponibile. Guida: bgg-proxy/README.md
-export const BGG_PROXY_URL = '';
+export const BGG_PROXY_URL = 'https://gamenight-bgg.mashaup.workers.dev';
 
 // LINKS_URL: indirizzo pubblico della configurazione dei link ufficiali (formato in docs/LINKS.md).
 // Vuoto = automatico: sul sito si usa config/links.json del sito stesso; nell'app Android la copia

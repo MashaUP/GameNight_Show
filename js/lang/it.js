@@ -11,6 +11,8 @@ import arm from './it-arm.js';
 import feat from './it-feat.js';
 import misc from './it-misc.js';
 import tvx from './it-tvx.js';
+import mem from './it-mem.js';
+import v2 from './it-v2.js';
 
 export default {
   // ---------------------------------------------------------------- comuni
@@ -983,4 +985,6 @@ export default {
   ...feat,
   ...misc,
   ...tvx,
+  ...mem,
+  ...v2,
 };

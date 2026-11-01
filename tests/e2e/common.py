@@ -16,6 +16,16 @@ try:
     _Browser.new_context, _Browser.new_page = _new_context, _new_page
 except Exception:  # Playwright non installato: i test non partono comunque
     pass
+
+# 2.1 (idea 75): GN_BROWSER=firefox o webkit fa girare gli stessi test su Firefox o WebKit (Safari):
+# i test chiamano p.chromium, qui si devia sul browser scelto.
+_GB = os.environ.get('GN_BROWSER', '')
+if _GB in ('firefox', 'webkit'):
+    try:
+        from playwright.async_api import Playwright as _PW
+        _PW.chromium = property(lambda self: getattr(self, _GB))
+    except Exception:
+        pass
 HERE = os.path.dirname(os.path.abspath(__file__))
 errs = []
 NO_TOURS = True

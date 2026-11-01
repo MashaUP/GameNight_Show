@@ -150,11 +150,46 @@ check('codice regia: la TV revoca la regia di un telefono', (() => { const d = b
 check('codice regia: un giocatore NON revoca gli altri', (() => { const d = base(); d.rooms.ABCD.takeover = { p2: 'REGIA123' }; return d; })(), 'p1', 'set', `${R}/takeover/p2`, null, false);
 const old = (meta = {}) => { const d = base({ createdAt: Date.now() - 40 * 86400000, ...meta }); return d; };
 check('scadenza: la TV cancella la sua stanza vecchia', old(), 'host', 'set', R, null, true);
-check('scadenza: l\'admin del gruppo cancella una stanza vecchia', (() => { const d = old({ hostUid: 'altro' }); d.groups.GRP123.admins = { pc2: true }; return d; })(), 'pc2', 'set', R, null, true);
-check('scadenza: NON una stanza di oggi', base({ createdAt: Date.now() - 3600000 }), 'host', 'set', R, null, false);
+// 1.11 (richiesta 83): un altro master (admin del gruppo) NON cancella più la stanza di un altro, neanche vecchia
+check('scadenza: l\'admin del gruppo NON cancella la stanza vecchia di un altro master', (() => { const d = old({ hostUid: 'altro' }); d.groups.GRP123.admins = { pc2: true }; return d; })(), 'pc2', 'set', R, null, false);
+check('stanza di prima della 1.11 (senza creatore): la TV che la guida la cancella anche oggi', base({ createdAt: Date.now() - 3600000 }), 'host', 'set', R, null, true);
 check('scadenza: un giocatore NON cancella stanze', old(), 'p1', 'set', R, null, false);
 check('scadenza: il codice regia di una stanza sparita si toglie', (() => { const d = base(); delete d.rooms.ABCD; return d; })(), 'host', 'set', '/secrets/ABCD', null, true);
 check('scadenza: NON il codice di una stanza viva', base(), 'zz', 'set', '/secrets/ABCD', null, false);
+// ---------------- 1.11 · Eliminare una serata: solo il master che l'ha creata (richiesta 83) ----------------
+const made = (meta = {}) => {
+  const d = base({ creatorUid: 'host', createdAt: Date.now() - 3600000, ...meta });
+  d.groups.GRP123.admins = { host: true, master2: true };
+  d.groups.GRP123.nights.ABCD = { at: 1, games: {}, creatorUid: 'host' };
+  d.groups.GRP123.rooms = { ABCD: true };
+  d.groups.GRP123.photos = { ABCD: { f1: { uid: 'p1', data: 'data:image/jpeg;base64,AAAA' } } };
+  d.people = { PERS01: { uids: { host: true, tablet: true } } };
+  return d;
+};
+const wipeAll = { 'rooms/ABCD': null, 'groups/GRP123/nights/ABCD': null, 'groups/GRP123/rooms/ABCD': null, 'groups/GRP123/photos/ABCD': null };
+check('serata: il creatore la cancella tutta in un colpo (stanza, riassunto, album, elenco)', made(), 'host', 'update', '/', wipeAll, true);
+check('serata: un altro master (admin del gruppo) NON la cancella', made(), 'master2', 'update', '/', wipeAll, false);
+check('serata: un altro master NON cancella neanche solo la stanza', made(), 'master2', 'set', R, null, false);
+check('serata: un altro master NON cancella il riassunto nel gruppo', made(), 'master2', 'set', '/groups/GRP123/nights/ABCD', null, false);
+check('serata: un altro master NON cancella l\'album', made(), 'master2', 'set', '/groups/GRP123/photos/ABCD', null, false);
+check('serata: il proprietario del gruppo NON la cancella se non l\'ha creata', made(), 'owner', 'update', '/', wipeAll, false);
+check('serata: un giocatore NON la cancella', made(), 'p1', 'update', '/', wipeAll, false);
+check('serata: chi ha preso la regia (hostUid) NON la cancella se non è il creatore', made({ hostUid: 'master2' }), 'master2', 'set', R, null, false);
+check('serata: il creatore la cancella anche dopo aver passato la regia', made({ hostUid: 'master2' }), 'host', 'update', '/', wipeAll, true);
+check('serata: un altro dispositivo dello stesso profilo del creatore la cancella', made({ creatorPid: 'PERS01' }), 'tablet', 'update', '/', wipeAll, true);
+check('serata: un dispositivo di un altro profilo NON la cancella', made({ creatorPid: 'PERS01' }), 'master2', 'update', '/', wipeAll, false);
+check('serata: riassunto rimasto senza stanza: lo cancella il creatore', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'host', 'set', '/groups/GRP123/nights/ABCD', null, true);
+check('serata: riassunto rimasto senza stanza: NON un altro master', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'master2', 'set', '/groups/GRP123/nights/ABCD', null, false);
+check('serata: stanza già sparita, il creatore toglie riassunto, album ed elenco insieme', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'host', 'update', '/', { 'groups/GRP123/nights/ABCD': null, 'groups/GRP123/rooms/ABCD': null, 'groups/GRP123/photos/ABCD': null }, true);
+check('serata: stanza già sparita, un altro master NON toglie l\'album', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'master2', 'update', '/', { 'groups/GRP123/photos/ABCD': null }, false);
+check('creatore: si scrive alla creazione della stanza', { rooms: {} }, 'host', 'set', `${R}/meta`, { hostUid: 'host', creatorUid: 'host', maxPlayers: 6 }, true);
+check('creatore: una stanza ripristinata da un backup tiene il creatore originale', { rooms: {} }, 'host', 'set', `${R}/meta`, { hostUid: 'host', creatorUid: 'altro', maxPlayers: 6 }, true);
+check('creatore: NON si cambia dopo', made(), 'host', 'update', `${R}/meta`, { creatorUid: 'master2' }, false);
+check('creatore: chi prende la regia NON si fa creatore', made({ hostUid: 'master2' }), 'master2', 'update', `${R}/meta`, { creatorUid: 'master2' }, false);
+check('creatore: profilo collegato aggiunto dopo solo se è davvero il suo', (() => { const d = made(); d.people.PERS02 = { uids: { altro: true } }; return d; })(), 'host', 'update', `${R}/meta`, { creatorPid: 'PERS02' }, false);
+check('creatore: profilo collegato aggiunto dopo, se è il suo', (() => { const d = made(); return d; })(), 'host', 'update', `${R}/meta`, { creatorPid: 'PERS01' }, true);
+check('creatore nel riassunto: uguale a quello della stanza', made(), 'host', 'set', '/groups/GRP123/nights/ABCD/creatorUid', 'master2', false);
+check('creatore nel riassunto: copiato dalla stanza alla prima scrittura', (() => { const d = made(); delete d.groups.GRP123.nights.ABCD; return d; })(), 'host', 'set', '/groups/GRP123/nights/ABCD', { at: 1, games: {}, creatorUid: 'host' }, true);
 const priv = () => { const d = base(); d.groups.GRP123.privacy = { private: true }; return d; };
 check('storico privato: il membro legge le serate', priv(), 'p1', 'read', `${G}/nights`, null, true);
 check('storico privato: l\'estraneo NON legge le serate', priv(), 'zz', 'read', `${G}/nights`, null, false);
@@ -336,5 +371,156 @@ check('suoni personalizzati: niente audio nel database', idle(), 'host', 'update
 check('suoni personalizzati: niente HTML nel nome', idle(), 'host', 'update', `${R}/meta`, { customSfx: { cab12: { l: '<img src=x>', i: '🐔' } } }, false);
 check('suoni personalizzati: un telefono NON cambia l’elenco', idle(), 'p1', 'update', `${R}/meta`, { customSfx: { cab12: { l: 'X', i: '🐔' } } }, false);
 check('soundboard: un telefono fa partire un suono personalizzato', (() => { const d = idle({ soundboard: true }); return d; })(), 'p1', 'update', R, { 'sfx/s1': { k: 'c:cab12', by: 'p1', at: { '.sv': 'timestamp' } }, 'rate/p1/sfx': { '.sv': 'timestamp' } }, true);
+// ---------------- 1.11 · Modelli di serata nel gruppo (idea 10) ----------------
+{
+  const T = '/groups/GRP123/templates/t1';
+  const tpl = { name: 'Giovedì classico', at: 5, s: { voting: { sempl: false, custom: { 0: { label: 'Rigiocheresti?' } } }, chaos: true, voteSeconds: 90, atmosphere: 'stelle', atmoLevel: 'soft', maxPlayers: 8, music: 'lounge' } };
+  check('modello: il proprietario del gruppo lo salva', base(), 'owner', 'set', T, tpl, true);
+  check('modello: un admin del gruppo lo salva', (() => { const d = base(); d.groups.GRP123.admins = { host: true }; return d; })(), 'host', 'set', T, tpl, true);
+  check('modello: un giocatore del gruppo NON lo salva', base(), 'p1', 'set', T, tpl, false);
+  check('modello: campi sconosciuti rifiutati', base(), 'owner', 'set', T, { ...tpl, s: { ...tpl.s, hostUid: 'x' } }, false);
+  check('modello: niente HTML nel nome', base(), 'owner', 'set', T, { ...tpl, name: '<b>x</b>' }, false);
+  check('modello: senza nome rifiutato', base(), 'owner', 'set', T, { at: 5, s: {} }, false);
+  check('modello: un giocatore NON lo cancella', (() => { const d = base(); d.groups.GRP123.templates = { t1: tpl }; return d; })(), 'p1', 'set', T, null, false);
+  check('modello: il proprietario lo cancella', (() => { const d = base(); d.groups.GRP123.templates = { t1: tpl }; return d; })(), 'owner', 'set', T, null, true);
+}
+
+// ---------------- 1.11 · Ospiti (idea 5) e modalità pubblico (idea 13) ----------------
+check('ospite: il giocatore si segna come ospite', base(), 'p9', 'set', `${R}/players/p9`, { name: 'Ospite', style: 'adventurer', seed: 'x', color: '#FF5A4E', guest: true }, true);
+check('ospite: valore non booleano rifiutato', base(), 'p9', 'set', `${R}/players/p9`, { name: 'Ospite', style: 'adventurer', seed: 'x', color: '#FF5A4E', guest: 'sì' }, false);
+check('modalità pubblico: la TV la accende', base(), 'host', 'update', `${R}/meta`, { publicTv: true }, true);
+check('modalità pubblico: un telefono NON la accende', base(), 'p1', 'update', `${R}/meta`, { publicTv: true }, false);
+
+// ---------------- 1.12 · Premi del gruppo (23), tradizioni (24), accessori (25), regole della casa (68) ----------------
+{
+  const A = `${R}/customAwards/a1`;
+  const aw = { t: 'Re del bluff', e: '👑', uid: 'p1', at: { '.sv': 'timestamp' } };
+  check('premio del gruppo: la TV lo assegna a un giocatore', base(), 'host', 'set', A, aw, true);
+  check('premio del gruppo: un telefono NON lo assegna', base(), 'p1', 'set', A, aw, false);
+  check('premio del gruppo: un co-regia lo assegna', (() => { const d = base(); d.rooms.ABCD.cohosts = { p2: true }; return d; })(), 'p2', 'set', A, aw, true);
+  check('premio del gruppo: non a chi non è in stanza', base(), 'host', 'set', A, { ...aw, uid: 'zz' }, false);
+  check('premio del gruppo: non a un ospite', (() => { const d = base(); d.rooms.ABCD.players.p2.guest = true; return d; })(), 'host', 'set', A, { ...aw, uid: 'p2' }, false);
+  check('premio del gruppo: niente HTML nel nome', base(), 'host', 'set', A, { ...aw, t: '<img src=x>' }, false);
+  check('premio del gruppo: nome troppo lungo', base(), 'host', 'set', A, { ...aw, t: 'x'.repeat(33) }, false);
+  check('premio del gruppo: campi sconosciuti rifiutati', base(), 'host', 'set', A, { ...aw, score: 5 }, false);
+  check('premio del gruppo: la TV lo toglie', (() => { const d = base(); d.rooms.ABCD.customAwards = { a1: { t: 'X', uid: 'p1', at: 1 } }; return d; })(), 'host', 'set', A, null, true);
+  check('tradizioni: la TV imposta gioco d’apertura e premio ricorrente', base(), 'host', 'update', `${R}/meta`, { opening: 'Dixit', award: { t: 'Re del bluff', e: '👑' } }, true);
+  check('tradizioni: premio ricorrente con campi sconosciuti rifiutato', base(), 'host', 'update', `${R}/meta`, { award: { t: 'Re', x: 1 } }, false);
+  check('tradizioni: niente HTML nel gioco d’apertura', base(), 'host', 'update', `${R}/meta`, { opening: '<script>' }, false);
+  check('accessori stagionali: la TV li accende', base(), 'host', 'update', `${R}/meta`, { seasonal: true }, true);
+  check('accessori stagionali: un telefono NON li accende', base(), 'p1', 'update', `${R}/meta`, { seasonal: true }, false);
+  const T = '/groups/GRP123/templates/t2';
+  check('modello con tradizioni', base(), 'owner', 'set', T, { name: 'Venerdì', at: 5, s: { opening: 'Dixit', award: { t: 'Re', e: '👑' } } }, true);
+  check('modello: premio ricorrente senza nome rifiutato', base(), 'owner', 'set', T, { name: 'Venerdì', at: 5, s: { award: { e: '👑' } } }, false);
+  const H = '/groups/GRP123/house/h1';
+  const rule = { text: 'Chi perde sceglie il prossimo gioco', g: 'Azul', at: 5 };
+  check('regola della casa: il proprietario la scrive', base(), 'owner', 'set', H, rule, true);
+  check('regola della casa: un dispositivo del gruppo la scrive', base(), 'p1', 'set', H, rule, true);
+  check('regola della casa: un estraneo NON la scrive', base(), 'zz', 'set', H, rule, false);
+  check('regola della casa: troppo lunga', base(), 'owner', 'set', H, { ...rule, text: 'x'.repeat(201) }, false);
+  check('regola della casa: niente HTML', base(), 'owner', 'set', H, { ...rule, text: '<b>x</b>' }, false);
+  check('regola della casa: campi sconosciuti rifiutati', base(), 'owner', 'set', H, { ...rule, by: 'x' }, false);
+  check('regola della casa: chiunque la legge (gruppo non privato)', base(), 'zz', 'read', '/groups/GRP123/house', null, true);
+  check('regola della casa: gruppo privato, un estraneo NON la legge', (() => { const d = base(); d.groups.GRP123.privacy = { private: true }; return d; })(), 'zz', 'read', '/groups/GRP123/house', null, false);
+}
+
+// ---------------- 2.0 · voti dopo la votazione, registro, passaggio di identità, informazioni BGG ----------------
+{
+  const revealed = (late) => { const d = base(); d.rooms.ABCD.state = { phase: 'idle', playId: 'p9' }; d.rooms.ABCD.games.g1.status = 'revealed'; if (late) d.rooms.ABCD.late = { g1: late }; return d; };
+  const L = `${R}/late/g1/p1`;
+  check('voto tardivo: la TV apre la finestra a un giocatore', revealed(), 'host', 'set', L, { at: 5 }, true);
+  check('voto tardivo: un telefono NON apre la finestra (nemmeno a sé)', revealed(), 'p1', 'set', L, { at: 5 }, false);
+  check('voto tardivo: niente finestra per chi non è in stanza', revealed(), 'host', 'set', `${R}/late/g1/zz`, { at: 5 }, false);
+  check('voto tardivo: campi sconosciuti rifiutati', revealed(), 'host', 'set', L, { at: 5, all: true }, false);
+  check('voto tardivo: senza finestra il telefono NON vota dopo il reveal', revealed(), 'p1', 'set', `${R}/votes/g1/p1`, { overall: 8 }, false);
+  check('voto tardivo: con la finestra il telefono vota', revealed({ p1: { at: 5 } }), 'p1', 'set', `${R}/votes/g1/p1`, { overall: 8, late: true }, true);
+  check('voto tardivo: la finestra di un altro NON vale', revealed({ p2: { at: 5 } }), 'p1', 'set', `${R}/votes/g1/p1`, { overall: 8 }, false);
+  check('voto tardivo: senza "edit" NON si cambia un voto già dato', revealed({ p2: { at: 5 } }), 'p2', 'set', `${R}/votes/g1/p2`, { overall: 3 }, false);
+  check('modifica autorizzata: con "edit" il voto si cambia', revealed({ p2: { at: 5, edit: true } }), 'p2', 'set', `${R}/votes/g1/p2`, { overall: 3, editedAt: 9 }, true);
+  check('modifica autorizzata: il giocatore NON cancella il proprio voto', revealed({ p2: { at: 5, edit: true } }), 'p2', 'set', `${R}/votes/g1/p2`, null, false);
+  check('modifica autorizzata: NON si cambia il voto di un altro', revealed({ p2: { at: 5, edit: true } }), 'p1', 'set', `${R}/votes/g1/p2`, { overall: 1 }, false);
+  check('durante la votazione il giocatore cambia il proprio voto', base(), 'p2', 'set', `${R}/votes/g1/p2`, { overall: 9 }, true);
+  const V = `${R}/votelog/e1`;
+  const ev = { gid: 'g1', uid: 'p1', kind: 'late', by: 'self', at: 5 };
+  check('registro dei voti: la TV scrive una riga', revealed(), 'host', 'set', V, { ...ev, by: 'tv' }, true);
+  check('registro dei voti: il giocatore con la finestra scrive la sua riga', revealed({ p1: { at: 5 } }), 'p1', 'set', V, ev, true);
+  check('registro dei voti: senza finestra il telefono NON scrive', revealed(), 'p1', 'set', V, ev, false);
+  check('registro dei voti: righe non modificabili', (() => { const d = revealed(); d.rooms.ABCD.votelog = { e1: ev }; return d; })(), 'host', 'set', V, { ...ev, kind: 'edit' }, false);
+  check('registro dei voti: tipo sconosciuto rifiutato', revealed(), 'host', 'set', V, { ...ev, kind: 'hack' }, false);
+  const H = `${R}/handover/p1`;
+  check('passaggio di identità: il giocatore lascia il proprio gettone', base(), 'p1', 'set', H, 'TOKEN-abcdef123456', true);
+  check('passaggio di identità: NON per un altro uid', base(), 'p2', 'set', H, 'TOKEN-abcdef123456', false);
+  check('passaggio di identità: NON se non si è in stanza', base(), 'zz', 'set', `${R}/handover/zz`, 'TOKEN-abcdef123456', false);
+  check('passaggio di identità: gettone troppo corto', base(), 'p1', 'set', H, 'corto', false);
+  check('passaggio di identità: la TV lo toglie', (() => { const d = base(); d.rooms.ABCD.handover = { p1: 'TOKEN-abcdef123456' }; return d; })(), 'host', 'set', H, null, true);
+  {
+    const acc = (provider) => targaryen.database(rules, personBase()).with({ debug: false }).as({ uid: 'dev1', provider, token: { firebase: { sign_in_provider: provider } } }).write('/accounts/dev1', { pid: 'PER001', key: 'KEY98765', at: 1 }).allowed;
+    for (const [label, provider, expect] of [['account: una sessione ospite (anonima) NON lo scrive', 'anonymous', false], ['account: con Google lo scrive (profilo e chiave giusti)', 'google.com', true]]) {
+      n++;
+      if (acc(provider) === expect) console.log(`✓ ${label}`); else { fail++; console.log(`✗ ${label}`); }
+    }
+  }
+  check('account: nessuno legge quello di un altro', personBase(), 'zz', 'read', '/accounts/dev1', null, false);
+  const B = '/armadi/ARM001/library/L1/bggInfo';
+  check('BGG: il proprietario salva le informazioni', armBase(), 'owner', 'set', B, { designers: ['Klaus Teuber'], age: 10, rating: 7.1, rank: 512, mech: ['Dice Rolling'], at: 5 }, true);
+  check('BGG: campi sconosciuti rifiutati', armBase(), 'owner', 'set', B, { description: 'testo copiato', at: 5 }, false);
+  check('BGG: voto fuori scala rifiutato', armBase(), 'owner', 'set', B, { rating: 11, at: 5 }, false);
+  check('BGG: troppi autori rifiutati', armBase(), 'owner', 'set', B, { designers: ['a', 'b', 'c', 'd'], at: 5 }, false);
+}
+
+// ---------------- 2.1 · correzioni, organizzatori, proposte, sfide, bacheca, tema, conservazione ----------------
+{
+  const closed = () => { const d = base(); delete d.rooms.ABCD; d.groups.GRP123.nights.OLD1 = { at: 1, creatorUid: 'p1', games: { g1: { name: 'Dixt', key: 'dixt', n: 2, sum: 12 } } }; return d; };
+  const N = '/groups/GRP123/nights/OLD1';
+  check('correzione: il creatore corregge il nome del gioco', closed(), 'p1', 'update', N, { 'games/g1/name': 'Dixit', 'games/g1/key': 'dixit' }, true);
+  check('correzione: un altro NON corregge', closed(), 'p2', 'update', N, { 'games/g1/name': 'Dixit' }, false);
+  check('correzione: niente HTML nel nome', closed(), 'p1', 'update', N, { 'games/g1/name': '<b>x</b>' }, false);
+  const F = { gid: 'g1', what: 'Dixt → Dixit', why: 'nome sbagliato', at: 5 };
+  check('correzione: il creatore scrive la cronologia', closed(), 'p1', 'set', `${N}/fixes/f1`, F, true);
+  check('correzione: la cronologia non si riscrive', (() => { const d = closed(); d.groups.GRP123.nights.OLD1.fixes = { f1: F }; return d; })(), 'p1', 'set', `${N}/fixes/f1`, { ...F, why: 'altro motivo' }, false);
+  check('correzione: motivo obbligatorio', closed(), 'p1', 'set', `${N}/fixes/f2`, { ...F, why: 'x' }, false);
+  check('correzione: un altro NON scrive la cronologia', closed(), 'p2', 'set', `${N}/fixes/f3`, F, false);
+
+  const org = () => { const d = base(); d.groupOrgKeys = { GRP123: 'ORGKEY01' }; return d; };
+  check('organizzatore: un admin crea la chiave', base(), 'owner', 'set', '/groupOrgKeys/GRP123', 'ORGKEY01', true);
+  check('organizzatore: un dispositivo qualsiasi NON crea la chiave', base(), 'p1', 'set', '/groupOrgKeys/GRP123', 'ORGKEY01', false);
+  check('organizzatore: con la chiave giusta ci si segna', (() => { const d = org(); d.groupOrgKeyClaims = { GRP123: { p9: 'ORGKEY01' } }; return d; })(), 'p9', 'set', '/groups/GRP123/organizers/p9', true, true);
+  check('organizzatore: con la chiave sbagliata NO', (() => { const d = org(); d.groupOrgKeyClaims = { GRP123: { p9: 'SBAGLIAT' } }; return d; })(), 'p9', 'set', '/groups/GRP123/organizers/p9', true, false);
+  check('organizzatore: salva un modello di serata', (() => { const d = base(); d.groups.GRP123.organizers = { p9: true }; return d; })(), 'p9', 'set', '/groups/GRP123/templates/t1', { name: 'Venerdì', at: 5, s: { maxGames: 4 } }, true);
+  check('organizzatore: NON cambia la privacy', (() => { const d = base(); d.groups.GRP123.organizers = { p9: true }; return d; })(), 'p9', 'update', '/groups/GRP123/privacy', { private: true }, false);
+  check('modello: limiti fuori scala rifiutati', base(), 'owner', 'set', '/groups/GRP123/templates/t2', { name: 'X', at: 5, s: { maxMinutes: 5 } }, false);
+
+  const arm = () => { const d = armBase(); return d; };
+  const P = { item: 'L1', patch: { maxPlayers: 5 }, why: 'sulla scatola', uid: 'zz', name: 'Zoe', at: 5 };
+  check('proposta: chiunque collegato propone per sé su un gioco che c\'è', arm(), 'zz', 'set', '/armadi/ARM001/proposals/q1', P, true);
+  check('proposta: NON a nome di un altro', arm(), 'zz', 'set', '/armadi/ARM001/proposals/q1', { ...P, uid: 'owner' }, false);
+  check('proposta: NON su un gioco che non c\'è', arm(), 'zz', 'set', '/armadi/ARM001/proposals/q1', { ...P, item: 'NOPE' }, false);
+  check('proposta: campi non ammessi rifiutati', arm(), 'zz', 'set', '/armadi/ARM001/proposals/q1', { ...P, patch: { ownerUid: 'zz' } }, false);
+  check('proposta: chi propone NON legge le proposte', arm(), 'zz', 'read', '/armadi/ARM001/proposals', null, false);
+  check('proposta: il proprietario legge e decide', (() => { const d = arm(); d.armadi.ARM001.proposals = { q1: P }; return d; })(), 'owner', 'set', '/armadi/ARM001/proposals/q1', null, true);
+  check('cronologia dell\'armadio: durata di conservazione', arm(), 'owner', 'update', '/armadi/ARM001/info', { keepLogDays: 90 }, true);
+
+  const C = { name: 'Amici', nights: 3, games: 5, votes: 20, avg: 7.4, top: 'Azul', recent: 1, at: 5 };
+  check('sfida: l\'admin del gruppo pubblica gli aggregati', base(), 'owner', 'set', '/challenges/ABC123/GRP123', C, true);
+  check('sfida: un altro dispositivo NON pubblica per il gruppo', base(), 'p1', 'set', '/challenges/ABC123/GRP123', C, false);
+  check('sfida: niente campi in più (nomi, voti…)', base(), 'owner', 'set', '/challenges/ABC123/GRP123', { ...C, people: { a: 1 } }, false);
+  check('sfida: chi è collegato legge', base(), 'zz', 'read', '/challenges/ABC123', null, true);
+
+  const B = { text: 'Porto le patatine', key: 'k1', name: 'Anna', at: 5 };
+  check('bacheca: un dispositivo del gruppo scrive una nota', base(), 'p1', 'set', '/groups/GRP123/next/board/b1', B, true);
+  check('bacheca: niente HTML', base(), 'p1', 'set', '/groups/GRP123/next/board/b1', { ...B, text: '<script>' }, false);
+  check('suggerimenti: troppo lungo rifiutato', base(), 'p1', 'set', '/groups/GRP123/next/sugg/s1', { ...B, text: 'x'.repeat(61) }, false);
+  check('bacheca: un estraneo NON scrive', base(), 'zz', 'set', '/groups/GRP123/next/board/b1', B, false);
+
+  check('tema della TV: l\'admin lo salva nel gruppo', base(), 'owner', 'set', '/groups/GRP123/identity/theme', { bg: '#140B2E', accent: '#FFD34D', font: 'rounded', podium: 'neon' }, true);
+  check('tema della TV: valori non ammessi', base(), 'owner', 'set', '/groups/GRP123/identity/theme', { bg: 'red', font: 'comic' }, false);
+  check('foto: l\'admin toglie le foto vecchie anche di altri', (() => { const d = base(); d.groups.GRP123.photos = { OLD1: { x1: { uid: 'p2', data: 'data:image/jpeg;base64,AA', at: 1 } } }; return d; })(), 'owner', 'set', '/groups/GRP123/photos/OLD1/x1', null, true);
+  check('foto: un dispositivo qualsiasi NON toglie quelle degli altri', (() => { const d = base(); d.groups.GRP123.photos = { OLD1: { x1: { uid: 'p2', data: 'data:image/jpeg;base64,AA', at: 1 } } }; return d; })(), 'p1', 'set', '/groups/GRP123/photos/OLD1/x1', null, false);
+  check('foto: scadenza dell\'album', base(), 'owner', 'update', '/groups/GRP123/privacy', { photosDays: 365 }, true);
+  check('imprevisti ammessi: la TV li sceglie', base(), 'host', 'update', `${R}/meta`, { chaosOff: { swap: true }, chaosWheel: false, maxGames: 4, maxMinutes: 180 }, true);
+  check('imprevisti: chiave sconosciuta rifiutata', base(), 'host', 'update', `${R}/meta`, { chaosOff: { hack: true } }, false);
+  check('limiti: un telefono NON li cambia', base(), 'p1', 'update', `${R}/meta`, { maxGames: 1 }, false);
+}
+
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

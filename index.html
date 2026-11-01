@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self' https: wss:; media-src 'self' data: blob:; frame-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0E0A26">
   <meta name="gnr-title" content="home.title">
@@ -46,7 +46,10 @@
         <img class="brand-die" src="assets/brand/logo-256.webp" alt="" width="40" height="40">
         <span class="brand-word">GameNight <span class="brand-tag">Show</span></span>
       </a>
-      <button type="button" class="icon-round" id="hubSettings" aria-label="Impostazioni" title="Impostazioni" data-i18n-attr="aria-label:home.nav.settings;title:home.nav.settings">⚙️</button>
+      <span class="topbar-acts">
+        <button type="button" class="icon-round nc-bell" id="hubNotices" aria-label="Avvisi" title="Avvisi" data-i18n-attr="aria-label:nc.title;title:nc.title">🔔<b class="nc-count" id="ncCount" hidden></b></button>
+        <button type="button" class="icon-round" id="hubSettings" aria-label="Impostazioni" title="Impostazioni" data-i18n-attr="aria-label:home.nav.settings;title:home.nav.settings">⚙️</button>
+      </span>
     </header>
 
     <main class="main" id="main" tabindex="-1">

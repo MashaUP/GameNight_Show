@@ -44,6 +44,20 @@ Ogni dispositivo viene riconosciuto con un accesso anonimo: nessuno deve registr
 2. Nella scheda **Metodo di accesso** scegli **Anonimo**, attivalo e salva.
 3. Nella scheda **Impostazioni › Domini autorizzati** aggiungi il dominio di GitHub Pages: `TUO-UTENTE.github.io`, cioè il tuo nome utente GitHub in minuscolo seguito da `.github.io`. Per esempio, per il repository `https://github.com/MashaUP/GameNight_Show` il dominio è `mashaup.github.io`. Non serve averlo già attivo: GitHub Pages si accende al passo 3, e il dominio si può aggiungere anche prima.
 
+### 2.4.1 Account permanenti: Google ed email (2.0, facoltativo ma consigliato)
+
+Dalla 2.0 chi vuole può collegare un **account** e ritrovare profilo, gruppi e statistiche su tutti i dispositivi. Gli ospiti continuano a non aver bisogno di niente. Per accenderlo:
+
+1. **Sicurezza › Authentication › Metodo di accesso › Aggiungi nuovo provider › Google**: attivalo, scegli l'email di assistenza e salva.
+2. Nella stessa scheda aggiungi **Email/password** (solo la prima casella, "Email/password"; il "link via email" non serve) e salva.
+3. Lascia attivo **Anonimo**: serve agli ospiti e a chi non vuole un account.
+4. In **Impostazioni › Domini autorizzati** deve esserci `TUO-UTENTE.github.io` (passo 2.4) e anche `localhost` (c'è già di base: serve all'app Android).
+5. Ripubblica le regole del database (passo 2.3): la 2.0 aggiunge `accounts`, `handover`, `late`, `votelog`.
+
+Nell'app Android si entra con **email e password** (Google non apre la sua finestra dentro le app); chi ha collegato Google dal browser può aggiungere anche una password dallo stesso account. Se Google o Email non sono attivi, l'app lo dice con un messaggio chiaro e tutto il resto funziona come prima.
+
+> **Scorciatoia (2.1)**: dopo aver creato l'app web (passo 2.5) puoi aprire `setup.html` sul tuo sito (o dalla Home › Impostazioni › Configura la tua copia), incollare la configurazione e scaricare `config.js` già pronto: la pagina controlla anche accesso anonimo, dominio autorizzato e regole.
+
 ### 2.5 Collega l'app web
 
 1. Nel menu a sinistra clicca **Impostazioni** (l'ingranaggio) › **Generale**. Si apre la pagina **Impostazioni progetto**.

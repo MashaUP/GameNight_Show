@@ -4,6 +4,7 @@ Tutto quello che si può fare in una serata, schermata per schermata. Per instal
 (GitHub, Firebase, GitHub Pages) parti da [INSTALLAZIONE.md](INSTALLAZIONE.md); per l'app Android c'è [ANDROID.md](ANDROID.md).
 
 - [Tutte le funzioni in breve](#tutte-le-funzioni-in-breve)
+- [Novità della 1.11: serate protette, codice a barre, modelli, modalità pubblico, ospiti](#novità-della-111)
 - [Novità della 1.10: pausa, timer, ambiente, dati, armadio](#novità-della-110)
 - [La serata](#la-serata)
 - [L'app sul telefono e il profilo personale](#lapp-sul-telefono)
@@ -67,6 +68,58 @@ Tutto quello che si può fare in una serata, schermata per schermata. Per instal
 - **Armadio avanzato:** scheda completa di ogni gioco (modalità, peso, categorie, editore, anno, lingua, proprietario, stato e prestiti, espansioni) con le sue statistiche, e **ricerca a frasi**: "per 5 persone, massimo 45 minuti", "cooperativi", "mai giocati", "che Andrea non odia". I giochi prestati o non disponibili non vengono proposti.
 
 Funziona su Android e iPhone, senza installare niente. Serve solo una connessione a internet.
+
+## Novità della 2.1
+
+- **Regia dello show** (TV › Strumenti): scene, volumi separati, profili, vista da lontano, tema, pacchetti di atmosfera, imprevisti ammessi, domande per modalità, anteprima del reveal. **Presenze** dallo stesso riquadro.
+- **Limiti della serata** in Domande e Chaos; **checklist "Pronti?"** nella lobby; **classifica a squadre** nella classifica se avete fatto le squadre e segnato i punti.
+- **Cronologia del gruppo**: TV › Di sempre › Analisi › Cronologia.
+- **Correggere una serata chiusa**: dal resoconto (link nella Home o nel Controllo dei dati della TV), solo chi l'ha creata.
+- **Prossima serata** (telefono, profilo): note, suggerimenti di giochi, promemoria.
+- **Armadio**: 💡 Proponi una modifica (per chi non può modificare), 🎲 Importa la collezione di BoardGameGeek (Strumenti), 📖 Cerca nel manuale (nella scheda del gioco, con il PDF salvato sul dispositivo).
+- **Fine serata** (Condividi): Copia per Discord, webhook, CSV delle partite.
+- **Home**: 🔔 avvisi in alto; nelle Impostazioni **Prova la demo** e **Configura la tua copia**.
+
+## Novità della 2.0
+
+- **Account** (Home, riquadro Account): con Google o email e password ritrovi profilo, gruppi, armadi e statistiche su ogni dispositivo. Nell'app Android si entra con email e password. Senza account va tutto come prima.
+- **Rientrare in una serata**: chiudere il browser o l'app non ti fa uscire. Riapri lo stesso link, inquadra di nuovo il QR o tocca la serata nella Home: torni al tuo posto con i tuoi voti. Se entri con lo stesso account da un altro telefono, il primo te lo dice.
+- **Voto dimenticato o da cambiare**: chiedi alla regia. Sulla TV, dopo il reveal o dalla classifica, **Voti mancanti** apre il voto sul tuo telefono (o si vota dalla TV) e può permetterti di cambiare quello dato. Le medie si aggiornano da sole e il reveal dice quanti voti sono arrivati dopo.
+- **Scegliere il gioco sulla TV**: cerca, filtra (sul tavolo, brevi, lunghi, mai giocati, preferiti), ordina e tocca ⓘ per i dettagli.
+- **Consigli**: Impostazioni › Consigli e suggerimenti (tutti / pochi / nessuno, per categoria); la ✕ chiude un consiglio per sempre.
+- **File esportati** con nomi chiari: gruppo, data della serata e tipo.
+
+## Novità della 1.12
+
+**Analisi.** Sulla TV, **Di sempre › Analisi** (serve un gruppo): *Tendenze* (i giochi che vi piacciono sempre di più o sempre meno), *Un gioco nel tempo* (lo stesso gioco serata per serata, con grafico, voti, giocatori e durata), *Stagioni a confronto*, *Riepilogo* di un mese, una stagione o un anno (frecce per andare avanti e indietro), *Abitudini* (in che giorni e mesi giocate), *Gusti* (medie per modalità, peso e durata), *Collezione* (giochi più giocati, amati, polverosi e mai giocati) ed *Esporta* (CSV o JSON, con filtri). Accanto ai numeri compare quanto sono affidabili: **pochi dati** (meno di 3 voti), **dati discreti** (3–7), **dati solidi** (8 o più). Con pochi dati l'app lo dice invece di inventare una tendenza.
+
+**Premi del gruppo.** A fine serata, nella premiazione, **Premio del gruppo**: scrivi un nome ("Re del bluff"), scegli un simbolo e la persona. Si possono dare fino a 6 premi per serata; gli ospiti non compaiono. I premi entrano nella premiazione, nel resoconto, nel PDF e nella scheda **Tradizioni**, che conta chi li ha vinti più spesso.
+
+**Tradizioni nei modelli.** Salvando un modello di serata (Strumenti › Modelli e serate precedenti) apri **Tradizioni**: *gioco d'apertura* (la serata lo propone per primo) e *premio ricorrente* (già pronto tra i premi del gruppo).
+
+**Regole della casa.** In **Di sempre › Tradizioni** scrivi le vostre varianti in una frase, per un gioco o per tutte le serate. Quando scrivi il nome di quel gioco nella TV, la regola compare sotto; c'è anche nella spiegazione delle regole.
+
+**Il racconto della serata.** Nel resoconto e nel PDF alcune frasi raccontano la serata (gioco più amato, più divisivo, partita più lunga, chi ha vinto di più) usando solo i dati veri. Con la casella **Includi i commenti dei giocatori** decidi se metterci anche una frase dei commenti.
+
+**Accessori stagionali.** In **Strumenti**: nei giorni di festa (Natale, Capodanno, San Valentino, Carnevale, Pasqua, Halloween, d'estate) un piccolo simbolo sugli avatar, sulla TV e sui telefoni. Spenti di base.
+
+**Le mie statistiche.** In **I tuoi dati › Esporta** c'è la voce *Le mie statistiche*: solo i tuoi voti, vittorie e MVP in ogni gruppo, senza i dati degli altri.
+
+## Novità della 1.11
+
+**Eliminare una serata.** Apri il **resoconto** della serata (dalla home › Serate, dalla premiazione o dai ricordi della TV): in fondo, **Elimina la serata**, solo se l'hai creata tu (o da un altro dispositivo collegato al tuo profilo personale). Per confermare scrivi il codice della stanza. Si cancellano insieme stanza, voti, riassunto nel gruppo, album ed elenco: classifica di sempre e statistiche si ricalcolano da sole. Non si torna indietro, se non da un backup del gruppo.
+
+**Codice a barre.** Nell'armadio, nel modulo di un gioco, **📷 Codice a barre**: inquadra il codice sul retro della scatola (Chrome e Android) oppure scrivi le cifre. Se il gioco è già nell'armadio te lo dice; se su questo dispositivo quel codice era già stato abbinato a una scheda di BoardGameGeek, la apre da confermare; altrimenti scrivi il nome e cerca su BGG (che non cerca per codice). Lo stesso pulsante c'è nella ludoteca dal telefono.
+
+**Modelli di serata.** In **Strumenti › Modelli e serate precedenti**: salva le impostazioni di stasera (domande, Chaos, timer del voto, reveal automatico, atmosfera, musica, posti) con un nome; un'altra sera **Vedi e applica**: prima vedi che cosa cambia. Con un gruppo i modelli valgono per tutte le TV del gruppo (li salvano proprietario e admin). **Riparti da una serata precedente** copia le impostazioni (se la stanza esiste ancora) e mette nella scaletta i giochi di quella sera che sono nell'armadio. Voti, punteggi e giocatori non si copiano mai.
+
+**Modalità pubblico.** Tasto **V**, **Strumenti** o il telefono regia: la TV mostra solo quello che serve al pubblico, senza comandi né moduli; tra un gioco e l'altro lo schermo ambiente. Per tornare ai comandi: il pulsante discreto **Regia** in basso a destra, il tasto V o il telefono.
+
+**Comandi rapidi.** In **Strumenti › Comandi rapidi** scegli fino a 5 comandi (pausa, svela i voti, avanti, timer, silenzioso, schermo ambiente, modalità pubblico, intervallo, controllo della serata): compaiono nella barra in alto e si accendono solo quando hanno senso.
+
+**Ospiti.** Entrando nella serata, **Partecipo come ospite**: si vota come tutti, ma non si crea nessun profilo e nel gruppo non resta niente della persona (statistiche, commenti firmati, titoli): solo quanti ospiti c'erano. Il voto conta nella media dei giochi.
+
+**Scaletta in ritardo.** Nella scaletta della TV, se con i giochi che restano si finirebbe oltre l'orario previsto compare l'avviso con i giochi che si potrebbero togliere (prima i meno desiderati): decidi tu.
 
 ## Novità della 1.10
 

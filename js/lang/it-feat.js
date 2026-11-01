@@ -471,5 +471,24 @@ export default {
   'atmo.soft': 'Leggera (più discreta)',
   'atmo.normal': 'Normale',
   'atmo.strong': 'Intensa (anche il suono più forte)',
-  'atmo.sound': 'Suono d’ambiente generato dalla TV ({list}): pioggia, crepitio, ronzio, vento…'
+  'atmo.sound': 'Suono d’ambiente generato dalla TV ({list}): pioggia, crepitio, ronzio, vento…',
+
+  'bar.title': 'Codice a barre della scatola',
+  'bar.hint': 'Inquadra il codice a barre sul retro della scatola.',
+  'bar.noCamera': 'Questo browser non legge i codici a barre con la fotocamera: scrivi le cifre qui sotto.',
+  'bar.manual': 'Cifre del codice a barre',
+  'bar.manualPh': 'Es. 8033772890437',
+  'bar.use': 'Usa',
+  'bar.invalid': 'Codice non valido: controlla le cifre (8, 12 o 13).',
+  'bar.cameraDenied': 'Fotocamera non disponibile: scrivi le cifre del codice.',
+  'bar.btn': 'Codice a barre',
+  'bar.inShelf': 'Il codice {code} è già di “{name}” in questo armadio.',
+  'bar.openTwin': 'Apri la scheda',
+  'bar.known': 'Codice {code}: su questo dispositivo era già stato abbinato a “{name}”. Controlla la scheda di BoardGameGeek e conferma.',
+  'bar.searchByName': 'Codice {code} salvato nella scheda. BoardGameGeek non cerca per codice a barre: cerco per nome, scegli l’edizione giusta.',
+  'bar.typeName': 'Codice {code} salvato nella scheda. Scrivi il nome del gioco e premi “Cerca su BoardGameGeek”: BGG non cerca per codice a barre.',
+  'bar.savedNoBgg': 'Codice {code} salvato nella scheda. Scrivi nome e dati del gioco (BoardGameGeek non è collegato a questo sito).',
+
+  'bar.knownName': 'Codice {code}: su questo dispositivo corrisponde a “{name}”. Controlla il nome e salva.',
+  'bar.typeNameShort': 'Codice {code} letto: scrivi il nome del gioco e salva (il codice resta nella scheda).'
 };

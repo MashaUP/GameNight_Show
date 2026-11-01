@@ -181,11 +181,46 @@ function bindBackButton() {
   try { cap.addListener('App', 'backButton', () => handleBack()); } catch { /* plugin assente: comportamento di Android */ }
 }
 
+// ---------------------------------------------------------------------------
+// Link che aprono l'app (2.0): gamenight://open?to=<pagina> (dal pulsante "Apri nell'app" del sito su Android)
+// ---------------------------------------------------------------------------
+
+export const APP_SCHEME = 'gamenight';
+export const APP_PACKAGE = 'it.gamenight.show';
+
+/** Pagina dell'app per un link gamenight://open?to=play.html%3Froom%3DABCD (null se non è un nostro link). */
+export function routeFromAppLink(url) {
+  let u;
+  try { u = new URL(String(url || '')); } catch { return null; }
+  if (u.protocol !== `${APP_SCHEME}:`) return null;
+  const to = u.searchParams.get('to') || '';
+  if (!to || /^[a-z]+:/i.test(to) || to.startsWith('//')) return null;
+  return routeFromQR(new URL(to, 'https://app.invalid/').href);
+}
+
+/**
+ * Link "Apri nell'app" per Chrome su Android: apre l'app se è installata, altrimenti resta sulla pagina.
+ * page: indirizzo relativo (es. play.html?room=ABCD).
+ */
+export function appIntentUrl(page) {
+  const fallback = location.href;
+  return `intent://open?to=${encodeURIComponent(page)}#Intent;scheme=${APP_SCHEME};package=${APP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+}
+
+function bindAppLinks() {
+  const cap = window.Capacitor;
+  if (typeof cap?.addListener !== 'function' || !cap.isPluginAvailable?.('App')) return;
+  const go = (url) => { const to = routeFromAppLink(url); if (to && !location.href.endsWith(to)) location.href = to; };
+  try { cap.addListener('App', 'appUrlOpen', (e) => go(e?.url)); } catch { /* niente */ }
+  nativeCall('App', 'getLaunchUrl').then((r) => { if (r?.url && !sessionStorage.getItem('gnr_launch_done')) { sessionStorage.setItem('gnr_launch_done', '1'); go(r.url); } }).catch(() => {});
+}
+
 if (isApp()) {
   document.documentElement.classList.add('in-app');
   bindLinks();
   bindStatusBar();
   bindBackButton();
+  bindAppLinks();
 }
 
 // ---------------------------------------------------------------------------

@@ -89,6 +89,31 @@ export function buildPlan({ items, minutes, fits = () => true, wishes = {}, play
   return [...first, ...rest].map((it) => ({ id: it.id, minutes: gameMinutes(it) }));
 }
 
+/**
+ * Ribilanciamento (1.11, idea 28): se con i giochi che restano la serata finirebbe oltre l'orario previsto
+ * (inizio della scaletta + tempo scelto), propone quali togliere — prima i meno desiderati, poi i più lunghi —
+ * finché si rientra. Non toglie niente da solo: restituisce solo la proposta.
+ * remaining: [{ id, minutes }] non ancora giocati; endAt: orario previsto (ms); now: adesso (ms).
+ * Restituisce null se si sta nei tempi (tolleranza 10 minuti), altrimenti { over, drop: [id], newEnd }.
+ */
+export function rebalance(remaining, { endAt, now = Date.now(), wishes = {}, slack = 10 } = {}) {
+  if (!remaining?.length || !Number(endAt)) return null;
+  const cost = (p) => (Number(p.minutes) || 30) + 5;
+  const total = remaining.reduce((a, p) => a + cost(p), 0);
+  const end = now + total * 60000;
+  const over = Math.round((end - Number(endAt)) / 60000);
+  if (over <= slack) return null;
+  const order = [...remaining].sort((a, b) => (wishes[a.id] || 0) - (wishes[b.id] || 0) || cost(b) - cost(a));
+  const drop = [];
+  let left = over;
+  for (const p of order) {
+    if (left <= slack || drop.length >= remaining.length - 1) break;
+    drop.push(p.id);
+    left -= cost(p);
+  }
+  return { over, drop, newEnd: end - drop.reduce((a, id) => a + cost(remaining.find((p) => p.id === id)), 0) * 60000 };
+}
+
 /** Orari della scaletta a partire da "start" (ms): [{ id, minutes, start }]. */
 export function planTimes(list, start) {
   let t = Number(start) || Date.now();

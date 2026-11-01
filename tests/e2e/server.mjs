@@ -28,10 +28,12 @@ const sv = (v, now) => Array.isArray(v) ? v.map((x) => sv(x, now))
 
 function makeDb({ rules = false } = {}) {
   let tree = {}, version = 0;
+  const accounts = new Map();
   const seen = {}, ondisc = {};
   const RULES = rules ? JSON.parse(fs.readFileSync(path.join(ROOT, 'firebase', 'database.rules.json'), 'utf8')) : null;
   const targaryen = rules ? require('targaryen') : null;
-  const tdb = (uid) => { const d = targaryen.database(RULES, tree).with({ debug: false }); return uid ? d.as({ uid }) : d; };
+  // L'accesso come lo vedono le regole: uid e provider (auth.token.firebase.sign_in_provider).
+  const tdb = (uid, prov = 'anonymous') => { const d = targaryen.database(RULES, tree).with({ debug: false }); return uid ? d.as({ uid, provider: prov, token: { firebase: { sign_in_provider: prov } } }) : d; };
   const setAt = (p, v) => {
     const segs = String(p || '').split('/').filter(Boolean);
     if (!segs.length) { tree = v || {}; return; }
@@ -55,16 +57,16 @@ function makeDb({ rules = false } = {}) {
     get tree() { return tree; },
     get version() { return version; },
     touch(cid) { if (cid) seen[cid] = Date.now(); },
-    op({ op, path: p, value, cid, uid, raw }) {
+    op({ op, path: p, value, cid, uid, raw, prov }) {
       const now = Date.now();
       if (op === 'ondisc') { (ondisc[cid] ||= []).push([p, value]); return { version, tree }; }
       if (op === 'read') {
-        if (rules && !raw && !tdb(uid).read(p || '/', now).allowed) return { error: 'permission_denied' };
+        if (rules && !raw && !tdb(uid, prov).read(p || '/', now).allowed) return { error: 'permission_denied' };
         return { value: at(p) };
       }
       // raw: scrittura diretta dai test (preparazione dei dati), senza controllo delle regole
       if (rules && !raw) {
-        const r = op === 'set' ? tdb(uid).write(p || '/', value, { now }) : tdb(uid).update(p || '/', value, now);
+        const r = op === 'set' ? tdb(uid, prov).write(p || '/', value, { now }) : tdb(uid, prov).update(p || '/', value, now);
         if (!r.allowed) return { error: 'permission_denied' };
         tree = r.newDatabase.root.$value() || {};
       } else {
@@ -76,7 +78,30 @@ function makeDb({ rules = false } = {}) {
       version++;
       return { version, tree };
     },
-    reset() { tree = {}; version++; }
+    reset() { tree = {}; version++; accounts.clear(); },
+    // Finto Firebase Authentication: account per email (Google o password), uid stabile per account.
+    auth({ op, uid, email, password, prov }) {
+      const e = String(email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)) return { error: 'invalid-email' };
+      const acc = accounts.get(e);
+      if (op === 'link') {
+        if (acc && acc.uid !== uid) return { error: prov === 'google.com' ? 'credential-already-in-use' : 'email-already-in-use', email: e };
+        accounts.set(e, { uid, password: password || acc?.password || '', prov });
+        return { uid, email: e, name: e.split('@')[0] };
+      }
+      if (op === 'signin') {
+        if (!acc) {
+          if (prov !== 'google.com') return { error: 'invalid-credential' };
+          const nu = 'g' + Math.random().toString(36).slice(2, 10);
+          accounts.set(e, { uid: nu, password: '', prov });
+          return { uid: nu, email: e, name: e.split('@')[0] };
+        }
+        if (prov === 'password' && acc.password !== password) return { error: 'invalid-credential' };
+        return { uid: acc.uid, email: e, name: e.split('@')[0] };
+      }
+      if (op === 'reset') return { ok: true };
+      return { error: 'unknown' };
+    }
   };
 }
 
@@ -100,6 +125,12 @@ function serve(port, { rules = false, app = false } = {}) {
       }
       db.touch(u.searchParams.get('cid'));
       res.end(JSON.stringify({ version: db.version, tree: db.tree }));
+      return;
+    }
+    if (u.pathname === '/__auth' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (d) => { body += d; });
+      req.on('end', () => { res.setHeader('content-type', 'application/json'); let m = {}; try { m = JSON.parse(body || '{}'); } catch { /* niente */ } res.end(JSON.stringify(db.auth(m))); });
       return;
     }
     if (u.pathname === '/__dump') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(db.tree, null, 1)); return; }

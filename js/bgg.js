@@ -60,6 +60,36 @@ export async function bggThing(id, opts = {}) {
   return it;
 }
 
+/** Giochi posseduti da un utente BGG (2.1, idea 51): [{ id, name, year, thumb, plays, type }]. Solo lettura. */
+export async function bggCollection(user, opts = {}) {
+  const u = String(user || '').trim();
+  if (!/^[A-Za-z0-9_ .-]{3,40}$/.test(u)) throw fail('bad_user');
+  const b = await call(`/collection?user=${encodeURIComponent(u)}`, opts);
+  return Array.isArray(b.items) ? b.items.filter((x) => Number.isInteger(x?.id) && x.name) : [];
+}
+
+/**
+ * Anteprima dell'importazione: per ogni gioco della collezione dice se è nuovo, già nell'armadio (stesso
+ * numero BGG o stesso nome) o un'espansione. Niente si sovrascrive: i già presenti si saltano.
+ */
+export function collectionPlan(list, library) {
+  const byExt = new Map(); const byName = new Map();
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+  for (const [id, it] of Object.entries(library || {})) { if (it?.extId) byExt.set(String(it.extId), id); if (it?.name) byName.set(norm(it.name), id); }
+  return (list || []).map((g) => {
+    const have = byExt.get(bggExtId(g.id)) || byName.get(norm(g.name)) || null;
+    return { ...g, have, state: have ? 'have' : g.type === 'boardgameexpansion' ? 'exp' : 'new' };
+  });
+}
+
+/** Più schede insieme (al massimo 20 per chiamata, come il proxy). */
+export async function bggThings(ids, opts = {}) {
+  const list = [...new Set((ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 20);
+  if (!list.length) return [];
+  const b = await call(`/thing?id=${list.join(',')}`, opts);
+  return Array.isArray(b.items) ? b.items : [];
+}
+
 /** Stato del proxy (per il centro diagnostico): { ok, token } oppure { ok: false, code }. */
 export async function bggHealth() {
   if (!bggEnabled()) return { ok: false, code: 'off' };
@@ -99,11 +129,35 @@ export function bggToGame(it) {
   if (typeof it.image === 'string' && /^https:\/\/[^\s"<>]+$/.test(it.image) && it.image.length < 400) g.imageUrl = it.image;
   if (Array.isArray(it.bestPlayers) && it.bestPlayers.length) g.bestPlayers = it.bestPlayers.filter((n) => Number.isInteger(n)).slice(0, 6);
   if (it.isExpansion) g.isExpansion = true;
+  if (Array.isArray(it.publishers) && it.publishers[0]) g.publisher = cleanStr(it.publishers[0], 40);
+  // Dati di BGG solo da mostrare (autori, età, voto e posizione su BGG): stanno a parte in bggInfo,
+  // non toccano mai i campi scritti dalla persona e si aggiornano a ogni nuova lettura della scheda.
+  const info = bggInfoOf(it);
+  if (info) g.bggInfo = info;
   return g;
 }
 
+/** Informazioni di BGG da mostrare nella scheda (validate anche dalle regole del database). */
+export function bggInfoOf(it) {
+  const o = {};
+  const names = (l, n, len) => (Array.isArray(l) ? [...new Set(l.map((x) => cleanStr(x, len)).filter(Boolean))].slice(0, n) : []);
+  const ds = names(it?.designers, 3, 40);
+  if (ds.length) o.designers = ds;
+  const age = Number(it?.minAge);
+  if (Number.isInteger(age) && age >= 1 && age <= 21) o.age = age;
+  const r = Number(it?.rating);
+  if (Number.isFinite(r) && r > 0 && r <= 10) o.rating = Math.round(r * 10) / 10;
+  const rk = Number(it?.rank);
+  if (Number.isInteger(rk) && rk >= 1 && rk <= 500000) o.rank = rk;
+  const mech = names(it?.mechanics, 5, 30);
+  if (mech.length) o.mech = mech;
+  if (!Object.keys(o).length) return null;
+  o.at = Date.now();
+  return o;
+}
+
 /** Campi che si possono prendere da BGG e come si chiamano nel modulo. */
-export const BGG_FIELDS = ['name', 'year', 'minPlayers', 'maxPlayers', 'duration', 'weight', 'tags', 'extId'];
+export const BGG_FIELDS = ['name', 'year', 'minPlayers', 'maxPlayers', 'duration', 'weight', 'tags', 'publisher', 'extId'];
 
 /**
  * Confronta la scheda attuale con quella di BGG: per ogni campo dice se è vuoto (si riempie da solo),

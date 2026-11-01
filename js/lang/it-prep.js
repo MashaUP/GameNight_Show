@@ -74,7 +74,7 @@ export default {
   'prep.scan.manual': 'Numeri del codice a barre',
   'prep.scan.manualPh': 'Es. 3760175513909',
   'prep.scan.search': 'Cerca',
-  'prep.scan.digits': 'Il codice ha da 8 a 14 cifre.',
+  'prep.scan.digits': 'Codice non valido: controlla le cifre (8, 12 o 13).',
   'prep.scan.noCamera': 'Fotocamera non disponibile: scrivi i numeri del codice.',
   'prep.scan.onTable': '{name}: sul tavolo! 🎲',
   'prep.scan.unknown': 'Codice <b>{code}</b>: è la prima volta che lo vedo. Che gioco è? Da ora in poi lo riconosco da solo.',
@@ -185,5 +185,9 @@ export default {
   'library.rec.owner': '<b>{v}</b> proprietario',
   'library.rec.publisher': '<b>{v}</b> editore e anno',
   'library.noMatch': 'Nessun gioco corrisponde alla ricerca.',
-  'library.empty': 'L’armadio è ancora vuoto.'
+  'library.empty': 'L’armadio è ancora vuoto.',
+
+  'prep.plan.late': 'Siete in ritardo di circa {n} min sulla fine prevista ({end}).',
+  'prep.plan.suggest': 'Per rientrare potreste togliere: {list} (fine alle {end}).',
+  'prep.plan.drop': 'Togli {name}'
 };

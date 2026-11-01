@@ -16,6 +16,11 @@ export function fxAllowed() {
 
 const F = { canvas: null, ctx: null, parts: [], rockets: [], raf: null, last: 0, dpr: 1 };
 
+// 2.1 (idea 1): la scena della fase decide quanti effetti (1 pieni, 0,4 tenui, 0 spenti). La imposta la TV.
+let SCALE = 1;
+export function setFxScale(n) { SCALE = Math.max(0, Math.min(1, Number(n))); if (!Number.isFinite(SCALE)) SCALE = 1; }
+export const fxScaleNow = () => SCALE;
+
 function ensure() {
   if (F.canvas) return true;
   const cv = document.createElement('canvas');
@@ -150,7 +155,8 @@ function paper(x, y, vx, vy, delay = 0, colors = COLORS) {
  * oppure { x, y } in pixel per un'esplosione in un punto (es. sopra il vincitore).
  */
 export function confettiBurst(count = 140, mode = 'cannons', colors = COLORS) {
-  if (!fxAllowed() || !ensure()) return;
+  if (!fxAllowed() || SCALE <= 0 || !ensure()) return;
+  count = Math.max(1, Math.round(count * SCALE));
   const w = window.innerWidth, h = window.innerHeight;
   const n = Math.min(document.documentElement.classList.contains('lite') ? Math.round(count * 0.35) : count, 320);
   for (let i = 0; i < n; i++) {
@@ -186,7 +192,8 @@ function explode(r) {
 
 /** Fuochi d'artificio: qualche razzo che sale ed esplode, distribuiti nel tempo. */
 export function fireworks(shots = 6, spread = 2.4) {
-  if (!fxAllowed() || !ensure()) return;
+  if (!fxAllowed() || SCALE <= 0 || !ensure()) return;
+  shots = Math.max(1, Math.round(shots * SCALE));
   if (document.documentElement.classList.contains('lite')) shots = Math.min(shots, 2);
   const w = window.innerWidth, h = window.innerHeight;
   const palettes = [['#FFD34D', '#FF8A3D', '#FFF2B3'], ['#FF3DCB', '#B78CFF', '#FFFFFF'], ['#2EC4B6', '#9BF6FF', '#FFFFFF'], ['#FF5A4E', '#FFC93C', '#FFFFFF'], ['#8AC926', '#FFD34D', '#E8FFB5']];

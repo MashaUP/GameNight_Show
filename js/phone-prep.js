@@ -5,6 +5,7 @@ import { personKey } from './stats.js';
 import { tableGames, wishCounts, gameMinutes } from './prep.js';
 import { t } from './i18n.js';
 import { Favs } from './favs.js';
+import { validBarcode, barcodeKey } from './barcode.js';
 
 let C = null;
 export function bindPhonePrep(ctx) { C = ctx; }
@@ -98,7 +99,7 @@ export const Scanner = {
     this.el = el;
     el.addEventListener('click', (e) => {
       if (e.target === el || e.target.closest('#scClose')) { this.close(); return; }
-      if (e.target.closest('#scGo')) { const v = String($('#scManual', el).value).replace(/\D/g, ''); if (v.length >= 8) this.found(v); else toast(t('prep.scan.digits'), 'warn'); return; }
+      if (e.target.closest('#scGo')) { const v = String($('#scManual', el).value).replace(/\D/g, ''); if (validBarcode(v)) this.found(v); else toast(t('prep.scan.digits'), 'warn'); return; }
       const a = e.target.closest('[data-assign]');
       if (a) { this.assign(a.dataset.assign); return; }
       if (e.target.closest('#scNew')) this.createNew();
@@ -118,7 +119,7 @@ export const Scanner = {
       if (!this.el || !v.videoWidth) return;
       try {
         const codes = await det.detect(v);
-        const c = codes.find((x) => /^\d{8,14}$/.test(x.rawValue || ''));
+        const c = codes.find((x) => validBarcode(x.rawValue || ''));
         if (c) { buzz([30, 40, 30]); this.found(c.rawValue); }
       } catch { /* niente */ }
     }, 350);
@@ -133,7 +134,7 @@ export const Scanner = {
     this.stop();
     this.code = code;
     const lib = P().library || {};
-    const hit = Object.entries(lib).find(([, it]) => it?.ean === code);
+    const hit = Object.entries(lib).find(([, it]) => it?.ean && barcodeKey(it.ean) === barcodeKey(code));
     if (hit) {
       markTonight(hit[0], true);
       toast(t('prep.scan.onTable', { name: hit[1].name }));

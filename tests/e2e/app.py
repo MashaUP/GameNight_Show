@@ -1,6 +1,6 @@
 import asyncio, json
 import common
-from common import watch, errs
+from common import watch, errs, wait_js
 from playwright.async_api import async_playwright
 common.BASE = BASE = 'http://localhost:8766'
 SITE = 'https://example.github.io/GameNight_Show/'
@@ -11,7 +11,7 @@ def ok(c, m):
 
 CAP = """
 window.__calls = [];
-window.Capacitor = { isNativePlatform: () => true, isPluginAvailable: (n) => n === 'App', addListener(p, e, cb) { window.__back = cb; return { remove() {} }; }, nativePromise(p, m, o) {
+window.Capacitor = { isNativePlatform: () => true, isPluginAvailable: (n) => n === 'App', addListener(p, e, cb) { if (e === 'backButton') window.__back = cb; return { remove() {} }; }, nativePromise(p, m, o) {
   const c = Object.assign({}, o || {}); if (c.data) c.data = 'len:' + c.data.length; window.__calls.push([p, m, c]);
   if (p === 'Filesystem' && m === 'writeFile') { if (window.__failDocs && o.directory === 'DOCUMENTS') return Promise.reject(new Error('no')); return Promise.resolve({ uri: 'file:///cache/' + o.path }); }
   return Promise.resolve({});
@@ -36,6 +36,9 @@ async def main():
         # Home
         ctx, pg = await ctxp(b, 'home')
         await pg.goto(BASE + '/index.html'); await pg.wait_for_selector('#joinForm')
+        # 2.1: i moduli partono dopo la scelta del backend (fb.js, import dinamico): si aspetta la classe
+        try: await wait_js(pg, "document.documentElement.classList.contains('in-app')", 5000)
+        except Exception: pass
         ok(await pg.evaluate("document.documentElement.classList.contains('in-app')"), 'classe in-app')
         ok(await pg.wait_for_selector('#scanBtn', state='visible', timeout=4000) is not None, 'pulsante QR in home')
         await pg.wait_for_timeout(300)

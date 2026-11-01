@@ -2,7 +2,7 @@
 // segnapunti dal vivo, quiz del gruppo, stagioni, rivalità, figurine, video riassunto,
 // allarme intrusi, cambio del codice regia, stanze a scadenza e storico privato.
 // Le parti che dipendono dalla serata arrivano da host.js con bindTV(ctx).
-import { $, esc, fmt, activePlayers, sortedPlayers, randomCode, nameKey, safeColor, toast, ICONS, voteTimer, timerColor, downloadFile, prefersReducedMotion, saveInApp } from './util.js';
+import { $, esc, fmt, activePlayers, sortedPlayers, randomCode, nameKey, safeColor, toast, ICONS, voteTimer, timerColor, downloadFile, prefersReducedMotion, saveInApp, exportName } from './util.js';
 import { isApp } from './native.js';
 import { avatarHTML } from './avatars.js';
 import { clockTick, timeUp, fanfare, pop, ding, whistle, drumroll, victory } from './sounds.js';
@@ -10,7 +10,8 @@ import { confettiBurst, fireworks } from './fx.js';
 import { balancedTeams, TEAM_STYLE, skillMap, wheelTarget, wheelGradient, buildQuizRound, nextNightICS, gamesFromCSV } from './extras.js';
 import { seasonTables, seasonOf, championPoints, topRivalries, playerCard, personKey, nightsByDate, nightSummary, buildAwards } from './stats.js';
 import { cardHTML, bindTilt } from './cards.js';
-import { makeRecapVideo, videoSupported } from './recap-video.js';
+// 2.1 (idea 79): il video si prepara con un modulo caricato solo quando si apre il pannello
+const videoSupported = () => typeof MediaRecorder !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype;
 import { isSafeMode } from './safe.js';
 import { timerDisplayHTML, timerControlsHTML, bindTimerControls, controlsSig, SharedTimer } from './sharedtimer.js';
 import { t as tr, fmtNum, fmtDate, fmtList } from './i18n.js';
@@ -538,7 +539,8 @@ export async function changeRegiaCode() {
 
 /**
  * Cancella le stanze del gruppo più vecchie di "days" giorni (la serata resta salvata nel gruppo).
- * Si salta la stanza aperta adesso. Restituisce quante stanze ha cancellato.
+ * Si salta la stanza aperta adesso. Dalla 1.11 le regole lasciano cancellare solo le stanze create da
+ * questo dispositivo (o dal suo profilo): quelle degli altri master restano. Restituisce quante ne ha cancellate.
  */
 export async function cleanupOldRooms(gid, days) {
   if (!gid || !days) return 0;
@@ -570,7 +572,7 @@ export async function cleanupOldRooms(gid, days) {
 export function nightsWithTonight() {
   const board = C.board();
   if (!board.length) return S().nights || {};
-  return { ...(S().nights || {}), [S().code]: nightSummary(board, S().players, S().meta, buildAwards(board, S().votes, S().players)) };
+  return { ...(S().nights || {}), [S().code]: nightSummary(board, S().players, S().meta, buildAwards(board, S().votes, S().players), { library: S().library, custom: S().customAwards }) };
 }
 
 function personAvatar(key, name) {
@@ -689,6 +691,7 @@ export const VideoPanel = {
     const body = $('#vdBody', this.el);
     body.innerHTML = `<p>${esc(tr('tvx.video.recording'))}</p><div class="vd-bar"><i id="vdProg"></i></div><p class="muted small" id="vdPct">0%</p>`;
     try {
+      const { makeRecapVideo } = await import('./recap-video.js');
       const res = await makeRecapVideo(data, (f) => { const b = $('#vdProg'); if (b) b.style.width = `${Math.round(f * 100)}%`; const p = $('#vdPct'); if (p) p.textContent = `${Math.round(f * 100)}%`; });
       this.blob = res.blob;
       this.url = URL.createObjectURL(res.blob);
@@ -727,7 +730,7 @@ export const VideoPanel = {
 
 export function downloadICS(next, group, url = '') {
   if (!next?.at) return;
-  downloadFile(`gamenight_${new Date(Number(next.at)).toISOString().slice(0, 10)}.ics`, nextNightICS({ at: next.at, place: next.place, note: next.note, group, url }), 'text/calendar');
+  downloadFile(exportName({ group, at: next.at, kind: tr('exp.k.calendar'), ext: 'ics' }), nextNightICS({ at: next.at, place: next.place, note: next.note, group, url }), 'text/calendar');
 }
 
 /** Legge il CSV e aggiunge i giochi che mancano (completa i dati vuoti di quelli già presenti). */

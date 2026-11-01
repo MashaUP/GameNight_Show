@@ -253,6 +253,13 @@ export async function reportPDF(d, { photos = true } = {}) {
 
   const heading = (txt) => { ensure(40); y += 18; doc.text(txt, M, y, { size: 14, bold: true }); y += 8; };
 
+  // Racconto della serata (1.12)
+  if (d.story?.length) {
+    heading(t('story.title'));
+    for (const l of wrap(d.story.join(' '), 10, W, false)) { ensure(14); y += 13.5; doc.text(l, M, y, { size: 10 }); }
+    y += 4;
+  }
+
   // Classifica
   heading(t('report.pdf.board'));
   const critHeads = [...new Set(d.rows.flatMap((r) => Object.keys(r.crit || {})))];

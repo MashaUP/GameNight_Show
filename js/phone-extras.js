@@ -1,6 +1,6 @@
 // Sul telefono: segnapunti, squadre/chi inizia/clessidra, quiz del gruppo,
 // figurina, rivalità, stagione, invito .ics, allarme intrusi e revoca della regia.
-import { $, esc, fmt, safeColor, toast, buzz, timerColor, cleanName, downloadFile, activePlayers } from './util.js';
+import { $, esc, fmt, safeColor, toast, buzz, timerColor, cleanName, downloadFile, activePlayers, exportName } from './util.js';
 import { avatarHTML } from './avatars.js';
 import { playerCard, rivalsOf, seasonTables, seasonOf, personKey } from './stats.js';
 import { TEAM_STYLE, nextNightICS } from './extras.js';
@@ -246,7 +246,7 @@ export function bindCardSection(box, me) {
     try {
       const card = playerCard(P().nights || {}, personKey(me), P().library);
       const blob = await renderCardImage(card, me, P().meta?.groupName || '');
-      await C.shareOrDownload(blob, `figurina_${card.name}.png`, t('phx.card.shareText', { level: card.level, rarity: card.rarity.label }));
+      await C.shareOrDownload(blob, exportName({ group: P().meta?.groupName || '', kind: t('exp.k.card'), extra: card.name, ext: 'png' }), t('phx.card.shareText', { level: card.level, rarity: card.rarity.label }));
     } catch (err) { console.error(err); toast(t('phx.card.fail'), 'error'); }
     btn.disabled = false;
   });
@@ -283,6 +283,6 @@ document.addEventListener('click', (e) => {
   if (!nx?.at) return;
   const url = publicUrl('play.html');
   url.search = '';
-  downloadFile(`gamenight_${new Date(Number(nx.at)).toISOString().slice(0, 10)}.ics`, nextNightICS({ at: nx.at, place: nx.place, note: nx.note, group: P().meta?.groupName || 'Game Night', url: url.href }), 'text/calendar');
+  downloadFile(exportName({ group: P().meta?.groupName || '', at: nx.at, kind: t('exp.k.calendar'), ext: 'ics' }), nextNightICS({ at: nx.at, place: nx.place, note: nx.note, group: P().meta?.groupName || 'Game Night', url: url.href }), 'text/calendar');
 });
 

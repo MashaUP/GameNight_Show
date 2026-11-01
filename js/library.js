@@ -3,8 +3,10 @@ import { isConfigured, connect, groupRef, armadioRef, dbRef, get, set, update, p
 import { $, esc, fmt, param, normalizeCode, gameImageHTML, libInfo, applyTheme, installImageFallback, showFatal, showNotConfigured, registerSW, themeSwitchHTML, ErrLog, gameImage, cleanName, nameKey, toast } from './util.js';
 ErrLog.install();
 import { searchLibrary, parseQuery, tagsOf, isAvailable, gameRecord, GAME_STATUS, GAME_MODES } from './stats.js';
+import { gameSessions } from './insights.js';
 import { Person } from './person.js';
 import { saveGame, newGameId, logEvent as armLog } from './collection.js';
+import { scanBarcode, barcodeKey, BarcodeMap } from './barcode.js';
 import { t, lang, fmtDate, langSwitchHTML } from './i18n.js';
 import { Favs, favFirst } from './favs.js';
 
@@ -94,7 +96,8 @@ function addFormHTML() {
           <span class="lb-photo-box" id="lbPhotoBox">${photoBoxHTML()}</span>
         </label>
         <label class="field-label" for="lbName">${t('library.name')}</label>
-        <input class="input" id="lbName" maxlength="40" autocomplete="off" placeholder="${t('library.namePh')}">
+        <div class="lb-name-row"><input class="input" id="lbName" maxlength="40" autocomplete="off" placeholder="${t('library.namePh')}"><button type="button" class="btn-sec" id="lbScan" aria-label="${t('bar.btn')}" title="${t('bar.btn')}">📷</button></div>
+        <p class="muted small" id="lbScanMsg" aria-live="polite" hidden></p>
         <div class="lb-row">
           <label class="sr-only" for="lbMin">${t('library.min')}</label><select class="input select select--sm" id="lbMin">${PLAYERS_OPT(t('library.minAny'))}</select>
           <label class="sr-only" for="lbMax">${t('library.max')}</label><select class="input select select--sm" id="lbMax">${PLAYERS_OPT(t('library.maxAny'))}</select>
@@ -124,6 +127,19 @@ function bindAddForm() {
       $('#lbErr').textContent = '';
     } catch (err) { $('#lbErr').textContent = err.message; }
   });
+  // 1.11 · Codice a barre: gioco già presente, nome già abbinato su questo dispositivo, oppure si scrive il nome
+  $('#lbScan').addEventListener('click', async () => {
+    const code = await scanBarcode();
+    if (!code) return;
+    L.ean = code;
+    const msg = $('#lbScanMsg');
+    const twin = Object.values(L.library || {}).find((it) => it?.ean && barcodeKey(it.ean) === barcodeKey(code));
+    const known = BarcodeMap.get(code);
+    if (twin) { $('#lbName').value = twin.name; msg.textContent = t('bar.inShelf', { name: twin.name, code }); }
+    else if (known?.name) { $('#lbName').value = known.name.slice(0, 40); msg.textContent = t('bar.knownName', { name: known.name, code }); }
+    else { msg.textContent = t('bar.typeNameShort', { code }); $('#lbName').focus(); }
+    msg.hidden = false;
+  });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('#lbErr');
@@ -139,7 +155,7 @@ function bindAddForm() {
       const k = nameKey(name);
       const found = Object.entries(L.library || {}).find(([, it]) => nameKey(it?.name) === k);
       if (found) {
-        const patch = { ...extra };
+        const patch = { ...extra, ...(L.ean && !found[1].ean ? { ean: L.ean } : {}) };
         if (sel) patch.sel = true;
         if (L.aid) await saveGame(L.aid, found[0], patch, L.img ? { full: L.img } : {});
         else { if (L.img) patch.image = L.img; await update(libRef(found[0]), patch); }
@@ -147,15 +163,17 @@ function bindAddForm() {
       } else {
         if (L.aid) {
           const id = newGameId(L.aid);
-          await saveGame(L.aid, id, { name, addedBy: 'Telefono', ...extra, ...(sel ? { sel } : {}) }, { create: true, ...(L.img ? { full: L.img } : {}) }); // i18n-ok: valore salvato nel database
+          await saveGame(L.aid, id, { name, addedBy: 'Telefono', ...extra, ...(L.ean ? { ean: L.ean } : {}), ...(sel ? { sel } : {}) }, { create: true, ...(L.img ? { full: L.img } : {}) }); // i18n-ok: valore salvato nel database
           armLog(L.aid, { op: 'add', item: id, name, by: Person.data?.info?.name || 'Telefono' }); // i18n-ok: valore salvato nel database
         } else {
           const r = push(libRef());
-          await set(r, { name, image: L.img || null, addedBy: 'Telefono', addedAt: serverTimestamp(), ...extra, ...(sel ? { sel } : {}) }); // i18n-ok: valore salvato nel database
+          await set(r, { name, image: L.img || null, addedBy: 'Telefono', addedAt: serverTimestamp(), ...extra, ...(L.ean ? { ean: L.ean } : {}), ...(sel ? { sel } : {}) }); // i18n-ok: valore salvato nel database
         }
         toast(t(sel ? 'library.addedTonight' : 'library.added', { name }));
       }
       L.img = null;
+      L.ean = '';
+      if ($('#lbScanMsg')) $('#lbScanMsg').hidden = true;
       form.reset();
       $('#lbSel').checked = true;
       $('#lbPhotoBox').innerHTML = photoBoxHTML();
@@ -257,6 +275,7 @@ function paint() {
           <span>${t('library.rec.minutes', { v: rec.minutes ? `${rec.minutes} min` : '—' })}</span>
           <span>${t('library.rec.last', { v: rec.last ? fmtDate(rec.last, { day: 'numeric', month: 'short', year: 'numeric' }) : t('library.rec.never') })}</span>
           ${rec.champion ? `<span>${t('library.rec.champion', { v: esc(rec.champion.name) })}</span>` : ''}
+          ${(() => { const ss = gameSessions(L.nights, it.name).slice(-6); return ss.length >= 2 ? `<span class="lb-sess">${esc(t('ins.game.title'))}: ${ss.map((x) => `${esc(fmtDate(x.at, { day: 'numeric', month: 'short' }))} <b>${fmt(x.avg)}</b>${x.few ? '*' : ''}`).join(' · ')}</span>` : ''; })()}
           ${it.owner ? `<span>${t('library.rec.owner', { v: esc(it.owner) })}</span>` : ''}
           ${it.publisher || it.year ? `<span>${t('library.rec.publisher', { v: esc([it.publisher, it.year].filter(Boolean).join(', ')) })}</span>` : ''}
         </div>` : ''}

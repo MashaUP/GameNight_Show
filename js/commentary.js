@@ -1,6 +1,6 @@
 // Il commentatore della serata: frasi celebrative o "roast" lette dalla TV con la sintesi vocale del browser.
 import { fmt } from './util.js';
-import { duck, isMuted } from './sounds.js';
+import { duck, isMuted, getVolume } from './sounds.js';
 import { isSafeMode } from './safe.js';
 import { t, has, fmtList, locale } from './i18n.js';
 
@@ -166,6 +166,7 @@ export function speak(text, { captions = true } = {}) {
     u.lang = v.lang;
     u.rate = 1.04;
     u.pitch = 1;
+    u.volume = getVolume('voice'); // 2.1: volume della voce separato (idea 16)
     u.onstart = () => duck(true);
     u.onend = hide;
     u.onerror = hide;

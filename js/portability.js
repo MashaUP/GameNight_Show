@@ -13,6 +13,8 @@
 //   favs: { <armadio>: { <gioco>: ms } },
 //   armadi: [{ id, name, desc?, emoji?, games: [ { id, name, … } ], loans?: [ { id, item, to, start, due?, ret?, note? } ] }],
 //   groups: [ <backup del gruppo, lo stesso del pulsante "Backup del gruppo" della TV> ],
+//   mine: [ { group, nights, votesGiven, avgGiven, wins, mvp, games: { <gioco>: [voti] } } ]  (1.12, idea 60:
+//         solo le statistiche di chi esporta, senza i dati degli altri partecipanti)
 //   sum: impronta per riconoscere un file modificato a mano
 // }
 // Si leggono anche i file "gamenight-armadio" versione 1 (esportazione di un solo armadio, dalla 1.2).
@@ -26,7 +28,7 @@ import { checksum } from './vault.js';
 
 export const EXPORT_FORMAT = 'gamenight-export';
 export const EXPORT_VERSION = 2;
-export const CATEGORIES = ['profile', 'favs', 'armadi', 'loans', 'groups'];
+export const CATEGORIES = ['profile', 'favs', 'armadi', 'loans', 'groups', 'mine'];
 export const MAX_FILE_BYTES = 40 * 1024 * 1024;
 export const MAX_GAMES = 2000;
 const CODE6 = /^[A-Z0-9]{6}$/;
@@ -75,6 +77,7 @@ export function buildExport(src, categories = CATEGORIES) {
     });
   }
   if (cat.has('groups')) out.groups = (src.groups || []).filter((g) => g && g.kind === 'group');
+  if (cat.has('mine')) out.mine = (src.mine || []).filter((m) => m && m.nights > 0);
   const body = { ...out };
   out.sum = checksum(JSON.stringify(body));
   return out;

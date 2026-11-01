@@ -52,5 +52,10 @@ export default {
   'phx.season.won': 'Seasons won: <b>{list}</b>',
 
   // Invite
-  'phx.ics.add': 'Add to calendar'
+  'phx.ics.add': 'Add to calendar',
+
+  'ph.guest.label': 'I’m joining as a guest',
+  'ph.guest.hintGroup': 'You vote like everyone tonight, but nothing about you stays in the group: no profile, stats, signed comments or titles.',
+  'ph.guest.hint': 'You vote like everyone tonight, without creating a profile on this phone.',
+  'ph.guest.you': 'You’re a guest: your vote counts tonight, but nothing about you is saved in the group.'
 };

@@ -233,7 +233,7 @@ async def main():
         await O.check('[data-cat="loans"]') if await O.is_enabled('[data-cat="loans"]') else None
         text, fname = await download(O, '#dcExpGo')
         data = json.loads(text)
-        ok(fname.startswith('gamenight_dati_') and fname.endswith('.json'), f'file esportato ({fname})')
+        ok(fname.startswith('GameNight_') and '_Dati' in fname and fname.endswith('.json'), f'file esportato ({fname})')
         ok(data.get('format') == 'gamenight-export' and data.get('version') == 2, 'formato versionato')
         arm = next((a for a in data.get('armadi', []) if a['id'] == aid), None)
         ok(arm is not None and len(arm['games']) == 6, f'armadio esportato con i giochi ({len(arm["games"]) if arm else 0})')

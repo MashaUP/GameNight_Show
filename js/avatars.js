@@ -1,6 +1,7 @@
 // Avatar dei giocatori generati con DiceBear (incluso nel progetto, nessuna chiamata esterna).
 import { createAvatar, adventurer, bigSmile, toonHead } from '../vendor/dicebear.js';
 import { esc, safeColor, initials } from './util.js';
+import { seasonalAccessory } from './traditions.js';
 
 const STYLES = {
   adventurer,
@@ -83,8 +84,20 @@ export function avatarHTML(player, size = '4rem', cls = '') {
   const inner = uri
     ? `<img src="${esc(uri)}" alt="" draggable="false">`
     : `<span class="avatar-initial">${esc(initials(player?.name))}</span>`;
-  return `<span class="avatar ${photo ? 'avatar--photo' : ''} ${cls}" style="--s:${size};--pc:${color}">${inner}</span>`;
+  const acc = Seasonal.on ? seasonalAccessory(Seasonal.at()) : null;
+  const badge = acc ? `<span class="avatar-acc avatar-acc--${acc.id}" aria-hidden="true">${acc.icon}</span>` : '';
+  return `<span class="avatar ${photo ? 'avatar--photo' : ''} ${cls}" style="--s:${size};--pc:${color}">${inner}${badge}</span>`;
 }
+
+/**
+ * Accessori stagionali (1.12, idea 25): spenti di base, li accende la TV per la serata (meta/seasonal).
+ * Ogni pagina chiama Seasonal.set(meta.seasonal) quando legge la stanza. at() si può cambiare nelle prove.
+ */
+export const Seasonal = {
+  on: false,
+  at: () => Date.now(),
+  set(v) { this.on = v === true; }
+};
 
 export const AVATAR_CREDITS = [
   { name: 'Adventurer', author: 'Lisa Wischofsky', license: 'CC BY 4.0' },

@@ -530,7 +530,7 @@ export const ErrLog = {
       browser: navigator.userAgent, schermo: `${screen.width}×${screen.height} (finestra ${innerWidth}×${innerHeight})`, lingua: navigator.language, ...extra
     };
     const lines = l.map((e) => `[${new Date(e.t).toLocaleString(locale())}] ${e.kind.toUpperCase()}${e.n > 1 ? ` ×${e.n}` : ''} (${e.page}, v${e.v})\n  ${e.msg}${e.stack ? `\n  ${e.stack.replace(/\n/g, '\n  ')}` : ''}`);
-    downloadFile(`gamenight_errori_${new Date().toISOString().slice(0, 10)}.txt`, `${JSON.stringify(head, null, 2)}\n\n${lines.join('\n\n') || t('errlog.none')}\n`, 'text/plain');
+    downloadFile(exportName({ kind: t('exp.k.errors'), ext: 'txt' }), `${JSON.stringify(head, null, 2)}\n\n${lines.join('\n\n') || t('errlog.none')}\n`, 'text/plain');
   },
   install() {
     if (this.installed) return;
@@ -694,8 +694,51 @@ export function showNotConfigured(container) {
       <div class="card fatal-card">
         <h1>${esc(t('cfg.missingTitle'))}</h1>
         <p>${t('cfg.missingText')}</p>
+        <p><a class="btn" href="setup.html">🛠️ ${esc(t('setup.open'))}</a> <button type="button" class="btn-sec" id="cfgDemo">🧪 ${esc(t('demo.try'))}</button></p>
+        <p class="muted small">${esc(t('demo.lead'))}</p>
       </div>
     </div>`;
+  container.querySelector('#cfgDemo')?.addEventListener('click', () => { try { localStorage.setItem('gnr_demo', '1'); } catch { /* niente */ } location.reload(); });
+}
+
+// ---------------------------------------------------------------------------
+// Nomi dei file esportati (2.0): GameNight_<Gruppo>_<data della serata>_<Tipo>[_<dettaglio>].<estensione>
+// ---------------------------------------------------------------------------
+
+const EXPORT_SEEN = 'gnr_export_names';
+/** Parte di un nome di file: senza accenti né caratteri vietati, spazi come trattini, lunghezza massima. */
+export function filePart(s, max = 30) {
+  return String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 _-]+/g, ' ')
+    .trim().replace(/\s+/g, '-').replace(/-{2,}/g, '-').slice(0, max).replace(/^[-_]+|[-_]+$/g, '');
+}
+/** Data locale AAAA-MM-GG (della serata, non del download). */
+export function fileDate(at) {
+  const d = new Date(Number(at) || at || Date.now());
+  const x = Number.isNaN(d.getTime()) ? new Date() : d;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+/**
+ * Nome descrittivo per un file esportato: GameNight_Amici-del-giovedi_2026-10-31_Resoconto.pdf.
+ * opts: { group, at (data della serata), kind (tipo, già tradotto), extra (gioco, anno…), ext, unique }.
+ * Con unique (predefinito) un nome già usato su questo dispositivo prende _2, _3…: niente sovrascritture
+ * (nell'app i file vanno tutti nella stessa cartella).
+ */
+export function exportName({ group = '', at = Date.now(), kind = '', extra = '', ext = 'pdf', unique = true } = {}) {
+  const parts = ['GameNight', filePart(group, 30), fileDate(at), filePart(kind, 24), filePart(extra, 30)].filter(Boolean);
+  let base = parts.join('_');
+  const e = String(ext).replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin';
+  if (!unique) return `${base}.${e}`;
+  try {
+    const seen = JSON.parse(localStorage.getItem(EXPORT_SEEN) || '{}') || {};
+    const key = `${base}.${e}`.toLowerCase();
+    const n = (Number(seen[key]) || 0) + 1;
+    seen[key] = n;
+    const keys = Object.keys(seen);
+    if (keys.length > 300) for (const k of keys.slice(0, keys.length - 300)) delete seen[k];
+    localStorage.setItem(EXPORT_SEEN, JSON.stringify(seen));
+    if (n > 1) base = `${base}_${n}`;
+  } catch { /* memoria bloccata: nome senza numero */ }
+  return `${base}.${e}`;
 }
 
 export function downloadFile(filename, content, type = 'text/plain') {

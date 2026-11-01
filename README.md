@@ -21,7 +21,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licenza-MIT-FFD23F" alt="Licenza MIT"></a>
 </p>
 
-**Versione 1.10.0** · [Novità](CHANGELOG.md) · [Guida](docs/GUIDA.md) · [Installa la tua copia](docs/INSTALLAZIONE.md) · [App Android](docs/ANDROID.md)
+**Versione 2.1.0** · [Novità](CHANGELOG.md) · [Guida](docs/GUIDA.md) · [Installa la tua copia](docs/INSTALLAZIONE.md) · [App Android](docs/ANDROID.md)
 
 ## Che cos'è
 
@@ -48,10 +48,10 @@ Passo per passo, con tutte le schermate: [docs/GUIDA.md](docs/GUIDA.md).
 - **Voto e reveal:** criteri, MVP, pubblico, voto veloce, "Indovina la media", reveal con le carte.
 - **Classifica e premi** della serata e di sempre, ai giochi e ai giocatori; **Il vostro anno** da sfogliare e condividere.
 - **Gruppi:** identità, ricordi, album, calendario, stagioni, Hall of Fame.
-- **Armadio:** foto (con ritaglio), schede, prestiti con avvisi di scadenza, cestino, **catalogo pubblico** con campi scelti, **preferiti**, ricerca a frasi, **BoardGameGeek** (ricerca e schede, tramite proxy), **manuali** (link, file sul dispositivo, ricerca).
-- **Durante la partita:** **pausa della serata**, **timer condiviso** (turno, round, pausa) visibile su TV e telefoni, segnapunti, squadre, pronostici, soundboard anche **personalizzata**.
-- **Prima della partita:** giochi di stasera, scaletta, regole, **Consigliere** su cosa giocare (tempo, peso, modalità, preferiti).
-- **Show:** tema da studio televisivo, musica e **atmosfere con suono**, commentatore, **schermo ambiente** tra una partita e l'altra.
+- **Armadio:** foto (con ritaglio), schede, prestiti con avvisi di scadenza, cestino, **catalogo pubblico** con campi scelti, **preferiti**, ricerca a frasi, **BoardGameGeek** (ricerca e schede, tramite proxy), **codice a barre** della scatola, **manuali** (link, file sul dispositivo, ricerca).
+- **Durante la partita:** **pausa della serata**, **timer condiviso** (turno, round, pausa) visibile su TV e telefoni, segnapunti, squadre, pronostici, soundboard anche **personalizzata**, **ospiti** che votano senza lasciare dati nel gruppo.
+- **Prima della partita:** giochi di stasera, scaletta che avvisa dei ritardi, regole, **Consigliere** su cosa giocare, **modelli di serata** e "riparti da una serata precedente".
+- **Show:** tema da studio televisivo, musica e **atmosfere con suono**, commentatore, **schermo ambiente**, **modalità pubblico** (la TV senza comandi) e **comandi rapidi**.
 - **I tuoi dati:** **esportazione e importazione guidata** (JSON versionato, anteprima, niente sovrascritture silenziose), centro **privacy** e **diagnostica**.
 - **Affidabilità e sicurezza:** salvataggio a ogni mossa, ripresa dopo un crash, voti in coda se cade la rete, Safe Mode, regole del database precise, Content-Security-Policy.
 - **Accessibilità e lingue:** testo grande, alto contrasto, daltonici, meno animazioni, tastiera e **telecomando**; **italiano e inglese**.
@@ -62,11 +62,12 @@ Passo per passo, con tutte le schermate: [docs/GUIDA.md](docs/GUIDA.md).
 | Voglio… | Dove |
 |---|---|
 | provarla subito | [mashaup.github.io/GameNight_Show](https://mashaup.github.io/GameNight_Show/) |
-| la mia copia, con i miei dati (10 minuti, gratis) | [docs/INSTALLAZIONE.md](docs/INSTALLAZIONE.md) |
+| provarla senza Firebase (demo nel browser) | Home › Impostazioni › **Prova la demo** |
+| la mia copia, con i miei dati (10 minuti, gratis) | [docs/INSTALLAZIONE.md](docs/INSTALLAZIONE.md) · poi `setup.html` prepara `config.js` |
 | l'app su Android o Android TV | [pagina di download](https://mashaup.github.io/GameNight_Show/scarica.html) · [docs/ANDROID.md](docs/ANDROID.md) |
 | imparare a usarla | [docs/GUIDA.md](docs/GUIDA.md) |
 
-> **Hai già la tua copia?** A ogni nuova versione ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** ([come](docs/INSTALLAZIONE.md#23-regole-del-database)).
+> **Hai già la tua copia?** A ogni nuova versione ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** ([come](docs/INSTALLAZIONE.md#23-regole-del-database)). Per gli **account** della 2.0 attiva anche Google ed Email/password in Authentication ([passo 2.4.1](docs/INSTALLAZIONE.md#241-account-permanenti-google-ed-email-20-facoltativo-ma-consigliato)).
 
 ## Documentazione
 
@@ -79,7 +80,7 @@ Passo per passo, con tutte le schermate: [docs/GUIDA.md](docs/GUIDA.md).
 | [DATI](docs/DATI.md) | formato di esportazione e importazione |
 | [LINKS](docs/LINKS.md) | link ufficiali e configurazione remota (`config/links.json`) |
 | [PRIVACY](docs/PRIVACY.md) | cosa resta sul dispositivo, cosa va su Firebase e ai servizi facoltativi |
-| [AUDIT](docs/AUDIT.md) · [VERIFICA](docs/VERIFICA.md) | stato del progetto, piano, verifiche fatte e da fare a mano |
+| [TODO](TODO.md) | **l'unico elenco di cose da fare**: idee mancanti, configurazioni, prove a mano, limiti (e le tue voci) |
 | [CHANGELOG](CHANGELOG.md) | novità di ogni versione |
 
 ## Contribuire e community

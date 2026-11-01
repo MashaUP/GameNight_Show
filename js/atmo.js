@@ -329,6 +329,49 @@ const SCENES = {
 
 Object.assign(SCENES, SCENES_EXTRA);
 
+/**
+ * Pacchetto di atmosfera importato (2.1, idea 22): solo dati già controllati da show.js › parsePack
+ * (colori, puntini o emoji, direzione, velocità, sfondo sfumato). Niente codice dal pacchetto.
+ */
+export function registerPack(p) {
+  if (!p) { delete SCENES.pack; if (Atmo.scene === 'pack') Atmo.set('none'); return; }
+  const P = p.particles || {};
+  const dir = P.dir || 'drift';
+  // Immagine di sfondo del pacchetto (già controllata: solo data URI di un'immagine)
+  let img = null;
+  if (p.bg?.image) { img = new Image(); img.src = p.bg.image; }
+  const sp = Number(P.speed) || 1;
+  SCENES.pack = {
+    init(w, h) {
+      const n = Math.max(5, Math.min(120, Number(P.count) || 40));
+      return { parts: Array.from({ length: n }, (_, i) => ({ x: rand(0, w), y: rand(0, h), r: rand(2, 6), vx: rand(-12, 12), vy: rand(14, 40), ph: rand(0, 6.3), c: p.colors[i % p.colors.length], e: P.kind === 'emoji' ? P.emoji[i % P.emoji.length] : '' })) };
+    },
+    draw(c, w, h, s, night, t) {
+      if (p.bg) {
+        const g = c.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, p.bg.top); g.addColorStop(1, p.bg.bottom);
+        c.globalAlpha = 0.35; c.fillStyle = g; c.fillRect(0, 0, w, h); c.globalAlpha = 1;
+      }
+      if (img?.complete && img.naturalWidth) {
+        const r = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+        const iw = img.naturalWidth * r, ih = img.naturalHeight * r;
+        c.globalAlpha = 0.28; c.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih); c.globalAlpha = 1;
+      }
+      const dt = 0.033 * sp;
+      for (const q of s.parts) {
+        if (dir === 'up') q.y -= q.vy * dt; else if (dir === 'down') q.y += q.vy * dt; else if (dir === 'drift') { q.x += q.vx * dt; q.y += Math.sin(t / 1400 + q.ph) * 0.4; }
+        if (q.y < -20) q.y = h + 20; if (q.y > h + 20) q.y = -20; if (q.x < -20) q.x = w + 20; if (q.x > w + 20) q.x = -20;
+        const a = dir === 'twinkle' ? 0.25 + 0.6 * Math.abs(Math.sin(t / 900 + q.ph)) : 0.7;
+        c.globalAlpha = a;
+        if (q.e) { c.font = `${Math.round(q.r * 4 + 10)}px system-ui, sans-serif`; c.fillText(q.e, q.x, q.y); }
+        else { c.fillStyle = q.c; c.beginPath(); c.arc(q.x, q.y, q.r, 0, Math.PI * 2); c.fill(); }
+      }
+      c.globalAlpha = 1;
+    }
+  };
+  if (Atmo.scene === 'pack') Atmo.resize();
+}
+
 export const Atmo = {
   scene: 'none',
   canvas: null,

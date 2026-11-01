@@ -102,5 +102,14 @@ export default {
 
   'report.pdf.building': 'Preparo il PDF…',
   'report.pdf.failed': 'Non sono riuscito a creare il PDF: riprova.',
-  'report.rs.pdf': 'PDF'
+  'report.rs.pdf': 'PDF',
+
+  'report.del.title': 'Elimina la serata',
+  'report.del.lead': 'Puoi farlo perché sei il master che l’ha creata. Spariscono voti, giochi, resoconto, album e la serata dalla classifica di sempre e dalle statistiche del gruppo. Non si può annullare: se vuoi tenerne una copia, prima scarica il PDF o il backup del gruppo dalla TV.',
+  'report.del.btn': 'Elimina definitivamente la serata',
+  'report.del.confirm': 'Per eliminare per sempre la serata {code} (voti, resoconto, album e statistiche del gruppo) scrivi il suo codice: {code}',
+  'report.del.wrongCode': 'Il codice non corrisponde: la serata non è stata eliminata.',
+  'report.del.done': 'Serata eliminata',
+  'report.del.doneText': 'La serata {code} non c’è più: classifica di sempre e statistiche del gruppo sono già aggiornate.',
+  'report.del.denied': 'Il database non ha permesso l’eliminazione: può eliminarla solo il master che ha creato la serata. Non è cambiato niente.'
 };

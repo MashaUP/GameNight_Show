@@ -1,15 +1,15 @@
 // Schermata telefono (giocatore): ingresso con avatar, voto segreto, attesa del reveal.
 import {
-  isConfigured, connect, roomRef, groupRef, armadioRef, libraryRef, memberRef, dbRef, onValue, get, set, update, push, serverTimestamp, explainError,
-  trackConnection, serverNow
+  isConfigured, connect, roomRef, groupRef, armadioRef, libraryRef, memberRef, dbRef, onValue, get, set, update, push, remove, serverTimestamp, explainError,
+  trackConnection, serverNow, accountInfo
 } from './fb.js';
 import {
   $, esc, fmt, param, normalizeCode, sortedPlayers, activePlayers, compressImage, gameImage, gameImageHTML, toast,
   installImageFallback, showFatal, showNotConfigured, ICONS, PLAYER_COLORS, safeColor, nameKey, cleanName, asList, libInfo, libFits, connectionStatus,
   keepAwake, watchVersion, registerSW, randomCode, userError, applyTheme, themeSwitchHTML, watchBattery, compressPhoto, dbKey, qrSVG,
-  ErrLog, a11yHTML, voteTimer, timerColor, buzz, squarePhoto, rememberNight, pollChoices, pollValue
+  ErrLog, a11yHTML, voteTimer, timerColor, buzz, squarePhoto, rememberNight, pollChoices, pollValue, exportName
 } from './util.js';
-import { avatarHTML, avatarUri, avatarOptions, avatarParts } from './avatars.js';
+import { avatarHTML, avatarUri, avatarOptions, avatarParts, Seasonal } from './avatars.js';
 import {
   CRITERIA, gameStats, verdict, buildBoard, buildAwards, buildAllTime, personalStats, personKey, trophies, affinities,
   activeCriteria, progressFor, newAchievements, recommend,
@@ -17,7 +17,7 @@ import {
   nightChampions, awardTitle
 } from './stats.js';
 import { confettiBurst } from './fx.js';
-import { publicUrl, isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
+import { publicUrl, isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR, appIntentUrl } from './native.js';
 import { bindPhonePrep, gameRowHTML, tonightSummaryHTML, markTonight, Scanner, rulesCardHTML, planCardHTML, bringHTML } from './phone-prep.js';
 import { bindPhone, knock, checkCohost, tableHTML, paintSand, scoreHTML, QuizPhone, cardSectionHTML, bindCardSection, rivalsSectionHTML, seasonLineHTML, icsButtonHTML } from './phone-extras.js';
 import { renderShareImage, renderStoryImage, renderYearImage, shareOrDownload, nightDate } from './share.js';
@@ -27,13 +27,18 @@ import { sfxKey } from './customsfx.js';
 const allSfx = () => [...SFX_META, ...Object.entries(P.meta?.customSfx || {}).filter(([id, c]) => /^c[a-z0-9]{1,8}$/.test(id) && c?.l).map(([id, c]) => ({ k: sfxKey(id), icon: String(c.i || '🔔').slice(0, 8), label: String(c.l).slice(0, 24) }))];
 import { setRoomSafeMode } from './safe.js';
 import { Person, lookOf } from './person.js';
+import { pendingHandover, clearHandover } from './account.js';
+import { gameVoting } from './show.js';
+import { nextBoardHTML, boardEntry, suggEntry } from './next-board.js';
+import { reminderHTML, setReminderLead, syncReminder, webReminderTick } from './reminders.js';
+import { Tips, tipHTML, bindTips } from './tips.js';
 import { t, has, lang, fmtDate, fmtList, fmtNum, langSwitchHTML } from './i18n.js';
 import { bindSharedTimer, SharedTimer, TimerSheet, phoneExpire } from './sharedtimer.js';
 import { Favs, favFirst } from './favs.js';
 import { saveGame, newGameId, logEvent as armLog } from './collection.js';
 
 const app = $('#app');
-const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer'];
+const WATCHED = ['pick', 'meta', 'state', 'players', 'games', 'votes', 'poll', 'presence', 'claims', 'heartbeat', 'bets', 'profileClaims', 'profileGrants', 'scores', 'table', 'quiz', 'quizAns', 'quizScore', 'cohosts', 'tonight', 'wish', 'plan', 'rules', 'knows', 'timer', 'late'];
 const VOTE_KEYS = ['overall', 'coinv', 'sempl', 'rigioc', 'c1', 'c2', 'mvp', 'guess', 'comment'];
 const emptyVote = () => Object.fromEntries(VOTE_KEYS.map((k) => [k, null]));
 
@@ -55,7 +60,8 @@ const P = {
   addingGame: false,
   member: null,
   skipProfile: false,
-  showProfile: false,
+  // 1.11: dopo il cambio di lingua (che ricarica la pagina) si torna al profilo, dove si era scelto
+  showProfile: (() => { try { const v = sessionStorage.getItem('gnr_reopen_profile') === '1'; sessionStorage.removeItem('gnr_reopen_profile'); return v; } catch { return false; } })(),
   cohost: false,
   loaded: new Set(),
   screenKey: null,
@@ -82,6 +88,7 @@ registerSW();
 watchVersion();
 watchBattery();
 ErrLog.install();
+bindTips();
 // Android: il browser propone di installare l'app; il pulsante compare nella schermata iniziale.
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
@@ -173,7 +180,8 @@ document.addEventListener('click', async (e) => {
 
 /** Suggerimento per installare l'app sul telefono (non compare se è già installata). */
 function installHintHTML(code = '') {
-  if (isStandalone() || isApp()) return '';
+  if (isStandalone() || isApp() || !Tips.allowed('install', { cat: 'app', max: 4 })) return '';
+  Tips.shown('install');
   const apk = isAndroid() ? apkUrl() : '';
   const how = isIOS() ? t('ph.inst.ios') : apk ? t('ph.inst.androidApk') : t('ph.inst.android');
   return `
@@ -310,6 +318,23 @@ const Net = {
     this.paint();
   },
   /** Segue un invio: se resta in sospeso (rete assente) compare "In coda", quando parte "✓ sincronizzato". */
+  /**
+   * 2.1 (idea 70): come track, ma se l'invio fallisce davvero (permesso, rete caduta) resta in "Da riprovare"
+   * con il pulsante Riprova (tocca il pallino della rete). fn: funzione che rifà l'invio.
+   */
+  failed: [],
+  run(label, fn) {
+    const p = this.track(label, fn());
+    p.catch((err) => { this.failed.push({ label, fn, err: String(err?.code || err?.message || '').slice(0, 80), at: Date.now() }); this.failed = this.failed.slice(-8); this.paint(); });
+    return p;
+  },
+  async retry(i) {
+    const it = this.failed[i];
+    if (!it) return;
+    this.failed.splice(i, 1);
+    this.paint();
+    try { await this.run(it.label, it.fn); toast(`✓ ${t('ph.net.synced1', { what: netLabel(it.label) })}`); } catch (err) { toast(explainError(err), 'error'); }
+  },
   track(label, promise) {
     const id = ++this.seq;
     const item = { label, queued: !this.online };
@@ -339,9 +364,10 @@ const Net = {
   },
   paint() {
     const n = this.count();
-    const st = n ? 'queue' : this.online ? 'ok' : 'off';
-    const html = st === 'ok' ? `<i class="net-dot"></i><span class="sr-only">${esc(t('ph.net.ok'))}</span>` : st === 'off' ? `<i class="net-dot"></i><span>${esc(t('ph.net.off'))}</span>` : `<i class="net-dot"></i><span>${esc(t('ph.net.queue', { n }))}</span>`;
-    const title = st === 'ok' ? t('ph.net.okTitle') : st === 'off' ? t('ph.net.offTitle') : t('ph.net.queueTitle', { n });
+    const nf = this.failed.length;
+    const st = n ? 'queue' : nf ? 'fail' : this.online ? 'ok' : 'off';
+    const html = st === 'fail' ? `<i class="net-dot"></i><span>${esc(t('sync.failN', { n: nf }))}</span>` : st === 'ok' ? `<i class="net-dot"></i><span class="sr-only">${esc(t('ph.net.ok'))}</span>` : st === 'off' ? `<i class="net-dot"></i><span>${esc(t('ph.net.off'))}</span>` : `<i class="net-dot"></i><span>${esc(t('ph.net.queue', { n }))}</span>`;
+    const title = st === 'fail' ? t('sync.failTitle', { n: nf }) : st === 'ok' ? t('ph.net.okTitle') : st === 'off' ? t('ph.net.offTitle') : t('ph.net.queueTitle', { n });
     // Voto ancora in coda: la schermata "Voto inviato" lo dice chiaramente.
     const vt = document.getElementById('votedTitle');
     if (vt) {
@@ -365,8 +391,39 @@ const Net = {
 };
 document.addEventListener('click', (e) => {
   const pill = e.target.closest('[data-netpill]');
+  if (pill && Net.failed.length) { openFailed(); return; }
   if (pill) toast(pill.title, pill.dataset.st === 'ok' ? 'info' : 'warn');
 });
+window.addEventListener('gnr-reminder', (e) => toast(`🔔 ${e.detail}`));
+
+/** Operazioni non riuscite (2.1, idea 70): un elenco unico, ognuna con Riprova o Lascia stare. */
+/** Annuncio per i lettori di schermo che resta anche se la schermata cambia (regione sempre presente). */
+function announce(text) {
+  let el = document.getElementById('a11yLive');
+  if (!el) { el = document.createElement('p'); el.id = 'a11yLive'; el.className = 'sr-only'; el.setAttribute('aria-live', 'assertive'); document.body.appendChild(el); }
+  el.textContent = '';
+  setTimeout(() => { el.textContent = text; }, 50);
+}
+
+function openFailed() {
+  const el = document.createElement('div');
+  el.className = 'overlay overlay--sheet';
+  const paint = () => {
+    el.innerHTML = `<div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="sfTitle">
+      <div class="panel-head"><h2 id="sfTitle">⚠️ ${esc(t('sync.title'))}</h2><button type="button" class="icon-btn" data-sfclose aria-label="${esc(t('common.close'))}">${ICONS.x}</button></div>
+      ${Net.failed.length ? `<ul class="sync-list">${Net.failed.map((f, i) => `<li><b>${esc(netLabel(f.label))}</b> <small class="muted">${esc(fmtDate(f.at, { hour: '2-digit', minute: '2-digit' }))}</small><span class="rg-row"><button type="button" class="btn-sec btn-sec--sm" data-sfretry="${i}">${esc(t('sync.retry'))}</button><button type="button" class="link-btn" data-sfdrop="${i}">${esc(t('sync.drop'))}</button></span></li>`).join('')}</ul>` : `<p class="muted">${esc(t('sync.none'))}</p>`}
+    </div>`;
+  };
+  paint();
+  document.body.appendChild(el);
+  el.addEventListener('click', async (e) => {
+    if (e.target === el || e.target.closest('[data-sfclose]')) { el.remove(); return; }
+    const r = e.target.closest('[data-sfretry]');
+    if (r) { await Net.retry(Number(r.dataset.sfretry)); paint(); return; }
+    const d = e.target.closest('[data-sfdrop]');
+    if (d) { Net.failed.splice(Number(d.dataset.sfdrop), 1); Net.paint(); paint(); }
+  });
+}
 
 /** Battito ogni 5 s: la TV capisce in 15 s se il telefono si è spento, bloccato o è senza rete. */
 function ensureBeat() {
@@ -454,6 +511,8 @@ function openRoom(code) {
     onValue(roomRef(code, key), (snap) => {
       const val = snap.val();
       P[key] = (key === 'meta' || key === 'state' || key === 'poll') ? val : (val || {});
+      // Accessori stagionali accesi o spenti dalla TV: si ridisegna la schermata (gli avatar li mostrano)
+      if (key === 'meta' && Seasonal.on !== (val?.seasonal === true)) { Seasonal.set(val?.seasonal); P.screenKey = null; }
       P.loaded.add(key);
       render();
     }, (err) => showFatal(app, t('ph.connLost'), explainError(err)));
@@ -589,7 +648,7 @@ function nextNightHTML(next, key) {
 }
 
 async function answerRsvp(gid, key, name, answer) {
-  await Net.track('rsvp', set(groupRef(gid, `next/rsvp/${key}`), { name, answer }));
+  await Net.run('rsvp', () => set(groupRef(gid, `next/rsvp/${key}`), { name, answer }));
   toast(t(`ph.rsvp.toast.${answer}`));
 }
 
@@ -616,6 +675,9 @@ async function openNightSheet(n, gid) {
   const box = $('#nsAlbum', sheet);
   if (box) box.innerHTML = photos.length ? photos.map((p) => `<figure><img src="${esc(p.data)}" alt="${esc(p.caption || t('ph.mem.btn'))}"><figcaption>${esc(p.caption || '')}</figcaption></figure>`).join('') : `<p class="muted">${esc(t('ph.ns.noPhotos'))}</p>`;
 }
+
+// Il cambio di lingua ricarica la pagina: se si era nel profilo, ci si torna (e si ritrova la sezione Lingua).
+window.addEventListener('gnr-lang', () => { if (P.showProfile) { try { sessionStorage.setItem('gnr_reopen_profile', '1'); sessionStorage.setItem('gnr_reopen_lang', '1'); } catch { /* niente */ } } });
 
 function render() {
   if (!WATCHED.every((k) => P.loaded.has(k))) return;
@@ -652,10 +714,21 @@ function render() {
   }
   if (me) {
     P.wasIn = true;
+    if (pendingHandover(P.code, P.uid)) clearHandover();
   } else if (P.wasIn) {
     P.wasIn = false;
     P.profileEdit = false;
-    toast(banned ? t('ph.removed') : t('ph.notInRoom'), 'warn');
+    const moved = !banned && movedElsewhere();
+    P.movedTo = moved ? moved[0] : null;
+    toast(banned ? t('ph.removed') : moved ? t('ph.moved.toast') : t('ph.notInRoom'), 'warn');
+  }
+  // 2.0: aprendo la pagina, se il mio profilo è già in partita da un altro dispositivo lo dico subito
+  if (!me && !banned && P.movedTo === undefined) { const m0 = movedElsewhere(); P.movedTo = m0 ? m0[0] : null; }
+  // 2.0: dopo un cambio di account il telefono chiede da solo il suo posto con il gettone lasciato prima
+  const ho = !me && !banned && !P.claimSent && !P.handoverTried ? pendingHandover(P.code, P.uid) : null;
+  if (ho && P.players[ho.oldUid]) {
+    P.handoverTried = true;
+    sendClaim(ho.oldUid, { token: ho.token, pid: P.players[ho.oldUid].pid && P.players[ho.oldUid].pid === myPid() ? myPid() : null }).catch(() => {});
   }
 
   const phase = P.state?.phase || 'lobby';
@@ -664,14 +737,21 @@ function render() {
   const max = P.meta.maxPlayers || 8;
 
   let key;
+  if (P.lateGid && P.lateGid !== lateWindow()) P.lateGid = null;
   if (!me && banned) key = 'banned';
   else if (!me && (P.claims?.[P.uid] || P.claimCheck)) key = 'claim';
+  else if (!me && P.movedTo && P.players[P.movedTo]) key = 'moved';
   else if (!me && P.meta?.locked) key = 'locked';
   else if (!me) key = count >= max ? 'full' : 'join';
   else if (me.away) key = 'away';
   else if (P.profileEdit) key = 'join';
   else if (phase === 'voting' && P.games[gid]) {
+    P.lateGid = null;
     key = (P.votes[gid]?.[P.uid] && !P.editingVote) ? `voted:${gid}` : `vote:${gid}`;
+  } else if (lateWindow()) {
+    // 2.0: la regia ha aperto il voto (o la modifica) per un gioco già svelato
+    P.lateGid = lateWindow();
+    key = `vote:late:${P.lateGid}`;
   } else if (P.state?.paused) key = 'pause';
   else if (phase === 'reveal' && P.games[gid]) key = `reveal:${gid}`;
   else if (phase === 'awards') key = P.state?.done ? 'awards:done' : 'awards:wait';
@@ -1504,12 +1584,16 @@ async function joinAsPerson() {
   const look = lookOf(Person.data.info);
   const gid = P.meta?.groupId;
   if (!gid) {
+    // 2.0: lo stesso profilo personale è già in partita da un altro dispositivo → si chiede il posto (verificato)
+    const pid = myPid();
+    const prev = pid ? Object.entries(P.players).find(([uid, p]) => uid !== P.uid && p.pid === pid) : null;
+    if (prev) { await sendClaim(prev[0], { pid }); return; }
     if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(look.name))) throw userError(t('ph.pj.sameName', { name: look.name }));
     const active = activePlayers(P.players);
     if (!P.players[P.uid] && active.length >= (P.meta.maxPlayers || 8)) throw userError(t('ph.roomFull'));
     const taken = new Set(active.filter((p) => p.uid !== P.uid).map((p) => p.color));
     const color = taken.has(look.color) ? (PLAYER_COLORS.find((c) => !taken.has(c)) || look.color) : look.color;
-    await set(roomRef(P.code, `players/${P.uid}`), { name: look.name, style: look.style, seed: look.seed, color, opts: look.opts || null, photo: look.photo || null, motto: look.motto || null, memberId: null, joinedAt: P.players[P.uid]?.joinedAt || serverTimestamp() });
+    await set(roomRef(P.code, `players/${P.uid}`), { name: look.name, style: look.style, seed: look.seed, color, opts: look.opts || null, photo: look.photo || null, motto: look.motto || null, memberId: null, pid: myPid(), joinedAt: P.players[P.uid]?.joinedAt || serverTimestamp() });
     localStorage.setItem('gnr_name', look.name);
     return;
   }
@@ -1531,11 +1615,12 @@ async function joinAsPerson() {
 
 /** Entra nella stanza con il profilo salvato (o rientra al proprio posto se c'era già). */
 async function joinAsMember(m) {
-  const prev = Object.entries(P.players).find(([uid, p]) => p.memberId === m.id && uid !== P.uid);
+  const pid = myPid();
+  const prev = Object.entries(P.players).find(([uid, p]) => uid !== P.uid && (p.memberId === m.id || (pid && p.pid === pid)));
   if (prev) {
-    // Il profilo è già in partita da un altro telefono: la TV lo riconosce dal codice personale.
-    P.claimSent = true;
-    await set(roomRef(P.code, `claims/${P.uid}`), { target: prev[0], code: m.id, at: serverTimestamp() });
+    // Il profilo è già in partita da un altro telefono: la TV lo riconosce dal codice personale
+    // (e, dalla 2.0, dal profilo personale verificato dalle regole: rientro automatico).
+    await sendClaim(prev[0], { code: m.id, pid });
     return;
   }
   if (Object.entries(P.players).some(([uid, p]) => uid !== P.uid && nameKey(p.name) === nameKey(m.name))) {
@@ -1547,9 +1632,72 @@ async function joinAsMember(m) {
   const color = taken.has(m.color) ? (PLAYER_COLORS.find((c) => !taken.has(c)) || m.color) : m.color;
   await set(roomRef(P.code, `players/${P.uid}`), {
     name: m.name, style: m.style, seed: m.seed, color, memberId: m.id, joinedAt: serverTimestamp(),
-    opts: m.opts || null, photo: m.photo || null, motto: m.motto || null
+    opts: m.opts || null, photo: m.photo || null, motto: m.motto || null, pid: myPid()
   });
   localStorage.setItem('gnr_name', m.name);
+}
+
+/**
+ * Sotto "Entra come…": accesso con l'account (stessa identità su tutti i dispositivi) e, nel browser di
+ * Android, "Apri nell'app" (se l'app è installata si apre lì, senza creare un secondo giocatore).
+ */
+function joinExtrasHTML() {
+  const acc = accountInfo();
+  const bits = [];
+  if (acc?.anonymous) bits.push(`<a class="link-btn" href="index.html?accedi=1&amp;torna=${encodeURIComponent(`play.html?room=${P.code}`)}">🔐 ${esc(t('ph.acc.login'))}</a>`);
+  if (isAndroid() && !isApp()) bits.push(`<a class="link-btn" href="${esc(appIntentUrl(`play.html?room=${P.code}`))}">📲 ${esc(t('ph.acc.openApp'))}</a>`);
+  return bits.length ? `<p class="join-extras">${bits.join('<span aria-hidden="true"> · </span>')}</p>` : '';
+}
+
+/**
+ * Gioco già svelato per cui la regia ha aperto una finestra a questo telefono (late/<gioco>/<uid>):
+ * voto mancante, oppure modifica permessa e non ancora fatta. null se non c'è niente da fare.
+ */
+function lateWindow() {
+  for (const [gid, by] of Object.entries(P.late || {})) {
+    const w = by?.[P.uid];
+    const g = P.games?.[gid];
+    if (!w || g?.status !== 'revealed') continue;
+    const mine = P.votes?.[gid]?.[P.uid];
+    if (!mine) return gid;
+    if (w.edit && !(Number(mine.editedAt) >= Number(w.at || 0))) return gid;
+  }
+  return null;
+}
+/** Gioco del modulo di voto: quello in votazione, oppure quello del voto in ritardo. */
+const voteGid = () => P.lateGid || P.state.gameId;
+
+/** Profilo personale di questo dispositivo, se è davvero autorizzato (le regole lo verificano). */
+function myPid() {
+  const loc = Person.local();
+  return loc && Person.data?.pid === loc.pid ? loc.pid : null;
+}
+
+/**
+ * Richiesta del proprio posto (rientro da un altro dispositivo o dopo un cambio di account).
+ * extra: { code (profilo di gruppo), pid (profilo personale), token (passaggio di sessione) }: con pid o token
+ * le regole verificano che il dispositivo abbia diritto a quel posto e la TV lo sposta senza chiedere.
+ */
+async function sendClaim(target, extra = {}) {
+  P.claimSent = true;
+  const c = { target, at: serverTimestamp() };
+  if (extra.code) c.code = extra.code;
+  if (extra.pid) c.pid = extra.pid;
+  if (extra.token) c.token = extra.token;
+  try {
+    await set(roomRef(P.code, `claims/${P.uid}`), c);
+  } catch (err) {
+    // Gettone o profilo non più validi: si riprova con la sola richiesta (la TV chiede conferma)
+    if (extra.pid || extra.token) await set(roomRef(P.code, `claims/${P.uid}`), { target, at: serverTimestamp(), ...(extra.code ? { code: extra.code } : {}) });
+    else { P.claimSent = false; throw err; }
+  }
+}
+
+/** Il mio posto è passato a un altro dispositivo (stesso profilo): "Riprendi qui". */
+function movedElsewhere() {
+  const pid = myPid();
+  const mid = P.member?.id || profiles()[P.meta?.groupId] || null;
+  return Object.entries(P.players).find(([uid, p]) => uid !== P.uid && ((pid && p.pid === pid) || (mid && p.memberId === mid))) || null;
 }
 
 function reclaimHTML() {
@@ -1575,9 +1723,7 @@ function bindReclaim(el) {
     if (!p || (!mine && !confirm(t('ph.rc.confirm', { name: p.name })))) return;
     try {
       P.claimSent = true;
-      await set(roomRef(P.code, `claims/${P.uid}`), mine
-        ? { target: b.dataset.claim, code: P.member.id, at: serverTimestamp() }
-        : { target: b.dataset.claim, at: serverTimestamp() });
+      await sendClaim(b.dataset.claim, mine ? { code: P.member.id, pid: p.pid && p.pid === myPid() ? p.pid : null } : (p.pid && p.pid === myPid() ? { pid: p.pid } : {}));
     } catch (err) {
       P.claimSent = false;
       toast(explainError(err), 'error');
@@ -1601,6 +1747,31 @@ SCREENS.claim = {
       P.claimSent = false;
       set(roomRef(P.code, `claims/${P.uid}`), null).catch(() => {});
     });
+  }
+};
+
+/** Il profilo ora gioca da un altro dispositivo: niente sessioni doppie, ma si può riprendere il posto. */
+SCREENS.moved = {
+  mount(el) {
+    const p = P.players[P.movedTo];
+    el.innerHTML = `
+      <main class="phone phone--center">
+        ${phoneTop()}
+        <div class="wait-hero">${avatarHTML(p, '7rem', 'avatar--shadow')}</div>
+        <h1 class="ph-title">${esc(t('ph.moved.title'))}</h1>
+        <p class="ph-lead">${esc(t('ph.moved.lead', { name: p?.name || '' }))}</p>
+        <button type="button" class="btn btn-block" id="movedBack">${esc(t('ph.moved.back'))}</button>
+        <button type="button" class="link-btn" id="movedHome">${esc(t('ph.moved.home'))}</button>
+      </main>`;
+    $('#movedBack', el).addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      const target = P.movedTo;
+      const tp = P.players[target];
+      P.movedTo = null;
+      try { await sendClaim(target, { code: tp?.memberId || null, pid: tp?.pid && tp.pid === myPid() ? tp.pid : null }); } catch (err) { toast(explainError(err), 'error'); }
+      render();
+    });
+    $('#movedHome', el).addEventListener('click', () => { P.movedTo = null; goHome(); });
   }
 };
 
@@ -1696,7 +1867,7 @@ SCREENS.join = {
     el.innerHTML = `
       <main class="phone">
         ${phoneTop(undefined, me ? 'profileEdit' : 'home')}
-        ${me ? '' : `<div id="profileBox">${profileJoinHTML()}</div><div id="reclaimBox"></div>`}
+        ${me ? '' : `<div id="profileBox">${profileJoinHTML()}</div><div id="reclaimBox"></div>${joinExtrasHTML()}`}
         <h1 class="ph-title">${esc(me ? t('home.me.title') : t('ph.join.who'))}</h1>
         <div class="me-row">
           <span id="mePreview"></span>
@@ -1726,6 +1897,8 @@ SCREENS.join = {
         </div>
         <h2 id="colorLabel">${esc(t('home.ed.color'))}</h2>
         <div class="swatches" id="swatches" role="radiogroup" aria-labelledby="colorLabel"></div>
+        ${me ? '' : `<label class="quick-toggle guest-toggle"><input type="checkbox" id="guestIn" ${P.form.guest ? 'checked' : ''}><span><b>${esc(t('ph.guest.label'))}</b><small class="muted">${esc(t(P.meta.groupId ? 'ph.guest.hintGroup' : 'ph.guest.hint'))}</small></span></label>`}
+        ${me?.guest ? `<p class="muted small">🎟️ ${esc(t('ph.guest.you'))}</p>` : ''}
         <p class="form-error" id="joinErr" role="alert"></p>
         <button type="button" class="btn btn-block" id="joinBtn">${esc(me ? t('ph.join.save') : t('ph.join.go'))}</button>
         ${me ? `<button type="button" class="link-btn" id="cancelEdit">${esc(t('common.cancel'))}</button>` : ''}
@@ -1955,9 +2128,12 @@ SCREENS.join = {
     const o = P.form.options[P.form.pick];
     const btn = $('#joinBtn');
     btn.disabled = true;
+    // 1.11 (idea 5): ospite = niente profilo di gruppo né profilo personale; stasera vota come tutti
+    const guest = me ? Boolean(me.guest) : Boolean($('#guestIn')?.checked);
+    P.form.guest = guest;
     try {
       let memberId = me?.memberId || null;
-      if (P.meta.groupId) {
+      if (P.meta.groupId && !guest) {
         const data = { name, style: o.style, seed: o.seed, color: P.form.color, groupId: P.meta.groupId, ...avatarExtras() };
         try {
           if (memberId) await update(memberRef(memberId), data);
@@ -1973,7 +2149,12 @@ SCREENS.join = {
       const look = { name, style: o.style, seed: o.seed, color: P.form.color, ...avatarExtras() };
       const linked = !Person.local() || !memberId || Person.data?.groups?.[P.meta.groupId] === memberId;
       (async () => {
-        if (!Person.local()) await Person.create(look, memberId && P.meta.groupId ? { groups: { [P.meta.groupId]: memberId } } : {});
+        if (guest) return;
+        if (!Person.local()) {
+          await Person.create(look, memberId && P.meta.groupId ? { groups: { [P.meta.groupId]: memberId } } : {});
+          // 2.0: il posto nella stanza ricorda il profilo personale (serve per rientrare da un altro dispositivo)
+          if (Person.data?.pid) update(roomRef(P.code, `players/${P.uid}`), { pid: Person.data.pid }).catch(() => {});
+        }
         else if (linked && (me || !P.meta.groupId || !Person.data?.groups?.[P.meta.groupId])) {
           if (memberId && P.meta.groupId) await Person.linkGroup(P.meta.groupId, memberId);
           if (me) await Person.saveLook(look);
@@ -1985,10 +2166,12 @@ SCREENS.join = {
         seed: o.seed,
         color: P.form.color,
         ...avatarExtras(),
-        memberId: memberId || null,
+        memberId: guest ? null : (memberId || null),
+        guest: guest || null,
+        pid: guest ? null : myPid(),
         joinedAt: me?.joinedAt || serverTimestamp()
       });
-      localStorage.setItem('gnr_name', name);
+      if (!guest) localStorage.setItem('gnr_name', name);
       P.profileEdit = false;
       render();
     } catch (e) {
@@ -2009,8 +2192,8 @@ function avatarExtras() {
 }
 
 function newCodeHTML() {
-  if (!P.newCode) return '';
-  return `<div class="new-code">${t('ph.newCode', { code: `<b>${esc(P.newCode)}</b>` })}</div>`;
+  if (!P.newCode || !Tips.allowed('new-code', { cat: 'profile', max: 4 })) return '';
+  return tipHTML('new-code', `<div class="new-code">${t('ph.newCode', { code: `<b>${esc(P.newCode)}</b>` })}</div>`);
 }
 
 // Pulsanti presenti in più schermate: un solo ascoltatore per tutta la pagina.
@@ -2027,12 +2210,38 @@ SCREENS.profile = {
     const key = personKey(me);
     const nextBox = $('#myNext');
     if (!gid) { ['#myNext', '#myInsights', '#myMemories', '#myWrapped'].forEach((s) => { $(s).hidden = true; }); return; }
-    nextBox.innerHTML = `<h2>📅 ${esc(t('ph.next.title'))}</h2>${nextNightHTML(P.next, key)}${icsButtonHTML(P.next)}${bringHTML(P.next, key)}
+    nextBox.innerHTML = `<h2>📅 ${esc(t('ph.next.title'))}</h2>${nextNightHTML(P.next, key)}${icsButtonHTML(P.next)}${bringHTML(P.next, key)}${reminderHTML(P.next)}${nextBoardHTML(P.next, key)}
       <details class="next-set"><summary>${esc(P.next?.at ? t('ph.next.change') : t('ph.next.propose'))}</summary>
         <div class="next-set-body"><label class="sr-only" for="pnAt">${esc(t('ph.next.when'))}</label><input class="input" type="datetime-local" id="pnAt">
         <label class="sr-only" for="pnPlace">${esc(t('ph.next.place'))}</label><input class="input" id="pnPlace" maxlength="60" placeholder="${esc(t('ph.next.placePh'))}">
         <button type="button" class="btn-sec" id="pnSave">${esc(t('common.save'))}</button></div></details>`;
+    // 2.1 (idea 69): promemoria (notifica nell'app, avviso nel browser con la pagina aperta)
+    syncReminder(P.next, P.meta?.groupName || '').catch(() => {});
+    webReminderTick(P.next, P.meta?.groupName || '');
+    nextBox.onchange = async (e) => {
+      const sel = e.target.closest('[data-remind]');
+      if (!sel) return;
+      setReminderLead(sel.value);
+      const r = await syncReminder(P.next, P.meta?.groupName || '').catch(() => 'denied');
+      toast(t(`rem.r.${r}`), r === 'denied' ? 'warn' : 'info');
+    };
+    // 2.1 (idee 65 e 66): bacheca e suggerimenti della prossima serata
+    nextBox.onsubmit = async (e) => {
+      const f = e.target.closest('[data-nbform]');
+      if (!f) return;
+      e.preventDefault();
+      const inp = f.querySelector('input');
+      try {
+        const kind = f.dataset.nbform;
+        const entry = (kind === 'board' ? boardEntry : suggEntry)(inp.value, { key, name: me.name });
+        await Net.run(`nb-${kind}`, () => set(push(groupRef(gid, `next/${kind}`)), { ...entry, at: serverTimestamp() }));
+        inp.value = '';
+        toast(t(kind === 'board' ? 'nb.boardDone' : 'nb.suggDone'));
+      } catch (err) { toast(err.code === 'short' ? t('nb.short') : explainError(err), 'error'); }
+    };
     nextBox.onclick = async (e) => {
+      const del = e.target.closest('[data-nbdel]');
+      if (del) { remove(groupRef(gid, `next/${del.dataset.nbdel}`)).catch((err) => toast(explainError(err), 'error')); return; }
       const r = e.target.closest('[data-rsvp]');
       if (r) { try { await answerRsvp(gid, key, me.name, r.dataset.rsvp); } catch (err) { toast(explainError(err), 'error'); } return; }
       if (e.target.closest('#pnSave')) {
@@ -2080,7 +2289,7 @@ SCREENS.profile = {
     const ys = $('#myYearShare');
     if (ys) ys.onclick = async () => {
       ys.disabled = true;
-      try { await shareOrDownload(await renderYearImage(w, { group: P.meta?.groupName || '', color: P.identity?.color }), `gamenight_anno_${w.year}.png`, t('year.shareText', { year: String(w.year) })); } catch (err) { toast(explainError(err), 'error'); }
+      try { await shareOrDownload(await renderYearImage(w, { group: P.meta?.groupName || '', color: P.identity?.color }), exportName({ group: P.meta?.groupName || '', kind: t('exp.k.year'), extra: String(w.year), ext: 'png' }), t('year.shareText', { year: String(w.year) })); } catch (err) { toast(explainError(err), 'error'); }
       ys.disabled = false;
     };
   },
@@ -2172,6 +2381,12 @@ SCREENS.profile = {
       </main>`;
     bindEditProfile(el);
     bindInstall(el);
+    try {
+      if (sessionStorage.getItem('gnr_reopen_lang') === '1') {
+        sessionStorage.removeItem('gnr_reopen_lang');
+        setTimeout(() => $('#phLang', el)?.scrollIntoView({ block: 'center' }), 60);
+      }
+    } catch { /* niente */ }
     if (mid && $('#profQr', el)) {
       const url = publicUrl('play.html');
       url.search = '';
@@ -2409,7 +2624,7 @@ const Regia = {
     const st = P.state || {};
     const phase = st.phase || 'lobby';
     const gid = st.gameId;
-    const sig = JSON.stringify([phase, gid, st.done, st.paused, P.meta?.ambient, st.playStart, st.event?.id, P.nights && Object.keys(P.nights).length, P.poll, P.votes?.[gid], Object.keys(P.players), Object.keys(P.library || {}), P.games?.[gid]?.status, P.presence]);
+    const sig = JSON.stringify([phase, gid, st.done, st.paused, P.meta?.ambient, P.meta?.publicTv, st.playStart, st.event?.id, P.nights && Object.keys(P.nights).length, P.poll, P.votes?.[gid], Object.keys(P.players), Object.keys(P.library || {}), P.games?.[gid]?.status, P.presence]);
     if (sig === this.sig) return;
     this.sig = sig;
     const btn = (cmd, label, cls = 'btn btn-block', extra = '') => `<button type="button" class="${cls}" data-cmd="${cmd}" ${extra}>${label}</button>`;
@@ -2467,7 +2682,7 @@ const Regia = {
     else html += btn('pause', esc(t('ph.rg.pause')), 'btn-sec btn-block');
     // Timer condiviso e schermata ambientale della TV (1.6)
     if (phase !== 'awards') {
-      html += `<div class="rg-row"><button type="button" class="btn-sec" data-open-timer>⏱️ ${esc(t('timer.title'))}</button>${btn('ambient', `🌙 ${esc(P.meta?.ambient ? t('amb.off') : t('amb.on'))}`, 'btn-sec', `data-arg="${P.meta?.ambient ? '0' : '1'}" data-argk="on"`)}</div>`;
+      html += `<div class="rg-row"><button type="button" class="btn-sec" data-open-timer>⏱️ ${esc(t('timer.title'))}</button>${btn('ambient', `🌙 ${esc(P.meta?.ambient ? t('amb.off') : t('amb.on'))}`, 'btn-sec', `data-arg="${P.meta?.ambient ? '0' : '1'}" data-argk="on"`)}${btn('public', `📺 ${esc(P.meta?.publicTv ? t('tvpub.off') : t('tvpub.on'))}`, 'btn-sec', `data-arg="${P.meta?.publicTv ? '0' : '1'}" data-argk="on"`)}</div>`;
     }
     $('#rgBody', this.sheet).innerHTML = html || `<p class="muted">${esc(t('ph.rg.nothing'))}</p>`;
   }
@@ -2704,8 +2919,7 @@ SCREENS.awards = {
           board,
           awards
         });
-        const date = new Date().toISOString().slice(0, 10);
-        const how = await shareOrDownload(blob, `GameNight_Show_${date}.png`, t('ph.aw.shareText'));
+        const how = await shareOrDownload(blob, exportName({ group: P.meta.groupName || '', at: P.meta.createdAt, kind: t('exp.k.image'), ext: 'png' }), t('ph.aw.shareText'));
         if (how === 'downloaded') toast(t('ph.aw.imgSaved'));
       } catch (err) {
         console.error(err);
@@ -2730,7 +2944,7 @@ SCREENS.awards = {
           awards: awards.filter((a) => !['mvp', 'wins'].includes(a.key)).map((a) => ({ title: a.title, who: a.game ? a.game.name : namesList(a.players.map((p) => p.name)) })),
           facts: `${t('ph.mem.games', { n: board.length })} · ${t('lib.players', { n: activePlayers(P.players).length })}`
         });
-        const how = await shareOrDownload(blob, `GameNight_Show_${t('ph.aw.storyFile')}_${new Date().toISOString().slice(0, 10)}.png`, t('ph.aw.ourNight'));
+        const how = await shareOrDownload(blob, exportName({ group: P.meta.groupName || '', at: P.meta.createdAt, kind: t('exp.k.story'), ext: 'png' }), t('ph.aw.ourNight'));
         if (how === 'downloaded') toast(t('ph.aw.storySaved'));
       } catch (err) {
         console.error(err);
@@ -2747,7 +2961,8 @@ SCREENS.awards = {
 
 SCREENS.vote = {
   mount(el) {
-    const gid = P.state.gameId;
+    const gid = voteGid();
+    const lateMode = Boolean(P.lateGid);
     const g = P.games[gid];
     const mine = P.votes[gid]?.[P.uid];
     if (P.voteGameId !== gid) {
@@ -2758,7 +2973,7 @@ SCREENS.vote = {
         P.vote = emptyVote();
         for (const k of VOTE_KEYS) if (mine[k] !== undefined) P.vote[k] = mine[k];
         // Criterio non presente in un voto già inviato = "Non giudico"
-        for (const c of activeCriteria(P.meta.voting)) if (typeof mine[c.key] !== 'number' && !g.quick) P.vote[c.key] = 'na';
+        for (const c of activeCriteria(gameVoting(g, P.meta))) if (typeof mine[c.key] !== 'number' && !g.quick) P.vote[c.key] = 'na';
       } else {
         P.vote = draft || emptyVote();
       }
@@ -2768,17 +2983,20 @@ SCREENS.vote = {
     const list = others().filter((p) => !g.players || g.players[p.uid]);
     this.needMvp = list.length > 0;
     this.quick = Boolean(g.quick);
-    this.crits = this.quick ? [] : activeCriteria(P.meta.voting);
+    this.crits = this.quick ? [] : activeCriteria(gameVoting(g, P.meta));
     const spectator = Boolean(g.players && !g.players[P.uid]);
     const noteKey = `${P.code}_${gid}`;
     const note = privateNotes()[noteKey]?.text || '';
 
+    // 2.0: le righe di aiuto del voto si vedono solo le prime volte (poi restano solo i controlli)
+    const hints = Tips.allowed('vote-hints', { cat: 'vote', max: 6 });
     el.innerHTML = `
-      <main class="phone phone--vote">
+      <main class="phone phone--vote ${hints ? '' : 'no-hints'}">
         <div class="fuse" id="fuse" hidden role="timer">
           <div class="fuse-track" aria-hidden="true"><i class="fuse-rope" id="fuseRope"></i><b class="fuse-spark" id="fuseSpark"><i></i><i></i><i></i></b></div>
           <span class="fuse-txt" id="fuseTxt"></span>
         </div>
+        ${lateMode ? `<p class="late-banner">🗳️ ${esc(t(mine ? 'ph.v.lateEdit' : 'ph.v.late'))}</p>` : ''}
         <div class="ph-row">
           <span class="chip chip--tomato">${esc(t('ph.v.game', { n: String(g.order || '') }))}</span>
           <span class="secret">${ICONS.lock}<span>${esc(t('ph.v.secret'))}</span></span>
@@ -2807,7 +3025,7 @@ SCREENS.vote = {
           <fieldset class="vblock">
             <legend class="vlabel">${esc(c.label)}</legend>
             <p class="vhint">${esc(c.hint)}</p>
-            <div class="pips-row" data-crit="${c.key}" style="--cc:${c.color}">
+            <div class="pips-row" data-crit="${c.key}" style="--cc:${c.color}" role="group" aria-label="${esc(c.label)}">
               ${[1, 2, 3, 4, 5].map((k) => `<button type="button" class="pip-btn" data-k="${k}" aria-pressed="false" aria-label="${esc(t('ph.v.pipAria', { crit: c.label, n: k }))}">${k}</button>`).join('')}
             </div>
             <button type="button" class="na-btn" data-na="${c.key}" aria-pressed="false">${esc(t('ph.v.na'))}</button>
@@ -2847,8 +3065,11 @@ SCREENS.vote = {
 
         <p class="form-error" id="voteErr" role="alert"></p>
         <button type="button" class="btn btn-block" id="sendVote">${esc(mine ? t('ph.v.update') : t('ph.v.send'))}</button>
+        ${mine && !lateMode ? `<button type="button" class="link-btn center" id="cancelEdit">${esc(t('ph.v.keep'))}</button>` : ''}
         <p class="muted center small">${esc(t('ph.v.hidden'))}</p>
       </main>`;
+    // 2.0: "Tieni il voto di prima" (si torna indietro senza cambiare niente)
+    $('#cancelEdit', el)?.addEventListener('click', () => { P.editingVote = false; P.voteGameId = null; render(); });
 
     const range = $('#overall', el);
     const take = () => {
@@ -2864,7 +3085,7 @@ SCREENS.vote = {
       P.vote[k] = P.vote[k] === 'na' ? null : 'na';
       this.paint();
     }));
-    $('#voteComment', el).addEventListener('input', (e) => { P.vote.comment = e.target.value; saveDraft(P.state.gameId, P.vote); });
+    $('#voteComment', el).addEventListener('input', (e) => { P.vote.comment = e.target.value; saveDraft(voteGid(), P.vote); });
     $('#privNote', el).addEventListener('input', (e) => saveNote(noteKey, g.name, e.target.value));
     el.querySelectorAll('.pips-row').forEach((row) => row.addEventListener('click', (e) => {
       const b = e.target.closest('[data-k]');
@@ -3006,6 +3227,8 @@ SCREENS.vote = {
     range.style.setProperty('--f', v.overall ? String((v.overall - 1) / 9) : '0');
     out.textContent = v.overall ?? '?';
     out.classList.toggle('is-set', Boolean(v.overall));
+    // 2.1 (idea 18): il lettore di schermo legge "7 su 10" invece di un numero senza contesto
+    range.setAttribute('aria-valuetext', v.overall ? t('a11y.voteValue', { n: v.overall }) : t('a11y.voteUnset'));
 
     document.querySelectorAll('.pips-row').forEach((row) => {
       const val = v[row.dataset.crit];
@@ -3047,7 +3270,7 @@ SCREENS.vote = {
       $('#guessClear').hidden = v.guess === null || v.guess === undefined;
     }
     $('#voteErr').textContent = '';
-    saveDraft(P.state.gameId, v);
+    saveDraft(voteGid(), v);
   },
 
   async send() {
@@ -3060,10 +3283,16 @@ SCREENS.vote = {
       $('#voteErr').textContent = t('ph.v.missing', { list: missing.join(', ') });
       return;
     }
-    const gid = P.state.gameId;
+    const gid = voteGid();
     const btn = $('#sendVote');
     btn.disabled = true;
     const data = { overall: v.overall, at: serverTimestamp() };
+    // 2.0: voto in ritardo (late) o cambiato con il permesso della regia (editedAt), sempre segnato
+    if (P.lateGid) {
+      const prev = P.votes?.[gid]?.[P.uid];
+      if (prev) Object.assign(data, { editedAt: serverTimestamp(), by: 'self', ...(prev.late ? { late: true } : {}) });
+      else Object.assign(data, { late: true, by: 'self' });
+    }
     for (const c of this.crits) if (typeof v[c.key] === 'number') data[c.key] = v[c.key];
     if (v.mvp) data.mvp = v.mvp;
     if (typeof v.guess === 'number') data.guess = v.guess;
@@ -3074,6 +3303,8 @@ SCREENS.vote = {
       await Net.track('vote', set(roomRef(P.code, `votes/${gid}/${P.uid}`), data));
       outboxClear();
       clearDrafts();
+      Tips.bump('vote-hints');
+      announce(t('a11y.voteSent', { n: v.overall }));
       P.editingVote = false;
       if (navigator.vibrate) navigator.vibrate(30);
       render();
@@ -3121,7 +3352,7 @@ SCREENS.voted = {
     const mvp = mine.mvp ? (P.players[mine.mvp] || { name: t('ph.exPlayer') }) : null;
     $('#myVote').innerHTML = `
       <div class="my-vote-head"><b class="vgame-name">${esc(g.name)}</b><span class="score-badge is-set">${mine.overall}</span></div>
-      ${activeCriteria(P.meta.voting).some((c) => typeof mine[c.key] === 'number') ? `<div class="my-vote-crit">${activeCriteria(P.meta.voting).map((c) => `<span class="bcrit-item" style="--cc:${c.color}">${esc(c.short || c.label)} ${typeof mine[c.key] === 'number' ? mine[c.key] : '—'}</span>`).join('')}</div>` : ''}
+      ${activeCriteria(gameVoting(g, P.meta)).some((c) => typeof mine[c.key] === 'number') ? `<div class="my-vote-crit">${activeCriteria(gameVoting(g, P.meta)).map((c) => `<span class="bcrit-item" style="--cc:${c.color}">${esc(c.short || c.label)} ${typeof mine[c.key] === 'number' ? mine[c.key] : '—'}</span>`).join('')}</div>` : ''}
       ${mine.comment ? `<p class="my-vote-guess">«${esc(mine.comment)}»</p>` : ''}
       ${typeof mine.guess === 'number' ? `<p class="my-vote-guess">${t('ph.v.myGuess', { n: `<b>${fmt(mine.guess, Number.isInteger(mine.guess) ? 0 : 1)}</b>` })}</p>` : ''}
       ${mvp ? `<div class="my-vote-mvp">${avatarHTML({ ...mvp, uid: mine.mvp }, '2.4rem')}<span>MVP: <b>${esc(mvp.name)}</b></span></div>` : ''}`;

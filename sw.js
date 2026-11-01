@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '1.10.0';
+const VERSION = '2.1.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261024a';
+const BUILD = '20261101b';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -11,6 +11,7 @@ const SHELL = [
   "host.html",
   "play.html",
   "test.html",
+  "setup.html",
   "manifest.webmanifest",
   "css/style.css",
   "css/ui.css",
@@ -27,6 +28,8 @@ const SHELL = [
   "js/lang/it-feat.js",
   "js/lang/it-misc.js",
   "js/lang/it-tvx.js",
+  "js/lang/it-mem.js",
+  "js/lang/it-v2.js",
   "js/lang/en-report.js",
   "js/lang/en-selftest.js",
   "js/lang/en-voice.js",
@@ -37,6 +40,8 @@ const SHELL = [
   "js/lang/en-feat.js",
   "js/lang/en-misc.js",
   "js/lang/en-tvx.js",
+  "js/lang/en-mem.js",
+  "js/lang/en-v2.js",
   "ludoteca.html",
   "armadio.html",
   "js/armadio.js",
@@ -63,6 +68,19 @@ const SHELL = [
   "js/library.js",
   "js/music.js",
   "js/report.js",
+  "js/nights.js",
+  "js/night-fix.js",
+  "js/manual-search.js",
+  "js/discord.js",
+  "js/trackers.js",
+  "js/setup.js",
+  "js/demo-db.js",
+  "js/notices.js",
+  "js/reminders.js",
+  "js/challenge.js",
+  "js/next-board.js",
+  "js/arm-proposals.js",
+  "js/history-check.js",
   "js/pdfdoc.js",
   "js/sfx.js",
   "js/safe.js",
@@ -83,6 +101,18 @@ const SHELL = [
   "js/ambient.js",
   "js/favs.js",
   "js/bgg.js",
+  "js/insights.js",
+  "js/traditions.js",
+  "js/tv-memory.js",
+  "js/account.js",
+  "js/tv-votes.js",
+  "js/show.js",
+  "js/tv-show.js",
+  "js/tv-screens.js",
+  "js/tv-panels.js",
+  "js/tips.js",
+  "js/templates.js",
+  "js/barcode.js",
   "js/manuals.js",
   "js/portability.js",
   "js/datacenter.js",
