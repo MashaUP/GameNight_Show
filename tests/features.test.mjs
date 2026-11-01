@@ -192,6 +192,8 @@ test('portabilità: file rovinati, estranei o di versioni non supportate', async
 
 test('BoardGameGeek: scheda → campi dell’armadio, senza sovrascrivere in silenzio', async () => {
   const B = await import('../js/bgg.js');
+  // js/services.js può avere l'indirizzo del proxy vero: qui si prova il caso "nessun proxy"
+  B.setBggProxy('');
   assert.equal(B.bggEnabled(), false, 'senza proxy l’integrazione è spenta');
   B.setBggProxy('javascript:alert(1)');
   assert.equal(B.bggEnabled(), false, 'indirizzo non https rifiutato');

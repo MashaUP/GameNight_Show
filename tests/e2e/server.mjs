@@ -136,6 +136,9 @@ function serve(port, { rules = false, app = false } = {}) {
     if (u.pathname === '/__dump') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(db.tree, null, 1)); return; }
     const f = decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname);
     if (f === '/js/config.js') { res.setHeader('content-type', TYPES['.js']); res.end(FAKE_CONFIG); return; }
+    // Le prove non parlano mai con il proxy BGG vero (configurato in js/services.js): di base è spento,
+    // le prove che lo usano lo simulano (data16, barcode17).
+    if (f === '/js/services.js') { res.setHeader('content-type', TYPES['.js']); res.end("export const BGG_PROXY_URL = '';\nexport const LINKS_URL = '';\n"); return; }
     if (app && f === '/js/site.js') { res.setHeader('content-type', TYPES['.js']); res.end(APP_SITE); return; }
     let file = path.join(ROOT, f);
     if (f === '/vendor/firebase.js') file = path.join(HERE, 'fakefb.js');
