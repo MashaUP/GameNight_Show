@@ -1,5 +1,13 @@
 # Novità
 
+## 2.1.1 · Catalogo pubblico sempre aggiornato, controlli su GitHub più solidi (1 novembre 2026)
+
+**Perché 2.1.1 (PATCH)**: una correzione e i controlli automatici, nessuna funzione nuova. Niente da cambiare in Firebase oltre a quanto chiesto dalla 2.1.0. La release dell'app Android da pubblicare è `v2.1.1` (comprende tutta la 2.1).
+
+- **Armadio, catalogo pubblico**: una modifica fatta proprio mentre il catalogo si stava aggiornando da solo veniva considerata "già pubblicata" e il catalogo restava indietro finché non si cambiava di nuovo quel gioco. Ora la copia si calcola prima di scrivere, gli aggiornamenti vanno uno alla volta e, se nel frattempo è cambiato qualcosa, ne parte subito un altro.
+- **Controlli su GitHub (Actions)**: server fissati su Ubuntu 24.04 e Playwright 1.63 (con "ubuntu-latest" passato a Ubuntu 26 l'installazione di Playwright 1.56 falliva); più tempo per le prove nel browser; se una prova fallisce, il motivo compare direttamente nel registro.
+- **Prove nel browser**: niente Internet durante le prove, come sul computer di sviluppo (prima su GitHub la rete c'era e i risultati potevano cambiare); le prove dell'armadio aspettano il database invece di attese fisse; prove su Firefox e WebKit in un controllo a parte, da avviare a mano (Actions › "Altri browser").
+
 ## 2.1.0 · Tutte le idee del backlog: regia dello show, gruppo, armadio, integrazioni (1 novembre 2026)
 
 > **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica**. Per i promemoria nell'app Android serve la nuova APK (release `v2.1.0`).
@@ -44,8 +52,6 @@
 - `sounds.js`: bus per voce, segnali e atmosfere; abbassamento con più motivi. `fx.js`: quantità di effetti per scena. `atmo.js`: scena "pack".
 - Regole: `nights/$room/games/*` e `fixes` (creatore), `groupOrgKeys`, `groupOrgKeyClaims`, `groups/$gid/organizers`, `templates` per gli organizzatori, `armadi/$aid/proposals`, `challenges`, `next/board`, `next/sugg`, `identity/theme`, `privacy/photosDays`, eliminazione delle foto da parte di proprietario/admin, `info/keepLogDays`, `meta/chaosOff|chaosWheel|maxMinutes|maxGames`, `templates/*/s/maxMinutes|maxGames`.
 - Android: plugin `@capacitor/local-notifications` 8.3.1 e permesso `POST_NOTIFICATIONS`.
-- CI: prove su Firefox e WebKit in un controllo a parte, da avviare a mano (Actions › "Altri browser").
-- CI: server di GitHub fissati su Ubuntu 24.04 e Playwright 1.63 (con "ubuntu-latest" passato a Ubuntu 26 l'installazione di Playwright 1.56 falliva).
 - **Regia divisa in moduli** (idea 76): `tv-screens.js` (tra un gioco e l'altro, classifica, premiazione, sondaggio, Di sempre) e `tv-panels.js` (armadio della serata, esportazioni, modelli, scheda del gioco, album); `host.js` da 7.400 a 5.400 righe.
 - **Cronologia del gruppo** (Di sempre › Analisi › Cronologia): prima serata, traguardi, nuovi arrivati, giochi ripresi dopo mesi, record e cambi del più amato.
 - Ritmo del reveal per scena (lento, normale, veloce); pacchetti di atmosfera con immagine di sfondo; **domande per modalità** anche nelle analisi (Di sempre › Analisi › Gusti); collezione BGG completata subito con giocatori, durata e peso.

@@ -265,15 +265,30 @@ async function loadPubPrev() {
     schedulePub();
   } catch { A.pubPrev = null; }
 }
+// Copia di quello che il catalogo conterrà con questi giochi: va calcolata PRIMA di scrivere (2.1.1).
+// Prima si ricalcolava dopo la scrittura, quando nel frattempo poteva essere arrivata un'altra modifica:
+// risultava "già pubblicata" e il catalogo restava indietro finché non si cambiava di nuovo quel gioco.
+const pubSnapshot = (lib, fields) => Object.fromEntries(Object.entries(lib || {}).filter(([, it]) => pubIncludes(it, fields)).map(([id, it]) => [id, pubGame(it, fields)]));
+let pubBusy = false;
+let pubAgain = false;
 function schedulePub() {
   if (!canEdit() || !A.share?.token || A.pubPrev === null || !A.loaded) return;
   clearTimeout(pubTimer);
-  pubTimer = setTimeout(async () => {
-    try {
-      await syncPublic(A.share.token, A.aid, A.info, A.lib, A.pubFields, A.pubPrev);
-      A.pubPrev = Object.fromEntries(items().filter((it) => pubIncludes(it, A.pubFields)).map((it) => [it.id, pubGame(it, A.pubFields)]));
-    } catch { /* riprovo alla prossima modifica */ }
-  }, 2500);
+  pubTimer = setTimeout(runPub, 2500);
+}
+async function runPub() {
+  if (pubBusy) { pubAgain = true; return; } // una scrittura alla volta: questa riparte appena finisce l'altra
+  if (!canEdit() || !A.share?.token || A.pubPrev === null) return;
+  pubBusy = true;
+  const tok = A.share.token; const lib = A.lib; const fields = A.pubFields;
+  const snap = pubSnapshot(lib, fields);
+  try {
+    await syncPublic(tok, A.aid, A.info, lib, fields, A.pubPrev);
+    if (A.share?.token === tok && A.pubPrev !== null) A.pubPrev = snap;
+  } catch { /* riprovo alla prossima modifica */ } finally {
+    pubBusy = false;
+    if (pubAgain || A.lib !== lib) { pubAgain = false; schedulePub(); } // arrivato altro durante la scrittura
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1997,8 +2012,11 @@ function openShare() {
   el.addEventListener('change', (e) => { if (e.target.closest('input[type=checkbox]') && !$('#shPrevBox', el).hidden) preview(); });
   const publish = async (tk, fields, prev) => {
     A.pubFields = fields;
-    const n = await syncPublic(tk, A.aid, A.info, A.lib, fields, prev);
-    A.pubPrev = Object.fromEntries(items().filter((it) => pubIncludes(it, fields)).map((it) => [it.id, pubGame(it, fields)]));
+    const lib = A.lib;
+    const snap = pubSnapshot(lib, fields);
+    const n = await syncPublic(tk, A.aid, A.info, lib, fields, prev);
+    A.pubPrev = snap;
+    if (A.lib !== lib) schedulePub(); // cambiato qualcosa mentre si pubblicava
     return n;
   };
   $('#shOn', el)?.addEventListener('click', async (e) => {

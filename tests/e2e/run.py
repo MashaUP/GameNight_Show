@@ -99,6 +99,10 @@ def main():
             dt = time.time() - t
             results.append((n, bad, dt))
             print(f"{'OK  ' if not bad else 'FAIL'} {n:10s} {dt:6.1f}s {'' if not bad else ' | '.join(bad[:3])}", flush=True)
+            if bad:
+                # Il motivo direttamente qui (su GitHub il registro completo è solo nell'archivio "prove-browser")
+                tail = [l for l in out.splitlines() if l.strip() and not l.startswith('OK ')][-30:]
+                print('\n'.join('      │ ' + l[:220] for l in tail), flush=True)
     finally:
         if proc:
             proc.kill()

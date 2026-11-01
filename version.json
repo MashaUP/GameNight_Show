@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "date": "2026-11-01",
   "minAndroid": "7.0",
   "notes": [
@@ -8,7 +8,8 @@
     "Presenze e spettatori, limiti della serata, checklist «Pronti?», ospiti anonimi a fine serata.",
     "Correzione del riassunto di una serata chiusa, controllo dello storico, confronto dei primi tre consigli.",
     "Bacheca e suggerimenti per la prossima serata, promemoria nell'app, centro avvisi nella home.",
-    "Armadio: proposte di modifica, collezione di BoardGameGeek, ricerca nei manuali PDF. Discord, CSV per altri tracker, sfide fra gruppi, demo senza Firebase."
+    "Armadio: proposte di modifica, collezione di BoardGameGeek, ricerca nei manuali PDF. Discord, CSV per altri tracker, sfide fra gruppi, demo senza Firebase.",
+    "2.1.1: il catalogo pubblico dell'armadio non perde più le modifiche fatte mentre si aggiornava."
   ],
   "notesEn": [
     "Show control on the TV: scenes for each phase, five separate volumes, profiles (family, competitive, party, minimal), far view, theme, atmosphere packs, reveal preview.",
@@ -16,6 +17,7 @@
     "Attendance and spectators, night limits, “Ready?” checklist, guests anonymised at the end of the night.",
     "Correct a closed night's summary, history check, compare the top three suggestions.",
     "Board and suggestions for the next night, reminders in the app, notice centre on the home page.",
-    "Shelf: change suggestions, BoardGameGeek collection, search in PDF manuals. Discord, CSV for other trackers, group challenges, demo without Firebase."
+    "Shelf: change suggestions, BoardGameGeek collection, search in PDF manuals. Discord, CSV for other trackers, group challenges, demo without Firebase.",
+    "2.1.1: the shelf's public catalogue no longer misses changes made while it was updating."
   ]
 }

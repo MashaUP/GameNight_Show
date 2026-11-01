@@ -14,10 +14,25 @@ try:
         if _FF and kw.pop('is_mobile', False):
             kw.setdefault('has_touch', True)
         return kw
+    # Niente Internet nelle prove (2.1.1): sul computer di sviluppo la rete esterna non c'è, sui server di
+    # GitHub sì. Così le prove si comportano allo stesso modo ovunque (aggiornamenti, BGG, link esterni:
+    # come senza connessione). Il sito di prova è solo su localhost.
+    import re as _re
+    # Espressione regolare (non una funzione Python): il confronto lo fa Playwright, senza rallentare le pagine
+    _EXTERNAL = _re.compile(r'^(?!(https?|wss?)://(localhost|127\.0\.0\.1)[:/])(https?|wss?)://')
+    async def _offline(route):
+        try:
+            await route.abort('internetdisconnected')
+        except Exception:
+            pass
     async def _new_context(self, *a, **kw):
-        return await _nc(self, *a, **_opts(kw))
+        ctx = await _nc(self, *a, **_opts(kw))
+        await ctx.route(_EXTERNAL, _offline)
+        return ctx
     async def _new_page(self, *a, **kw):
-        return await _np(self, *a, **_opts(kw))
+        pg = await _np(self, *a, **_opts(kw))
+        await pg.context.route(_EXTERNAL, _offline)
+        return pg
     _Browser.new_context, _Browser.new_page = _new_context, _new_page
 except Exception:  # Playwright non installato: i test non partono comunque
     pass

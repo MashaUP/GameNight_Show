@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.1.0**: delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.1.1**: delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -27,7 +27,7 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [ ] **Regole del database**: ricopiare `firebase/database.rules.json` in Firebase e premere **Pubblica** (cambiate nella 2.0 e nella 2.1).
 - [ ] **Account**: in Firebase › Authentication attivare **Google** ed **Email/password** (lasciare attivo **Anonimo**) — `docs/INSTALLAZIONE.md`, passo 2.4.1.
 - [x] **BoardGameGeek**: proxy pubblicato su `https://gamenight-bgg.mashaup.workers.dev` con il token (`/health` → `token: true`), indirizzo in `js/services.js`. Si attiva sul sito con la prossima pubblicazione.
-- [ ] **App Android 2.1**: pubblicare la release `v2.1.0` (serve per i promemoria con le notifiche).
+- [ ] **App Android 2.1**: pubblicare la release `v2.1.1` (serve per i promemoria con le notifiche).
 
 ## ✋ Da provare a mano (serve un dispositivo vero)
 
