@@ -68,7 +68,8 @@
         <div id="backBox" class="back-box" role="status" hidden></div>
         <section class="tile loan-alert" id="loanAlert" hidden aria-live="polite"></section>
 
-        <div class="grid grid--top">
+        <!-- 2.4: una sola griglia ad aree (css/ui.css › Home): da 1 a 4 colonne secondo lo spazio, senza righe fisse -->
+        <div class="home-grid" id="homeGrid">
           <section class="tile tile--join" aria-labelledby="joinTitle">
             <div class="tile-head"><span class="tile-ico tile-ico--violet" aria-hidden="true">🚪</span><div><h2 id="joinTitle" data-i18n="home.join.title">Entra in una stanza</h2><p class="tile-sub" data-i18n="home.join.sub">Il codice è sulla TV, sotto il QR.</p></div></div>
             <button type="button" class="ui-btn ui-btn--primary ui-btn--block" id="scanBtn" hidden><span aria-hidden="true">📷</span> <span data-i18n="home.join.scan">Inquadra il QR della TV</span></button>
@@ -95,9 +96,7 @@
           <section class="tile tile--me" id="hubMe" aria-live="polite">
             <p class="muted" data-i18n="home.me.loading">Carico il tuo profilo…</p>
           </section>
-        </div>
 
-        <div class="grid grid--mid">
           <section class="tile tile--coll" aria-labelledby="collTitle">
             <h2 class="sec-title" id="collTitle" data-i18n="home.coll.title">La tua collezione</h2>
             <div class="coll">
@@ -117,9 +116,7 @@
             <div class="sec-row"><h2 class="sec-title" id="grpMiniTitle" data-i18n="home.groups.title">I tuoi gruppi</h2><a class="sec-link" href="#gruppi" data-i18n="home.groups.all">Tutti</a></div>
             <div id="grpMini"></div>
           </section>
-        </div>
 
-        <div class="grid grid--bottom">
           <section class="tile tile--app" id="hubApp" hidden></section>
           <section class="tile tile--donate home-donate" aria-labelledby="donateTitle" data-link-box>
             <div class="tile-head"><span class="tile-ico tile-ico--pink" aria-hidden="true">❤️</span><div><h2 id="donateTitle" data-i18n="home.donate.title">Sostieni GameNight</h2></div></div>
@@ -136,24 +133,28 @@
 
       <!-- ===================== ARMADI ===================== -->
       <section class="view" data-view="armadi" hidden aria-labelledby="armTitle">
-        <section class="tile tile--page hub-sec" id="hubArmadi"></section>
+        <div class="page-sec hub-sec" id="hubArmadi"></div>
       </section>
 
       <!-- ===================== SERATE ===================== -->
       <section class="view" data-view="serate" hidden aria-labelledby="histTitle">
-        <section class="tile tile--page hub-sec" id="hubHistory"></section>
+        <div class="page-sec hub-sec" id="hubHistory"></div>
       </section>
 
       <!-- ===================== GRUPPI ===================== -->
       <section class="view" data-view="gruppi" hidden aria-labelledby="grpTitle">
-        <section class="tile tile--page hub-sec" id="hubGroups"></section>
+        <div class="page-sec hub-sec" id="hubGroups"></div>
       </section>
 
       <!-- ===================== PROFILO E APP ===================== -->
       <section class="view" data-view="altro" hidden aria-labelledby="altroTitle">
         <h1 class="page-title" id="altroTitle" data-i18n="home.altro.title">Profilo e app</h1>
-        <div class="grid grid--altro">
+        <!-- 2.4: profilo e QR per collegare un dispositivo subito in alto, senza scorrere -->
+        <div class="altro-top">
           <section class="tile" id="hubMeFull"></section>
+          <section class="tile tile--devices" id="hubDevices" aria-labelledby="devTitle"></section>
+        </div>
+        <div class="grid grid--altro">
           <section class="tile tile--app" id="hubAppFull"></section>
           <section class="tile tile--donate home-donate" data-link-box>
             <div class="tile-head"><span class="tile-ico tile-ico--pink" aria-hidden="true">❤️</span><div><h2 data-i18n="home.donate.title">Sostieni GameNight</h2></div></div>

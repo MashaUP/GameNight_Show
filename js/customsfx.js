@@ -6,6 +6,9 @@
 // quelli predefiniti (rooms/<codice>/sfx con k = "c:<id>").
 //
 // Limiti: 16 suoni, 400 KB e 15 secondi ciascuno, solo formati audio comuni.
+import { isMuted } from './sounds.js';
+import { isSafeMode } from './safe.js';
+
 const DB = 'gnr_sounds';
 const STORE = 'sounds';
 export const CSFX_MAX = 16;
@@ -133,6 +136,9 @@ export const CustomSounds = {
   },
   /** Fa partire un suono. masterVolume: volume generale degli effetti (0–1). */
   async play(id, masterVolume = 1) {
+    // 2.4: i suoni personalizzati sono file audio (non passano dal volume generale di sounds.js):
+    // il silenzioso e la Safe Mode li fermano qui, per tutti i punti da cui partono.
+    if (isMuted() || isSafeMode()) return null;
     let url = urls.get(id);
     let rec = this.cache.find((s) => s.id === id);
     if (!url) {
@@ -156,3 +162,6 @@ export const CustomSounds = {
   },
   isPlaying() { return playing.size > 0; }
 };
+
+// Silenzioso acceso: si ferma subito anche il suono personalizzato già partito
+window.addEventListener('gnr-mute', (e) => { if (e.detail) CustomSounds.stopAll(); });

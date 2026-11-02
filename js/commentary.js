@@ -182,3 +182,6 @@ export function stopSpeaking() {
   duck(false);
   caption('');
 }
+
+// 2.4: il silenzioso zittisce subito il commentatore, da qualunque punto venga acceso
+window.addEventListener('gnr-mute', (e) => { if (e.detail) stopSpeaking(); });

@@ -6,6 +6,7 @@ import { tableGames, wishCounts, foodList, arrivals, buildPlan, planTimes, gameM
 import { ding, pop } from './sounds.js';
 import { t } from './i18n.js';
 import { houseFor } from './traditions.js';
+import { lobbyPrefs, lobbyShows } from './lobby-prefs.js';
 
 let C = null;
 export function bindPrep(ctx) { C = ctx; }
@@ -34,61 +35,75 @@ export function poolIds() {
 
 export function wishes() { return wishCounts(S().wish); }
 
-/** Riquadro "pre-partita" della lobby: arrivi, giochi sul tavolo, desideri, cibo, scaletta. */
 /**
- * Checklist "Pronti?" della lobby (2.1, idea 30): cosa è pronto e cosa manca, in una riga sola.
- * Solo indicazioni: nessuna voce blocca l'inizio della serata.
+ * Pannelli opzionali della lobby (2.4). Tutti spenti di base: la lobby mette al centro i partecipanti.
+ * Si accendono uno per uno (Impostazioni › Partita e regia, o Strumenti › Visualizzazione), vedi lobby-prefs.js:
+ * - checklist «Pronti?» con le voci scelte dal master (solo indicazioni, nessuna voce blocca l'inizio);
+ * - «Sul tavolo stasera» (giochi portati e con la stellina);
+ * - pulsante «Prepara la scaletta» (la scaletta resta sempre negli Strumenti);
+ * - in modalità Informativa anche arrivi previsti, desideri e cibo.
+ * In modalità Minimal non compare nessun pannello. Prima (2.1–2.3) checklist e tavolo erano sempre visibili.
  */
-/**
- * 2.2: la checklist si può ridurre a una riga ("mini", dal pulsante sulla lobby) o togliere del tutto
- * ("off", da Regia dello show › Profilo). Preferenza di questa TV: è solo una questione di aspetto.
- */
-const READY_KEY = 'gnr_ready_view';
-export function readyView() { try { const v = localStorage.getItem(READY_KEY); return v === 'mini' || v === 'off' ? v : 'full'; } catch { return 'full'; } }
-export function setReadyView(v) { try { if (v === 'full') localStorage.removeItem(READY_KEY); else localStorage.setItem(READY_KEY, v); } catch { /* niente */ } }
-
-export function readyHTML() {
-  const view = readyView();
-  if (view === 'off') return '';
+export function readyHTML(p = lobbyPrefs()) {
+  if (!lobbyShows('checklist', p)) return '';
   const m = S().meta || {};
   const lib = S().library || {};
   const plan = planList();
-  const withRules = plan.filter((p) => lib[p.id]?.manual || lib[p.id]?.rules).length;
-  const ps = Object.values(S().players || {}).filter((p) => p?.name && !p.away).length;
-  const items = [
-    [Boolean(m.armadioId), t('prep.ck.armadio'), m.armadioName || ''],
-    [plan.length > 0, t('prep.ck.plan'), plan.length ? t('prep.ck.planN', { n: plan.length }) : ''],
-    [plan.length > 0 && withRules === plan.length, t('prep.ck.rules'), plan.length ? `${withRules}/${plan.length}` : ''],
-    [Boolean(m.voteSeconds), t('prep.ck.timer'), m.voteSeconds ? `${m.voteSeconds}″` : ''],
-    [Boolean(m.maxMinutes || m.maxGames), t('prep.ck.limits'), [m.maxGames ? t('lim.vGames', { n: m.maxGames }) : '', m.maxMinutes ? t('lim.vMin', { n: m.maxMinutes }) : ''].filter(Boolean).join(' · ')],
-    [ps >= 2, t('prep.ck.players'), String(ps)]
-  ];
+  const withRules = plan.filter((x) => lib[x.id]?.manual || lib[x.id]?.rules).length;
+  const ps = Object.values(S().players || {}).filter((x) => x?.name && !x.away).length;
+  const all = {
+    armadio: [Boolean(m.armadioId), t('prep.ck.armadio'), m.armadioName || ''],
+    plan: [plan.length > 0, t('prep.ck.plan'), plan.length ? t('prep.ck.planN', { n: plan.length }) : ''],
+    rules: [plan.length > 0 && withRules === plan.length, t('prep.ck.rules'), plan.length ? `${withRules}/${plan.length}` : ''],
+    timer: [Boolean(m.voteSeconds), t('prep.ck.timer'), m.voteSeconds ? `${m.voteSeconds}″` : ''],
+    limits: [Boolean(m.maxMinutes || m.maxGames), t('prep.ck.limits'), [m.maxGames ? t('lim.vGames', { n: m.maxGames }) : '', m.maxMinutes ? t('lim.vMin', { n: m.maxMinutes }) : ''].filter(Boolean).join(' · ')],
+    players: [ps >= 2, t('prep.ck.players'), String(ps)]
+  };
+  const items = p.checkItems.map((k) => all[k]).filter(Boolean);
+  if (!items.length) return '';
   const title = esc(t('prep.ck.title', { n: items.filter((x) => x[0]).length, all: items.length }));
-  if (view === 'mini') return `<button type="button" class="prep-ready-mini" data-ready-view="full" title="${esc(t('prep.ck.show'))}"><span aria-hidden="true">✅</span> ${title} <small>${esc(t('prep.ck.show'))}</small></button>`;
-  return `<div class="prep-block prep-ready"><div class="prep-ready-head"><b>${title}</b><button type="button" class="link-btn prep-ready-hide" data-ready-view="mini" aria-label="${esc(t('prep.ck.hideAria'))}">${esc(t('prep.ck.hide'))}</button></div><ul class="ready-list">${items.map(([ok, label, x]) => `<li class="${ok ? 'is-ok' : 'is-todo'}"><span aria-hidden="true">${ok ? '✅' : '⬜'}</span> ${esc(label)}${x ? ` <small>${esc(x)}</small>` : ''}<span class="sr-only">${esc(ok ? t('prep.ck.ok') : t('prep.ck.todo'))}</span></li>`).join('')}</ul></div>`;
+  return `<div class="prep-block prep-ready"><b class="prep-title">${title}</b><ul class="ready-list">${items.map(([ok, label, x]) => `<li class="${ok ? 'is-ok' : 'is-todo'}"><span aria-hidden="true">${ok ? '✅' : '⬜'}</span> ${esc(label)}${x ? ` <small>${esc(x)}</small>` : ''}<span class="sr-only">${esc(ok ? t('prep.ck.ok') : t('prep.ck.todo'))}</span></li>`).join('')}</ul></div>`;
 }
 
-export function prepHTML() {
-  if (!S().meta?.groupId) return readyHTML();
+function tableHTML() {
+  const lib = S().library || {};
+  const table = onTable();
+  const w = wishes();
+  const ids = Object.keys(table);
+  return `<div class="prep-block prep-table"><b class="prep-title">${t('prep.table.title')}${ids.length ? ` (${ids.length})` : ''}</b>
+    ${ids.length ? `<div class="prep-chips">${ids.sort((a, b) => (w[b] || 0) - (w[a] || 0)).slice(0, 12).map((id) => `<span class="prep-chip" title="${esc(table[id].length ? t('prep.table.broughtBy', { names: table[id].join(', ') }) : '')}">${esc(lib[id]?.name || '')}${w[id] ? ` <em>⭐${w[id]}</em>` : ''}</span>`).join('')}${ids.length > 12 ? `<span class="prep-chip prep-chip--more">+${ids.length - 12}</span>` : ''}</div>`
+      : `<span class="muted">${t('prep.table.empty')}</span>`}</div>`;
+}
+
+function extrasHTML() {
+  if (!S().meta?.groupId) return [];
   const lib = S().library || {};
   const table = onTable();
   const w = wishes();
   const arr = arrivals(S().next, S().players, personKey, nameKey);
   const food = foodList(S().next);
-  const blocks = [];
+  const out = [];
   if (arr && (arr.coming.length || arr.maybe.length)) {
-    blocks.push(`<div class="prep-block prep-arrivals"><b>${t(arr.late ? 'prep.arr.late' : 'prep.arr.coming')}</b>
+    out.push(`<div class="prep-block prep-arrivals"><b class="prep-title">${t(arr.late ? 'prep.arr.late' : 'prep.arr.coming')}</b>
       <span>${esc(arr.coming.join(', ')) || '—'}${arr.maybe.length ? ` <small>${t('prep.arr.maybe', { names: esc(arr.maybe.join(', ')) })}</small>` : ''}</span>
       ${arr.expected > (S().meta.maxPlayers || 0) ? `<small class="prep-warn">${t('prep.arr.seats', { n: arr.expected })}</small>` : ''}</div>`);
   }
-  const ids = Object.keys(table);
-  blocks.push(`<div class="prep-block prep-table"><b>${t('prep.table.title')}${ids.length ? ` (${ids.length})` : ''}</b>
-    ${ids.length ? `<div class="prep-chips">${ids.sort((a, b) => (w[b] || 0) - (w[a] || 0)).slice(0, 10).map((id) => `<span class="prep-chip" title="${esc(table[id].length ? t('prep.table.broughtBy', { names: table[id].join(', ') }) : '')}">${esc(lib[id]?.name || '')}${w[id] ? ` <em>⭐${w[id]}</em>` : ''}${table[id].length ? `<small>${esc(table[id].join(', '))}</small>` : ''}</span>`).join('')}</div>`
-      : `<span class="muted">${t('prep.table.empty')}</span>`}</div>`);
   const top = Object.entries(w).filter(([id]) => lib[id] && !table[id]).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  if (top.length) blocks.push(`<div class="prep-block"><b>${t('prep.wished')}</b><span>${top.map(([id, n]) => `${esc(lib[id].name)} (${n})`).join(' · ')}</span></div>`);
-  if (food.length) blocks.push(`<div class="prep-block"><b>${t('prep.food')}</b><span>${food.map((f) => `${esc(f.name)}: ${esc(f.food)}`).join(' · ')}</span></div>`);
-  return `${readyHTML()}${blocks.join('')}<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${t(S().plan?.items?.length ? 'prep.plan.open' : 'prep.plan.prepare')}</span></button>`;
+  if (top.length) out.push(`<div class="prep-block"><b class="prep-title">${t('prep.wished')}</b><span>${top.map(([id, n]) => `${esc(lib[id].name)} (${n})`).join(' · ')}</span></div>`);
+  if (food.length) out.push(`<div class="prep-block"><b class="prep-title">${t('prep.food')}</b><span>${food.map((f) => `${esc(f.name)}: ${esc(f.food)}`).join(' · ')}</span></div>`);
+  return out;
+}
+
+/** Pannelli della lobby secondo le preferenze ('' = nessun pannello: i partecipanti prendono tutto lo spazio). */
+export function prepHTML() {
+  const p = lobbyPrefs();
+  const blocks = [];
+  const ready = readyHTML(p);
+  if (ready) blocks.push(ready);
+  if (lobbyShows('table', p)) blocks.push(tableHTML());
+  if (lobbyShows('extras', p)) blocks.push(...extrasHTML());
+  if (lobbyShows('plan', p)) blocks.push(`<button type="button" class="btn-sec btn-sec--sm prep-plan" id="openPlan">🗓️ <span>${t(S().plan?.items?.length ? 'prep.plan.open' : 'prep.plan.prepare')}</span></button>`);
+  return blocks.join('');
 }
 
 // ---------------------------------------------------------------------------

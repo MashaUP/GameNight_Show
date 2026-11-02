@@ -65,8 +65,21 @@ def db():
     return json.loads(urllib.request.urlopen(BASE + '/__dump').read())
 
 
-async def tv(b, seats=3, group='Amici del giovedì', w=1280, h=720):
+# 2.4: la lobby di base è pulita (checklist, "Sul tavolo" e scaletta spenti). I test che li usano li accendono
+# come farebbe il master (preferenza della regia in localStorage), solo se non c'è già una scelta.
+LOBBY_ALL = "try { if (!localStorage.getItem('gnr_lobby')) localStorage.setItem('gnr_lobby', JSON.stringify({ mode: 'info', checklist: true, table: true, plan: true })); } catch (e) {}"
+
+
+async def tool(page, sel):
+    """2.4: Ludoteca, Gioca anche tu, Nuova serata… sono nel menu Strumenti: lo apre se serve e clicca."""
+    if not await page.is_visible(sel):
+        await page.click('#hdrTools'); await page.wait_for_selector(sel, state='visible')
+    await page.click(sel)
+
+
+async def tv(b, seats=3, group='Amici del giovedì', w=1280, h=720, lobby_all=False):
     ctx = await b.new_context(viewport={'width': w, 'height': h}, accept_downloads=True)
+    if lobby_all: await ctx.add_init_script(LOBBY_ALL)
     if NO_TOURS: await ctx.add_init_script("try { localStorage.setItem('gnr_tour_off', '1'); localStorage.setItem('gnr_tour_phone', '1'); localStorage.setItem('gnr_lite', 'off'); } catch (e) {}")
     host = await ctx.new_page(); watch(host, 'tv')
     await host.goto(BASE + '/host.html'); await host.wait_for_selector('#createBtn')

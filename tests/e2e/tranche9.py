@@ -26,12 +26,12 @@ async def main():
     csv_path = os.path.join(OUT, 'c.csv'); open(csv_path, 'w').write(CSV)
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        hctx, host, code = await tv(b, seats=5, group='Gruppo 2.9', w=1600, h=900)
+        hctx, host, code = await tv(b, seats=5, group='Gruppo 2.9', w=1600, h=900, lobby_all=True)
         A = (await join(b, code, 'Andrea', 0))[1]
         G = (await join(b, code, 'Giulia', 1))[1]
         M = (await join(b, code, 'Marco', 2))[1]
         gid = db()['rooms'][code]['meta']['groupId']
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpCsv'); await host.set_input_files('#lpCsvFile', csv_path); await asyncio.sleep(1.2); await host.click('#lpClose')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpCsv'); await host.set_input_files('#lpCsvFile', csv_path); await asyncio.sleep(1.2); await host.click('#lpClose')
         lib = db()['armadi'][aid_of(code)]['library']; ID = {it['name']: k for k, it in lib.items()}
         # 1. Telefoni: giochi portati e stelline
         await A.click('#addGameBtn'); await A.wait_for_selector('[data-tonight]')
@@ -84,7 +84,7 @@ async def main():
         await host.click('#gwClose')
         await M.wait_for_selector('#idlePlan .plan-card', timeout=5000); ok(True, 'telefono: scaletta')
         # 5. Regole: scheda del gioco, spiegazione, chi lo conosce
-        await host.click('#hdrLib'); await host.wait_for_selector(f'[data-edit="{ID["Azul"]}"]'); await host.click(f'[data-edit="{ID["Azul"]}"]')
+        await tool(host, '#hdrLib'); await host.wait_for_selector(f'[data-edit="{ID["Azul"]}"]'); await host.click(f'[data-edit="{ID["Azul"]}"]')
         await host.wait_for_selector('#gsRules')
         await host.fill('#gsRules', 'Prendi le tessere di un colore da un espositore e completa le righe.'); await host.fill('#gsSetup', 'Una plancia a testa\n4 tessere per espositore')
         await host.fill('#gsVideo', 'https://www.youtube.com/watch?v=abc'); await host.click('#gsSave'); await asyncio.sleep(0.8)

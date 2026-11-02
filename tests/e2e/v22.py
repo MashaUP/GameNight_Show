@@ -44,18 +44,19 @@ INIT = "try{localStorage.setItem('gnr_tour_off','1');localStorage.setItem('gnr_t
 async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        tctx, host, code = await tv(b, seats=4)
+        tctx, host, code = await tv(b, seats=4, lobby_all=True)
         _, A = await join(b, code, 'Anna', 0)
         _, B = await join(b, code, 'Bruno', 1)
 
-        # ---------------- Checklist «Pronti?»: una riga e di nuovo completa
-        await host.wait_for_selector('.prep-ready [data-ready-view="mini"]')
-        await host.click('.prep-ready [data-ready-view="mini"]')
-        await host.wait_for_selector('.prep-ready-mini', timeout=5000)
-        ok(await host.query_selector('.prep-ready .ready-list') is None, 'checklist ridotta a una riga')
-        ok(await host.evaluate("localStorage.getItem('gnr_ready_view')") == 'mini', 'preferenza della TV salvata')
-        await host.click('.prep-ready-mini'); await host.wait_for_selector('.prep-ready .ready-list')
-        ok(True, 'checklist di nuovo completa')
+        # ---------------- 2.4: checklist «Pronti?» spegnibile dagli Strumenti (preferenza della regia, persistente)
+        await host.wait_for_selector('.prep-ready .ready-list')
+        await host.click('#hdrTools'); await host.wait_for_selector('#tlLobby [data-lobby-tog="checklist"]', state='visible')
+        await host.click('#tlLobby [data-lobby-tog="checklist"]'); await asyncio.sleep(0.6)
+        ok(await host.query_selector('#lobbyPrep .prep-ready') is None, 'checklist spenta dagli Strumenti')
+        ok(json.loads(await host.evaluate("localStorage.getItem('gnr_lobby')") or '{}').get('checklist') is False, 'preferenza della regia salvata')
+        await host.click('#tlLobby [data-lobby-tog="checklist"]'); await host.wait_for_selector('#lobbyPrep .prep-ready .ready-list', timeout=5000)
+        ok(True, 'checklist di nuovo accesa')
+        await host.click('#tlClose'); await asyncio.sleep(0.3)
         reg = await host.query_selector('#lobbyRegia .regia-code')
         ok(reg is not None and re.match(r'^[A-Z0-9]{4}-[A-Z0-9]{4}$', (await reg.inner_text()).strip()) is not None, 'codice regia nel riquadro da copiare')
 
@@ -112,7 +113,7 @@ async def main():
         # ---------------- «Gioca anche tu» dalla TV
         n_before = len(at(f'rooms/{code}/players') or {})
         async with tctx.expect_page() as pi:
-            await host.click('#hdrPlayHere')
+            await tool(host, '#hdrPlayHere')
         P = await pi.value; watch(P, 'regia-gioca')
         await P.wait_for_load_state()
         ok(f'play.html?room={code}' in P.url, 'si apre la pagina del giocatore della stessa stanza')

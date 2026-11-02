@@ -164,7 +164,7 @@ async def main():
         print('pettegolezzo tolto:', not db()['rooms'][code].get('gossip'), '| ticker:', 'Marco giura' not in await host.inner_text('.ticker'))
 
         # QR della ludoteca e pagina ludoteca
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpQr'); await host.click('#lpQr'); await host.wait_for_selector('#qpQr svg')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpQr'); await host.click('#lpQr'); await host.wait_for_selector('#qpQr svg')
         url = await host.get_attribute('.qr-panel .qr-url a', 'href'); print('link ludoteca:', url)
         await shot(host, '14_lib_qr')
         await host.keyboard.press('Escape'); await asyncio.sleep(0.2)

@@ -9,12 +9,15 @@
           ".write": "auth != null && (!data.exists() || root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (root.child('secrets').child($code).exists() && root.child('rooms').child($code).child('takeover').child(auth.uid).val() === root.child('secrets').child($code).val()))",
           ".validate": "newData.child('hostUid').val() === auth.uid",
           "maxPlayers": {
-            ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 12"
+            ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 100"
           },
           "locked": {
             ".validate": "newData.isBoolean()"
           },
           "safeMode": {
+            ".validate": "newData.isBoolean()"
+          },
+          "muted": {
             ".validate": "newData.isBoolean()"
           },
           "voteSeconds": {
@@ -106,7 +109,7 @@
           }
         },
         "state": {
-          ".write": "auth != null && root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid"
+          ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (data.exists() && newData.child('phase').val() === 'awards' && newData.child('done').val() === true && newData.child('remote').val() === true && (root.child('rooms').child($code).child('meta').child('creatorUid').val() === auth.uid || (root.child('rooms').child($code).child('meta').child('creatorPid').isString() && root.child('people').child(root.child('rooms').child($code).child('meta').child('creatorPid').val()).child('uids').child(auth.uid).exists()))))"
         },
         "players": {
           "$uid": {
@@ -846,7 +849,7 @@
                 ".validate": "newData.val() === true"
               },
               "maxPlayers": {
-                ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 12"
+                ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 100"
               },
               "music": {
                 ".validate": "newData.isString() && newData.val().matches(/^[a-z]{2,10}$/)"

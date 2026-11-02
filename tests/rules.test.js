@@ -552,5 +552,24 @@ check('modalità pubblico: un telefono NON la accende', base(), 'p1', 'update', 
   check('armadio: il proprietario legge sempre', arm({ blocked: { own: true } }), 'own', 'read', `${AR}/library`, undefined, true);
 }
 
+
+// 2.4 · Chiudere una serata in corso dalla pagina Serate (creatore, anche da un altro dispositivo del profilo)
+const CLOSE = { phase: 'awards', done: true, remote: true, at: 1 };
+check('chiusura: il creatore porta la serata alla premiazione', made({ hostUid: 'tvx' }), 'host', 'set', `${R}/state`, CLOSE, true);
+check('chiusura: un altro dispositivo del profilo del creatore chiude', made({ hostUid: 'tvx', creatorPid: 'PERS01' }), 'tablet', 'set', `${R}/state`, CLOSE, true);
+check('chiusura: il creatore NON cambia la fase in altro (solo premiazione)', made({ hostUid: 'tvx' }), 'host', 'set', `${R}/state`, { phase: 'voting', gameId: 'g1' }, false);
+check('chiusura: il creatore NON scrive una premiazione "a metà"', made({ hostUid: 'tvx' }), 'host', 'set', `${R}/state`, { phase: 'awards', at: 1 }, false);
+check('chiusura: un giocatore NON chiude la serata', made({ hostUid: 'tvx' }), 'p1', 'set', `${R}/state`, CLOSE, false);
+check('chiusura: NON crea lo stato di una stanza che non esiste più', (() => { const d = made({ hostUid: 'tvx' }); delete d.rooms.ABCD.state; return d; })(), 'host', 'set', `${R}/state`, CLOSE, false);
+check('chiusura: la TV chiude come sempre', made({ hostUid: 'tvx' }), 'tvx', 'set', `${R}/state`, { phase: 'awards', at: 1 }, true);
+// 2.4 · Niente tetto fisso a 12 giocatori: decide il master, fino a 100 (limite tecnico documentato)
+check('posti: 40 giocatori si possono impostare', base(), 'host', 'set', `${R}/meta/maxPlayers`, 40, true);
+check('posti: 100 è il massimo', base(), 'host', 'set', `${R}/meta/maxPlayers`, 100, true);
+check('posti: oltre 100 NO', base(), 'host', 'set', `${R}/meta/maxPlayers`, 101, false);
+check('posti: un giocatore NON cambia i posti', base(), 'p1', 'set', `${R}/meta/maxPlayers`, 30, false);
+
+check('silenzioso: la TV pubblica lo stato per la regia', base(), 'host', 'set', `${R}/meta/muted`, true, true);
+check('silenzioso: solo vero/falso', base(), 'host', 'set', `${R}/meta/muted`, 'si', false);
+check('silenzioso: un giocatore NON lo cambia', base(), 'p1', 'set', `${R}/meta/muted`, true, false);
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

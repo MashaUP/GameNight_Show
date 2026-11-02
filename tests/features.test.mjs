@@ -323,7 +323,8 @@ test('modelli di serata: impostazioni pulite, patch, differenze, scaletta da una
   const s = settingsFromMeta(meta, 'lounge');
   assert.deepEqual(s, { voting: { sempl: false, custom: [{ label: 'Rigiocheresti?' }, { label: 'bx/b' }] }, chaos: true, voteSeconds: 90, voteAuto: true, atmosphere: 'stelle', atmoLevel: 'soft', maxPlayers: 8, music: 'lounge' });
   assert.ok(!('hostUid' in s) && !('creatorUid' in s), 'mai codici, uid o creatori nel modello');
-  assert.deepEqual(cleanSettings({ voteSeconds: 7, atmosphere: '<script>', maxPlayers: 99, music: 'rock' }), {}, 'valori non ammessi scartati');
+  assert.deepEqual(cleanSettings({ voteSeconds: 7, atmosphere: '<script>', maxPlayers: 101, music: 'rock' }), {}, 'valori non ammessi scartati');
+  assert.deepEqual(cleanSettings({ maxPlayers: 40 }), { maxPlayers: 40 }, '2.4: oltre 12 posti si può (fino a 100)');
   const { patch, music } = settingsPatch({ chaos: true, maxPlayers: 4 }, { activePlayers: 6 });
   assert.equal(patch.chaos, true);
   assert.equal(patch.voting, null, 'le chiavi assenti tornano al valore di base');

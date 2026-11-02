@@ -32,7 +32,7 @@ async def main():
         M = (await join(b, code, 'Marco', 2))[1]
         gid = db()['rooms'][code]['meta']['groupId']
         # 1. Import CSV di BoardGameGeek
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpCsv')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpCsv')
         await host.set_input_files('#lpCsvFile', csv_path); await asyncio.sleep(1.2)
         lib = db()['armadi'][aid_of(code)].get('library', {})
         names = sorted(it['name'] for it in lib.values())

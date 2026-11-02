@@ -59,6 +59,7 @@
   --ui-gap: clamp(0.875rem, 0.55rem + 0.9vw, 1.35rem);   /* tra le card */
   --ui-pad: clamp(1.1rem, 0.8rem + 0.8vw, 1.6rem);       /* dentro le card */
   --ui-stack: 0.875rem;                                    /* tra gli elementi di una card */
+  --ui-row-pad: 0.8rem 0.9rem;                             /* righe degli elenchi */
   /* Caratteri */
   --ui-fs-xs: 0.8125rem;
   --ui-fs-sm: 0.9375rem;
@@ -127,9 +128,17 @@ html.a11y-contrast[data-theme="day"] body.ui-body {
 
 /* ---------- Fondo, caratteri e focus ---------- */
 
-/* Base: 17 px sul telefono, 18 px dal computer (prima 16,5 e 17). Tutto il resto è in rem e segue. */
-html:has(> body.ui-body) { font-size: 106.25%; }
-@media (min-width: 1024px) { html:has(> body.ui-body) { font-size: 112.5%; } }
+/* Carattere base fluido (2.4). Prima restava fisso a 18 px da 1024 px in su: sui monitor grandi tutto
+   sembrava piccolo e lontano. Ora segue la larghezza: 17 px su telefono, tablet e laptop, ~19 px a 1920,
+   ~21,5 px a 2560, massimo 22 px (ultrawide). In % e rem: rispetta la dimensione scelta nel browser.
+   Tutto il resto è in rem e segue. A+ e A++ moltiplicano la stessa curva (prima la sostituivano). */
+html:has(> body.ui-body) { font-size: clamp(106.25%, calc(0.78rem + 0.35vw), 137.5%); }
+html.a11y-l:has(> body.ui-body) { font-size: clamp(119.5%, calc(0.8775rem + 0.394vw), 154.7%); }
+html.a11y-xl:has(> body.ui-body) { font-size: clamp(132.8%, calc(0.975rem + 0.4375vw), 171.9%); }
+
+/* Densità (Impostazioni › Aspetto): cambia solo spazi e respiro delle card, non i caratteri. */
+html[data-density="compact"] { --ui-gap: clamp(0.6rem, 0.4rem + 0.6vw, 1rem); --ui-pad: clamp(0.85rem, 0.6rem + 0.6vw, 1.2rem); --ui-stack: 0.65rem; --ui-row-pad: 0.6rem 0.75rem; }
+html[data-density="spacious"] { --ui-gap: clamp(1.1rem, 0.8rem + 1.1vw, 1.85rem); --ui-pad: clamp(1.35rem, 1rem + 1vw, 2.1rem); --ui-stack: 1.1rem; --ui-row-pad: 1rem 1.1rem; }
 
 /* (specificità alta: deve vincere sui fondi a puntini del vecchio tema notte) */
 :root body.ui-body.ui-body {
@@ -223,6 +232,76 @@ html[data-theme="day"] .ui-input { background: #FFFFFF; }
 .ui-input:hover { border-color: var(--ui-text-3); }
 .ui-input:focus { border-color: var(--ui-primary); outline: none; box-shadow: 0 0 0 4px rgba(255, 210, 63, 0.28); }
 .code-field { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.32em; text-align: center; text-transform: uppercase; padding-left: 1.2rem; }
+
+/* ---------- Finestre (2.4) ----------
+   Le finestre "larghe" erano larghe come le altre (32rem) e solo più alte: impostazioni e traguardi apparivano
+   compressi. Ora: 34–44rem secondo lo schermo (≈ 600–760 px sul computer, ~900 px su un QHD), quasi tutto
+   lo schermo sul telefono. Altezza fino al 90% dello schermo, contenuto che scorre dentro. */
+.ui-body .sheet.sheet--wide { width: min(100%, clamp(34rem, 44vw, 44rem)); max-height: min(90vh, 90dvh); }
+.ui-body .sheet.sheet--trophies { width: min(100%, clamp(36rem, 60vw, 64rem)); }
+.ui-body .sheet { gap: var(--ui-stack); padding: var(--ui-pad); }
+.ui-body .sheet .field-label { display: block; font-family: var(--body); font-weight: 800; font-size: var(--ui-fs-md); margin: 0.4rem 0 0.35rem; color: var(--ui-text); }
+.seg--wide { display: flex; width: 100%; }
+.seg--wide > button { flex: 1 1 0; min-height: var(--ui-ctl-sm); }
+/* Impostazioni: indice delle sezioni (resta in alto mentre si scorre) e sezioni distinte */
+.set-nav {
+  position: sticky; top: calc(-1 * var(--ui-pad)); z-index: 2; margin: 0 calc(-1 * var(--ui-pad)); padding: 0.5rem var(--ui-pad);
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  background: var(--ui-surface); border-bottom: 1px solid var(--ui-line);
+}
+/* Telefono: l'indice va a capo (niente barra orizzontale) e non resta fisso, per lasciare spazio alle sezioni */
+@media (max-width: 40rem) { .set-nav { position: static; } .set-nav a { flex: 1 1 auto; justify-content: center; } }
+.set-nav a {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.35rem; min-height: var(--ui-ctl-sm); padding: 0 0.8rem;
+  border-radius: 999px; border: 1px solid var(--ui-line-strong); background: var(--ui-surface-2); color: var(--ui-text);
+  font-weight: 700; font-size: var(--ui-fs-sm); text-decoration: none; white-space: nowrap;
+}
+.set-nav a:hover { border-color: var(--ui-text-3); }
+.set-body { display: grid; gap: var(--ui-stack); }
+.set-sec {
+  scroll-margin-top: 4rem; display: flex; flex-direction: column; gap: 0.5rem;
+  padding: var(--ui-pad); border-radius: var(--ui-r-lg); background: var(--ui-surface-2); border: 1px solid var(--ui-line);
+}
+:root .ui-body .sheet .set-sec > h3 { margin: 0 0 0.2rem; font-family: var(--display); font-weight: 400; font-size: var(--ui-fs-title); color: var(--ui-text); }
+.set-grid { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); }
+.set-grid > * { text-decoration: none; }
+.lobby-prefs { display: flex; flex-direction: column; gap: 0.5rem; }
+.lobby-toggles, .lobby-items-grid { display: grid; gap: 0.4rem 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
+.lobby-toggles .quick-toggle span { display: flex; flex-direction: column; gap: 0.1rem; white-space: normal; }
+.lobby-items { border: 1px solid var(--ui-line); border-radius: var(--ui-r); padding: 0.5rem 0.8rem 0.7rem; margin: 0; }
+.lobby-items legend { font-weight: 800; padding: 0 0.3rem; }
+.lobby-items:disabled { opacity: 0.55; }
+/* Traguardi: riepilogo con percentuale, livelli dei gruppi, categorie a griglia */
+.tr-summary { display: flex; align-items: center; gap: 1.2rem; padding: var(--ui-pad); border-radius: var(--ui-r-lg); background: var(--ui-surface-2); border: 1px solid var(--ui-line); }
+.tr-summary > div { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.tr-summary-title { font-weight: 800; font-size: var(--ui-fs-lg); }
+.tr-ring {
+  flex-shrink: 0; width: 5.2rem; height: 5.2rem; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--ui-primary) calc(var(--p) * 1%), var(--ui-surface-3) 0);
+}
+.tr-ring b { width: 4rem; height: 4rem; border-radius: 50%; display: grid; place-items: center; background: var(--ui-surface-2); font-family: var(--display); font-weight: 400; font-size: 1.25rem; }
+.ui-body .tr-bar { background: var(--ui-surface-3); height: 0.5rem; }
+.ui-body .tr-bar i { background: var(--ui-primary); }
+.tr-bar--big { height: 0.75rem !important; }
+.ui-body .tr-groups { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); }
+.ui-body .tr-group { border: 1px solid var(--ui-line); border-radius: var(--ui-r); padding: 0.75rem 0.9rem; }
+.tr-cat { display: flex; flex-direction: column; gap: 0.5rem; }
+.tr-cat h3 { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.4rem 0 0; }
+.tr-cat h3 small { font-family: var(--body); font-size: var(--ui-fs-sm); }
+.tr-grid { display: grid !important; gap: 0.6rem !important; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)) !important; }
+.tr-card {
+  display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.8rem 0.9rem; border-radius: var(--ui-r);
+  background: var(--ui-surface-2); border: 1px solid var(--ui-line); min-height: 100%;
+}
+.tr-card > div { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.tr-card small { color: var(--ui-text-2); font-size: var(--ui-fs-sm); line-height: 1.35; }
+.tr-card .badge { align-self: flex-start; }
+.tr-ico { font-size: 1.8rem; line-height: 1; width: 2.4rem; text-align: center; flex-shrink: 0; }
+.tr-card.is-on { border-color: color-mix(in srgb, var(--ui-primary) 55%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface-2)), var(--ui-surface-2)); }
+.tr-card.is-off .tr-ico { filter: grayscale(1); opacity: 0.6; }   /* l'icona si spegne, il testo resta leggibile */
+.tr-prog { display: flex; flex-direction: column; gap: 0.25rem; }
+.tr-prog .tr-bar { display: block; height: 0.45rem; border-radius: 1rem; overflow: hidden; }
+.tr-prog .tr-bar i { display: block; height: 100%; }
 
 /* ---------- Avvisi e notifiche ---------- */
 
@@ -325,7 +404,11 @@ html[data-theme="day"] .tabbar a.is-on { color: var(--ui-accent); }
     border-right: 1px solid var(--ui-line);
     overflow-y: auto;
   }
-  .side .brand-lockup { padding: 0 0.4rem; }
+  /* 2.4: il marchio (dado 3rem + "GameNight" + targhetta ruotata) era 2 px più largo della colonna e, con
+     overflow-y: auto, compariva la barra orizzontale. Ora dado e scritta sono dimensionati per la colonna. */
+  .side .brand-lockup { padding: 0 0.2rem; gap: 0.55rem; max-width: 100%; }
+  .side .brand-die { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; }
+  .side .brand-word { font-size: 1.28rem; }
   .side-nav { display: flex; flex-direction: column; gap: 0.25rem; }
   .side-nav a, .side-nav button {
     display: flex; align-items: center; gap: 0.75rem; width: 100%;
@@ -434,48 +517,117 @@ html.a11y-motion .hero-art, html.lite .hero-art, html.save-power .hero-art { ani
 .notice .back-link small { color: var(--ui-text-2) !important; }
 .notice .back-link:hover .mini-go { transform: translateX(2px); color: var(--ui-text); }
 
-/* ---------- Home: griglie ---------- */
-
+/* ---------- Home: una griglia ad aree (2.4) ----------
+   Prima tre griglie fisse dentro un contenitore di massimo 98rem: sui monitor grandi restavano 250-700 px
+   vuoti per lato. Ora una griglia sola che passa da 1 a 4 colonne secondo lo spazio vero, e un contenitore
+   largo fino a 150rem. Le varianti .no-app servono quando la scheda App è nascosta (app o sito senza APK). */
 .grid { display: grid; gap: var(--ui-gap); grid-template-columns: minmax(0, 1fr); }
-.grid--top .tile--host.tile--live { order: -1; }
-/* Profilo e app: card indipendenti di altezze molto diverse → colonne larghe almeno 24rem (una sola sul
-   telefono), ogni card alta quanto il suo contenuto, senza buchi tra una riga e l'altra */
-.grid--altro { display: block; columns: 2 24rem; column-gap: var(--ui-gap); }
-.grid--altro > .tile { break-inside: avoid; margin-bottom: var(--ui-gap); }
+.home-grid {
+  display: grid; gap: var(--ui-gap); grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "join" "host" "me" "coll" "groups" "app" "donate" "info";
+}
+.home-grid.no-app { grid-template-areas: "join" "host" "me" "coll" "groups" "donate" "info"; }
+.home-grid:has(.tile--host.tile--live) { grid-template-areas: "host" "join" "me" "coll" "groups" "app" "donate" "info"; }
+.home-grid.no-app:has(.tile--host.tile--live) { grid-template-areas: "host" "join" "me" "coll" "groups" "donate" "info"; }
+.home-grid > .tile--join { grid-area: join; }
+.home-grid > .tile--host { grid-area: host; }
+.home-grid > .tile--me { grid-area: me; }
+.home-grid > .tile--coll { grid-area: coll; }
+.home-grid > .tile--groups { grid-area: groups; }
+.home-grid > .tile--app { grid-area: app; }
+.home-grid > .tile--donate { grid-area: donate; }
+.home-grid > .tile--info { grid-area: info; }
 @media (min-width: 720px) {
-  .grid--top, .grid--mid, .grid--bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid--top .tile--me { grid-column: 1 / -1; }
-  .grid--top .tile--me .btn-row { max-width: 36rem; }
-  .grid--bottom .tile--app { grid-column: 1 / -1; }
+  .home-grid, .home-grid:has(.tile--host.tile--live) { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "join host" "me me" "coll coll" "groups groups" "app app" "donate info"; }
+  .home-grid.no-app, .home-grid.no-app:has(.tile--host.tile--live) { grid-template-areas: "join host" "me me" "coll coll" "groups groups" "donate info"; }
+  .home-grid .tile--me .btn-row { max-width: 36rem; }
 }
 @media (min-width: 1024px) {
-  /* Nelle card della riga in alto le azioni stanno in fondo, allineate tra le card */
-  .grid--top > .tile { min-height: 100%; }
+  /* Nelle card della prima riga le azioni stanno in fondo, allineate tra le card */
   .tile--join, .tile--host, .tile--me { justify-content: space-between; }
   .tile--me > .btn-row, .tile--me > .ui-btn:last-child { margin-top: auto; }
   .hero { padding: 1.2rem 1.7rem; }
-  /* Elenchi di armadi, serate e gruppi su più colonne invece di una striscia lunga */
-  .hub-sec .rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 0.65rem; }
+  .home-grid, .home-grid:has(.tile--host.tile--live) { grid-template-areas: "join host" "me groups" "coll coll" "app app" "donate info"; }
+  .home-grid.no-app, .home-grid.no-app:has(.tile--host.tile--live) { grid-template-areas: "join host" "me groups" "coll coll" "donate info"; }
 }
-@media (min-width: 1180px) {
-  .grid--mid { grid-template-columns: 1.6fr 1fr; }
-  /* In basso la scheda App resta larga tutta la riga fino a 1400 px (a tre colonne era schiacciata) */
-  .grid--bottom.no-app { grid-template-columns: 1.4fr 1fr; }
-}
-/* Tre card affiancate in alto solo quando c'è davvero spazio accanto alla barra laterale */
 @media (min-width: 1400px) {
-  .hub-body .main { max-width: 88rem; margin-left: auto; margin-right: auto; }
-  .grid--top { grid-template-columns: 1.05fr 1.1fr 1.1fr; }
-  .grid--top .tile--me { grid-column: auto; }
-  .grid--top .tile--host.tile--live { order: 0; }
-  .grid--mid { grid-template-columns: 2.1fr 1.2fr; }
-  .grid--bottom { grid-template-columns: 1.1fr 1fr 1.2fr; }
-  .grid--bottom .tile--app { grid-column: span 2; grid-row: span 2; }
-  .grid--bottom.no-app { grid-template-columns: 2.1fr 1.2fr; }
-  .grid--bottom.no-app .tile--donate { grid-column: auto; }
+  .home-grid, .home-grid:has(.tile--host.tile--live) { grid-template-columns: 1fr 1.1fr 1fr; grid-template-areas: "join host me" "coll coll groups" "app app donate" "app app info"; }
+  .home-grid.no-app, .home-grid.no-app:has(.tile--host.tile--live) { grid-template-areas: "join host me" "coll coll groups" "donate donate info"; }
 }
-@media (min-width: 1500px) { .hub-body .main { max-width: 92rem; padding: 0.6rem 2.4rem 2.4rem; } }
-@media (min-width: 1850px) { .hub-body .main { max-width: 98rem; } }
+/* Monitor grandi (1900 px e oltre, anche 2560 al 125%): quattro colonne */
+@media (min-width: 1900px) {
+  .home-grid, .home-grid:has(.tile--host.tile--live) { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: "join host me groups" "coll coll app app" "donate info app app"; }
+  .home-grid.no-app, .home-grid.no-app:has(.tile--host.tile--live) { grid-template-areas: "join host me groups" "coll coll donate info"; }
+}
+/* Contenitore: largo quanto lo schermo (con margini) fino a 150rem; nessun massimo fisso in pixel */
+.hub-body .main { max-width: 150rem; }
+@media (min-width: 1500px) { .hub-body .main { padding: 0.6rem clamp(1.6rem, 2vw, 3rem) 2.4rem; } }
+
+/* ---------- Pagine Armadi, Serate, Gruppi (2.4): intestazione, riepilogo, card, aiuto ---------- */
+.page-sec { display: flex; flex-direction: column; gap: var(--ui-gap); padding: 0; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.8rem 1.5rem; }
+.page-head-text { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; max-width: 60rem; }
+.page-lead { color: var(--ui-text-2); font-size: var(--ui-fs-lg); line-height: 1.45; }
+.page-head-acts { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.page-stats { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+.page-stats li {
+  display: flex; align-items: baseline; gap: 0.6rem; padding: 0.85rem 1.1rem; border-radius: var(--ui-r);
+  background: var(--ui-surface); border: 1px solid var(--ui-line);
+}
+.page-stats b { font-family: var(--display); font-weight: 400; font-size: clamp(1.5rem, 1.2rem + 0.8vw, 2.1rem); line-height: 1; }
+.page-stats span { color: var(--ui-text-2); font-weight: 700; }
+.page-stats li.is-live { border-color: color-mix(in srgb, var(--ui-err) 55%, transparent); background: color-mix(in srgb, var(--ui-err) 10%, var(--ui-surface)); }
+.page-body { display: grid; gap: var(--ui-gap); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1100px) { .page-body { grid-template-columns: minmax(0, 1fr) minmax(17rem, 24rem); } }
+.page-main { min-width: 0; }
+.page-aside { gap: 0.75rem; }
+@media (min-width: 1100px) { .page-aside { position: sticky; top: 1rem; } }
+.page-help { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.55rem; color: var(--ui-text-2); }
+.empty--big { padding: 2.5rem 1.5rem; font-size: var(--ui-fs-lg); }
+/* Card degli elementi: si allargano a riempire la riga, minimo ~19rem (una colonna sul telefono) */
+.card-grid { display: grid; gap: var(--ui-gap); grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+.rows.card-grid { display: grid; } /* .rows (più in basso) è flex: qui vale la griglia */
+/* Con uno o due elementi le card occupano metà riga ciascuna invece di restare piccole in un'area vuota */
+.card-grid:not(:has(> li:nth-child(3))) { grid-template-columns: repeat(auto-fill, minmax(min(100%, max(19rem, calc(50% - var(--ui-gap)))), 1fr)); }
+.row.card-item {
+  flex-direction: column; align-items: stretch; text-align: left; gap: 0.65rem; height: 100%;
+  padding: var(--ui-pad); min-height: 10rem; border-radius: var(--ui-r-lg);
+  background: var(--ui-surface); border: 1px solid var(--ui-line); box-shadow: var(--ui-shadow-sm);
+}
+a.row.card-item:hover { border-color: var(--ui-line-strong); background: var(--ui-surface-2); }
+.card-item .mini-text b { font-size: var(--ui-fs-lg); white-space: normal; }
+.card-item-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.card-item-meta { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; color: var(--ui-text-3); font-size: var(--ui-fs-sm); font-weight: 600; }
+.card-item-go { margin-top: auto; align-self: flex-end; color: var(--ui-primary); font-weight: 800; }
+html[data-theme="day"] .card-item-go { color: var(--ui-accent); }
+.card-item-acts { margin-top: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.card-item.is-live { border-color: color-mix(in srgb, var(--ui-err) 55%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--ui-err) 10%, var(--ui-surface)), var(--ui-surface)); }
+.card-item.is-gone { opacity: 0.85; }
+/* Etichette di stato (badge): micro-testo, ma con contrasto pieno */
+.badge {
+  display: inline-flex; align-items: center; gap: 0.3em; padding: 0.2rem 0.6rem; border-radius: 999px;
+  font-size: var(--ui-fs-xs); font-weight: 800; letter-spacing: 0.02em; white-space: nowrap;
+  background: var(--ui-surface-3); color: var(--ui-text); border: 1px solid var(--ui-line-strong);
+}
+.badge--own { background: var(--ui-primary); color: var(--ui-primary-ink); border-color: transparent; }
+.badge--live { background: var(--al-err-bg); color: var(--al-err-ink); border-color: var(--al-err-line); }
+.badge--done { background: var(--al-ok-bg); color: var(--al-ok-ink); border-color: var(--al-ok-line); }
+.badge--saved { background: var(--al-info-bg); color: var(--al-info-ink); border-color: var(--al-info-line); }
+
+/* ---------- Profilo e app ---------- */
+.altro-top { display: grid; gap: var(--ui-gap); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1100px) { .altro-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.dev-body { display: grid; gap: 1rem 1.4rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.dev-qr { justify-self: center; width: clamp(10rem, 40vw, 13rem); }
+.dev-qr svg { width: 100%; height: auto; display: block; }
+.dev-text { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.dev-url { overflow-wrap: anywhere; font-size: var(--ui-fs-sm); }
+@container (min-width: 30rem) { .dev-body { grid-template-columns: auto minmax(0, 1fr); } .dev-qr { width: clamp(10rem, 12vw, 13rem); } }
+.tile--devices { container-type: inline-size; }
+/* Card indipendenti di altezze molto diverse → colonne larghe almeno 24rem (una sul telefono, fino a 3
+   sugli schermi larghi), ogni card alta quanto il suo contenuto, senza buchi tra una riga e l'altra */
+.grid--altro { display: block; columns: 3 24rem; column-gap: var(--ui-gap); }
+.grid--altro > .tile { break-inside: avoid; margin-bottom: var(--ui-gap); }
 
 /* Entra in una stanza: campo e pulsante ben visibili sulla card */
 .join-form { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -519,7 +671,7 @@ html.a11y-motion .live-dot { animation: none; }
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 .row, .mini {
   display: flex; align-items: center; gap: 0.85rem;
-  padding: 0.8rem 0.9rem; border-radius: var(--ui-r);
+  padding: var(--ui-row-pad); border-radius: var(--ui-r);
   background: var(--ui-surface-2); background: color-mix(in srgb, var(--ui-surface-2) 70%, transparent); border: 1px solid var(--ui-line);
   color: var(--ui-text); text-decoration: none; min-height: 3.75rem;
   transition: border-color var(--ui-fast) ease, background-color var(--ui-fast) ease;
@@ -553,7 +705,6 @@ a.row:hover, a.mini:hover { border-color: var(--ui-line-strong); background: var
   .coll .mini .mini-go { position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%); }
   .coll .mini:hover .mini-go { transform: translate(2px, -50%); color: var(--ui-text); }
 }
-.tile--page { gap: 1rem; padding: var(--ui-pad); }
 
 /* Sostieni e informazioni */
 .ui-body .home-donate { display: flex; align-items: stretch; text-align: left; } /* style.css la centrava */

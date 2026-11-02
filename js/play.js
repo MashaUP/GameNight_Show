@@ -2534,13 +2534,14 @@ const Regia = {
     const box = this.sheet && $('#rgSafeBody', this.sheet);
     if (!box) return;
     const others = sortedPlayers(P.players).filter((p) => p.uid !== P.uid);
-    const sig = JSON.stringify([Boolean(P.meta?.locked), Boolean(P.meta?.safeMode), others.map((p) => [p.uid, p.name])]);
+    const sig = JSON.stringify([Boolean(P.meta?.locked), Boolean(P.meta?.safeMode), Boolean(P.meta?.muted), others.map((p) => [p.uid, p.name])]);
     if (sig === this.safeSig) return;
     this.safeSig = sig;
     box.innerHTML = `
       <div class="rg-row">
         <button type="button" class="btn-sec btn-sec--sm" data-rglock>${esc(P.meta?.locked ? `🔓 ${t('ph.rg.unlock')}` : `🔒 ${t('ph.rg.lock')}`)}</button>
         <button type="button" class="btn-sec btn-sec--sm" data-rgsafe>${esc(P.meta?.safeMode ? t('ph.rg.safeOff') : `🚨 ${t('ph.rg.safeOn')}`)}</button>
+        <button type="button" class="btn-sec btn-sec--sm" data-rgmute aria-pressed="${Boolean(P.meta?.muted)}">${esc(P.meta?.muted ? `🔊 ${t('ph.rg.unmute')}` : `🔇 ${t('ph.rg.mute')}`)}</button>
       </div>
       ${others.length ? `<span class="field-label">${esc(t('ph.rg.kick'))}</span><div class="rg-chips">${others.map((p) => `<button type="button" class="lib-chip" data-rgkick="${esc(p.uid)}">⛔ ${esc(p.name)}</button>`).join('')}</div>` : ''}`;
   },
@@ -2563,6 +2564,7 @@ const Regia = {
     if (e.target === this.sheet || e.target.closest('#rgClose')) { this.close(); return; }
     if (e.target.closest('[data-rglock]')) { this.send('lock', { on: !P.meta?.locked }); return; }
     if (e.target.closest('[data-rgsafe]')) { this.send('safe', { on: !P.meta?.safeMode }); return; }
+    if (e.target.closest('[data-rgmute]')) { this.send('mute', { on: !P.meta?.muted }); return; }
     const kk = e.target.closest('[data-rgkick]');
     if (kk) {
       const p = P.players[kk.dataset.rgkick];

@@ -8,7 +8,7 @@
 import { $, esc, toast, ICONS, activePlayers } from './util.js';
 import { avatarHTML } from './avatars.js';
 import { t } from './i18n.js';
-import { readyView, setReadyView } from './tv-prep.js';
+import { lobbyPrefsHTML, bindLobbyPrefs } from './lobby-prefs.js';
 import { CRITERIA, GAME_MODES } from './stats.js';
 import { getVolume, setVolume } from './sounds.js';
 import { setCommentatorMode } from './commentary.js';
@@ -92,6 +92,8 @@ export const ShowPanel = {
     el.addEventListener('click', (e) => this.click(e));
     el.addEventListener('change', (e) => this.change(e));
     el.addEventListener('input', (e) => this.input(e));
+    // 2.4: preferenze della lobby (stesso controllo delle Impostazioni e degli Strumenti)
+    bindLobbyPrefs(el, () => { C.refreshLobby?.(); if (this.tab === 'profile') this.paint(); });
     this.paint();
   },
   paint() {
@@ -124,7 +126,7 @@ export const ShowPanel = {
     return `<p class="muted">${esc(t('show.pr.lead'))}</p>
       <div class="show-profiles">${PRESENTATION_KEYS.map((k) => `<button type="button" class="card show-profile" data-sh-profile="${k}" aria-pressed="${k === cur}"><b>${esc(t(`show.pr.${k}`))}</b><small>${esc(t(`show.pr.${k}.x`))}</small></button>`).join('')}</div>
       <label class="quick-toggle"><input type="checkbox" id="shFar" ${ShowPrefs.far() ? 'checked' : ''}><span><b>${esc(t('show.far.title'))}</b> · ${esc(t('show.far.lead'))}</span></label>
-      <div class="show-ready"><span class="field-label">${esc(t('prep.ck.setting'))}</span><div class="seg" role="group">${['full', 'mini', 'off'].map((v) => `<button type="button" data-sh-ready="${v}" aria-pressed="${readyView() === v}">${esc(t(`prep.ck.set${v[0].toUpperCase()}${v.slice(1)}`))}</button>`).join('')}</div></div>`;
+      <div class="show-ready" data-sh-lobby><h3>📺 ${esc(t('set.sec.room'))}</h3>${lobbyPrefsHTML('shLobbyPrefs')}</div>`;
   },
   tab_chaos() {
     const off = S().meta?.chaosOff || {};
@@ -195,8 +197,7 @@ export const ShowPanel = {
     const rm = e.target.closest('[data-sh-packrm]');
     if (rm) { ShowPrefs.setPacks(ShowPrefs.packs().filter((p) => p.id !== rm.dataset.shPackrm)); if (ShowPrefs.pack() === rm.dataset.shPackrm) ShowPrefs.setPack(''); C.syncAtmo(); this.paint(); return; }
     if (e.target.closest('#shPackSample')) { this.addPack(JSON.stringify(SAMPLE_PACK)); return; }
-    const rv = e.target.closest('[data-sh-ready]');
-    if (rv) { setReadyView(rv.dataset.shReady); C.refreshLobby?.(); this.paint(); }
+
   },
   change(e) {
     const x = e.target;

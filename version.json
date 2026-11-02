@@ -1,21 +1,23 @@
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "date": "2026-11-02",
   "minAndroid": "7.0",
   "notes": [
-    "Ora si può eliminare anche l'ultima serata: la TV non la ripropone più come «serata interrotta» e non la ricrea.",
-    "Testi più leggibili e contrasti controllati su tutte le pagine; pulsanti e campi più comodi da toccare.",
-    "Avviso della versione leggibile (testo scuro su fondo chiaro) nella finestra «Scarica» e nella scheda «App Android».",
-    "Home: campo del codice e «Entra» ben visibili, «Crea una stanza» spiega i tre passaggi, collezione su due colonne.",
-    "«Risultati della serata» è una notifica: si riconosce subito e si può nascondere.",
-    "Pagina «Profilo e app» e schede che si adattano alla larghezza reale, dal telefono al computer."
+    "Si può chiudere una serata ancora in corso dalla pagina «Serate» (diverso da Elimina, con conferma).",
+    "Niente più limite fisso di 12 giocatori: decide il master (fino a 100).",
+    "Stanza della TV ridisegnata: i partecipanti al centro, griglia che si adatta da 1 a più di 12, Strumenti ordinati per categoria.",
+    "Lobby a scelta (Standard, Minimal, Informativa) con checklist, «Sul tavolo stasera» e scaletta da accendere.",
+    "«Silenzioso» ferma davvero tutti i suoni, si vede quando è attivo e si comanda anche dal telefono della regia.",
+    "Impostazioni a sezioni, densità (Compatta, Bilanciata, Spaziosa), traguardi per categoria e pagine pensate anche per i monitor grandi.",
+    "Le serate di prova con giocatori finti ora si possono eliminare."
   ],
   "notesEn": [
-    "You can now delete the latest night too: the TV no longer offers it as an “interrupted night” and doesn't recreate it.",
-    "More readable text with checked contrast on every page; buttons and fields easier to tap.",
-    "Readable version notice (dark text on a light background) in the “Download” window and in the “Android app” card.",
-    "Home: room code field and “Join” stand out, “Create a room” explains the three steps, collection in two columns.",
-    "“Night results” is a notification: easy to recognise and you can hide it.",
-    "“Profile and app” page and cards that adapt to the real width, from phone to computer."
+    "You can close a night still in progress from the “Nights” page (different from Delete, with confirmation).",
+    "No more fixed 12-player limit: the host decides (up to 100).",
+    "Redesigned TV room: participants at the centre, a grid that adapts from 1 to more than 12, Tools grouped by category.",
+    "Lobby to your taste (Standard, Minimal, Info) with checklist, “On the table tonight” and plan you can switch on.",
+    "“Mute” really stops every sound, shows when it's on and can be controlled from the host's phone too.",
+    "Settings in sections, density (Compact, Balanced, Spacious), achievements by category and pages built for big monitors too.",
+    "Demo nights with fake players can now be deleted."
   ]
 }

@@ -34,7 +34,7 @@ async def main():
         await t.click('#createBtn'); await t.wait_for_selector('.lobby')
         code = t.url.split('room=')[1]
         ok(aid_of(code) == aid, 'la stanza di un’altra TV consulta lo stesso armadio')
-        await t.click('#hdrLib'); await t.wait_for_selector('.lib-name')
+        await tool(t, '#hdrLib'); await t.wait_for_selector('.lib-name')
         ok('Carcassonne' in await t.inner_text('#lpList'), 'vede i giochi dell’armadio')
         await t.wait_for_selector('#lpKeyIn', timeout=5000)
         ok(True, 'senza chiave: solo consultazione')

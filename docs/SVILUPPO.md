@@ -139,6 +139,15 @@ Il **racconto della serata** (`nightStory`) restituisce chiavi di testo e parame
 inventate: ogni frase corrisponde a un dato del riassunto (gioco più amato, consenso sotto il 60%, partita più lunga di
 45 minuti, vittorie, MVP, un commento se scelto).
 
+## Novità della 2.4
+
+- **Preferenze della lobby** (`js/lobby-prefs.js`, chiave `gnr_lobby`): modalità `standard` / `minimal` / `info`, checklist (voci in `CHECK_ITEMS`), «Sul tavolo», scaletta. Sono del dispositivo della regia (la TV), non della stanza: un'altra TV parte dai suoi valori. Si cambiano da Impostazioni › Partita e regia, dagli Strumenti e dal pannello profilo della TV; l'evento `gnr-lobby` ridisegna la lobby.
+- **Griglia dei partecipanti** (`SCREENS.lobby.layout()` in `js/host.js`): cerca il numero di colonne che dà le card più grandi nello spazio vero (rapporto 1,18, tra 6,5rem e 22rem); se non ci stanno nasconde la card dei posti liberi e poi passa allo scorrimento verticale. In verticale conta solo la larghezza.
+- **Densità** (`gnr_density`, `html[data-density]`): cambia spazi e padding delle card (`css/ui.css`), non i caratteri.
+- **Chiudere una serata** (`closeNight` in `js/nights.js`): scrive `state = { phase: 'awards', done: true, remote: true }`. Le regole lo permettono al creatore (uid o profilo) solo con quei valori e solo se lo stato esiste. La TV, vedendo `remote`, salva il riassunto nel gruppo (`remoteCloseSave`).
+- **Posti** (`MAX_PLAYERS = 100` in `js/util.js`, stesso valore nelle regole e nei modelli): limite tecnico del piano Spark (100 connessioni contemporanee per database). Oltre serve il piano Blaze e una revisione delle prestazioni.
+- **Silenzioso**: `setMuted` emette `gnr-mute`; ascoltano musica, atmosfera, suoni personalizzati, commento, comandi rapidi. La TV copia lo stato in `meta/muted`, la regia manda il comando `mute`.
+
 ## Lingue
 
 GameNight Show parla **italiano** e **inglese**. La lingua si sceglie in **Impostazioni › Lingua** e vale solo per

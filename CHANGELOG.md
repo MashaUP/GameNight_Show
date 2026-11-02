@@ -1,5 +1,29 @@
 # Novità
 
+## 2.4.0 · Stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente più tetto a 12 giocatori (2 novembre 2026)
+
+> **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (chiusura della serata da parte del creatore, `maxPlayers` fino a 100, `meta/muted`). Per l'app Android la release da pubblicare è `v2.4.0`.
+
+**Perché 2.4.0 (MINOR)**: nuove funzioni retrocompatibili (chiudere una serata in corso, preferenze della lobby, densità, silenzioso dalla regia, posti oltre 12) e un ridisegno di pagine e stanza; nessun dato da convertire, le serate vecchie si aprono come prima.
+
+**Funzioni**
+- «Chiudi la serata» nella pagina Serate per le serate in corso (solo creatore o dispositivo con il codice regia): porta la stanza alla premiazione con conferma, senza cancellare giochi e voti. Il riassunto nel gruppo lo scrive la TV appena si riapre (o subito, se è aperta). Regole: il creatore può scrivere lo stato solo verso la premiazione conclusa.
+- Serate di prova (giocatori finti): ora registrano il creatore, quindi si possono eliminare. Il resoconto usa da solo la sessione della regia se il dispositivo ha il codice regia della serata.
+- Posti: niente tetto fisso a 12. Il master sceglie fino a 100 (campo numerico nella creazione). 100 è un limite tecnico: il piano gratuito di Firebase regge 100 connessioni contemporanee per database.
+- Silenzioso: ferma anche suoni personalizzati e voce del commento, il pulsante resta premuto (aria-pressed), la scelta resta salvata sulla TV ed è copiata in `meta/muted`; il telefono della regia la vede e la cambia.
+
+**Stanza della TV (lobby)**
+- Barra in alto: logo a sinistra, ora, codice, giocatori, pausa, timer, silenzioso, schermo intero, Fine serata, «Chiudi stanza» (con conferma). «Gioca anche tu», Ludoteca e «Nuova serata» sono negli Strumenti, ordinati per categoria.
+- I partecipanti sono al centro: card che si adattano a 1–2, 3–4, 5–8, 9–12 e oltre (nessun posto fisso disegnato), posti liberi in una sola card discreta, stato collegato/non collegato. Posti previsti separati dal numero di collegati.
+- Modalità Standard, Minimal e Informativa; checklist (con voci a scelta), «Sul tavolo stasera» e scaletta si accendono da Impostazioni › Partita e regia o dagli Strumenti (preferenza della regia, su quel dispositivo).
+- Niente più parti tagliate in basso («Codice regia», «Inizia la serata») da 1366×768 a 3440×1440.
+
+**Pagine**
+- Home a tutta larghezza su monitor grandi, sidebar senza barra orizzontale, Armadi / Serate / Gruppi con la stessa struttura (titolo, descrizione, azione, numeri, card, aiuto a lato).
+- Impostazioni a sezioni con indice (Generali, Aspetto e accessibilità, Consigli, Notifiche, Partita e regia, Privacy e dati, Aiuto e diagnostica); densità Compatta / Bilanciata / Spaziosa.
+- Traguardi per categoria con percentuale e progressi; Profilo e app con il QR dei dispositivi in alto; finestra Scarica con il QR vicino all'inizio.
+- Caratteri fluidi (17–22 px) e spazi a variabili per i monitor da 2048 a 3440 px e lo zoom al 125/150%.
+
 ## 2.3.0 · Sistema di design più leggibile, home riordinata, si elimina anche l'ultima serata (2 novembre 2026)
 
 > **Le regole del database sono cambiate** (solo la presenza nella stanza): ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica**. Per l'app Android la release da pubblicare è `v2.3.0`.

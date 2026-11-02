@@ -14,7 +14,10 @@ export const PLAYER_COLORS = [
   '#8AC926', '#FF924C', '#00B4D8', '#C77DFF', '#F15BB5', '#9BE564'
 ];
 export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 12;
+// 2.4: niente tetto fisso a 12, decide il master. 100 è un limite tecnico, non di design: il piano gratuito di
+// Firebase (Spark) regge 100 connessioni contemporanee per database, e ogni telefono ne usa una (più la TV).
+// Oltre servirebbe il piano Blaze. Lo stesso valore è nelle regole (rooms/$code/meta/maxPlayers).
+export const MAX_PLAYERS = 100;
 export const DEFAULT_PLAYERS = 8;
 
 export const $ = (sel, root = document) => root.querySelector(sel);
@@ -553,9 +556,29 @@ const A11Y_KEY = 'gnr_a11y';
 export function a11ySettings() {
   try { return { size: 'm', contrast: false, cb: false, motion: false, ...(JSON.parse(localStorage.getItem(A11Y_KEY) || '{}') || {}) }; } catch { return { size: 'm', contrast: false, cb: false, motion: false }; }
 }
+// Densità dell'interfaccia (2.4): compatta, bilanciata (predefinita), spaziosa. Cambia spazi e respiro delle card
+// (variabili CSS in css/ui.css), non la dimensione dei caratteri (quella è A / A+ / A++).
+const DENSITY_KEY = 'gnr_density';
+export const DENSITIES = ['compact', 'balanced', 'spacious'];
+export function density() { try { const v = localStorage.getItem(DENSITY_KEY); return DENSITIES.includes(v) ? v : 'balanced'; } catch { return 'balanced'; } }
+export function applyDensity(v = density()) {
+  const el = typeof document !== 'undefined' ? document.documentElement : null;
+  if (!el?.setAttribute) return; // anche fuori dal browser (test con Node)
+  if (v === 'balanced') el.removeAttribute?.('data-density'); else el.setAttribute('data-density', v);
+}
+export function setDensity(v) {
+  try { if (v === 'balanced') localStorage.removeItem(DENSITY_KEY); else localStorage.setItem(DENSITY_KEY, v); } catch { /* niente */ }
+  applyDensity(DENSITIES.includes(v) ? v : 'balanced');
+}
+export function densityHTML() {
+  const d = density();
+  return `<div class="seg seg--wide" role="group" aria-label="${esc(t('density.label'))}">${DENSITIES.map((v) => `<button type="button" data-density="${v}" aria-pressed="${d === v}">${esc(t(`density.${v}`))}</button>`).join('')}</div>`;
+}
+
 export function applyA11y(set = a11ySettings()) {
   const c = document.documentElement?.classList;
   if (!c) return;
+  applyDensity();
   c.toggle('a11y-l', set.size === 'l');
   c.toggle('a11y-xl', set.size === 'xl');
   c.toggle('a11y-contrast', Boolean(set.contrast));

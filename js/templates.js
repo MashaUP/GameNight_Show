@@ -15,6 +15,7 @@
 //
 // Qui la parte pura (provata in tests/features.test.mjs) e il pannello della TV (bindTemplates).
 import { t } from './i18n.js';
+import { MIN_PLAYERS, MAX_PLAYERS } from './util.js';
 
 export const TEMPLATE_MAX = 20;
 export const SETTING_KEYS = ['voting', 'chaos', 'voteSeconds', 'voteAuto', 'manualReveal', 'atmosphere', 'atmoLevel', 'atmoSound', 'maxPlayers', 'music', 'opening', 'award', 'maxMinutes', 'maxGames'];
@@ -45,7 +46,7 @@ export function cleanSettings(raw) {
   if (['soft', 'strong'].includes(r.atmoLevel)) s.atmoLevel = r.atmoLevel;
   if (r.atmoSound === true) s.atmoSound = true;
   const mp = Number(r.maxPlayers);
-  if (Number.isInteger(mp) && mp >= 2 && mp <= 12) s.maxPlayers = mp;
+  if (Number.isInteger(mp) && mp >= MIN_PLAYERS && mp <= MAX_PLAYERS) s.maxPlayers = mp;
   if (MUSIC.includes(r.music)) s.music = r.music;
   const opening = String(r.opening ?? '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
   if (opening) s.opening = opening;
@@ -89,7 +90,7 @@ export function settingsPatch(settings, { activePlayers = 0 } = {}) {
   const patch = {};
   for (const k of SETTING_KEYS) {
     if (k === 'music') continue;
-    if (k === 'maxPlayers') { if (s.maxPlayers) patch.maxPlayers = Math.max(s.maxPlayers, Math.min(12, activePlayers)); continue; }
+    if (k === 'maxPlayers') { if (s.maxPlayers) patch.maxPlayers = Math.max(s.maxPlayers, Math.min(MAX_PLAYERS, activePlayers)); continue; }
     patch[k] = s[k] === undefined ? null : s[k];
   }
   return { patch, music: s.music || null };

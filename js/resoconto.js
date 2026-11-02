@@ -11,11 +11,18 @@ import { t, fmtDate, fmtList, langToggleHTML } from './i18n.js';
 import { isApp } from './native.js';
 import { exportReport } from './report.js';
 import { Person } from './person.js';
-import { isNightCreator, deleteNight } from './nights.js';
+import { isNightCreator, deleteNight, closeNight } from './nights.js';
 import { fixFormHTML, fixesHTML, bindFixForm } from './night-fix.js';
 
 // Aperto dalla TV (&s=regia): stessa sessione della regia, così chi ha creato la serata è riconosciuto.
-if (new URLSearchParams(location.search).get('s') === 'regia') useSession('regia');
+// 2.4: anche senza &s=regia, se questo dispositivo ha il codice regia della serata (è la sua TV/regia).
+{
+  const qs = new URLSearchParams(location.search);
+  const code4 = String(qs.get('room') || '').toUpperCase();
+  let regia = qs.get('s') === 'regia';
+  if (!qs.has('s') && /^[A-Z0-9]{4}$/.test(code4)) { try { regia = Boolean(localStorage.getItem(`gnr_regia_${code4}`)); } catch { /* niente */ } }
+  if (regia) useSession('regia');
+}
 ErrLog.install();
 applyTheme();
 registerSW();
@@ -107,10 +114,41 @@ function renderRoom(code, r) {
       ${(awards.length || custom.length) && ended ? `<section class="card ph-card rs-awards"><h2>${esc(t('report.rs.awards'))}</h2><ul class="rs-list">${awards.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.game ? a.game.name : fmtList((a.players || []).map((p) => p.name)))} <span class="muted">(${esc(a.value || '')})</span></li>`).join('')}${custom.map((a) => `<li><b>${esc(a.title)}</b>: ${esc(a.who)} <span class="muted">(${esc(a.value)})</span></li>`).join('')}</ul></section>` : ''}
       <section class="card ph-card rs-players"><h2>${esc(t('report.rs.who'))}</h2><div class="rs-people">${Object.entries(players).map(([uid, p]) => `<span class="rs-person">${avatarHTML(p, '2.2rem')}<span>${esc(p.name)}</span></span>`).join('') || '<span class="muted">—</span>'}</div></section>
       <p class="muted small center rs-note">${esc(t('report.rs.note'))}</p>
+      ${ended ? '' : closeHTML(meta)}
       ${deleteHTML()}
       <a class="btn-sec btn-block rs-home" href="index.html">${esc(t('report.rs.backHome'))}</a>
     </main>`;
   bind();
+  // 2.4: arrivati da "Chiudi la serata" (pagina Serate): si mostra la richiesta, non si chiude da soli.
+  if (!ended && param('do') === 'close' && $('#rsClose')) { $('#rsCloseCard').scrollIntoView({ block: 'center' }); $('#rsClose').focus({ preventScroll: true }); }
+}
+
+/** 2.4: "Chiudi la serata" per una serata ancora in corso. Solo creatore o TV; le regole lo garantiscono. */
+function closeHTML(meta) {
+  if (!target || !(isNightCreator(meta, me.uid, me.pid) || meta.hostUid === me.uid)) return '';
+  return `<section class="card ph-card rs-close" id="rsCloseCard">
+      <h2>${esc(t('report.close.title'))}</h2>
+      <p class="muted small">${esc(t('report.close.lead'))}</p>
+      <button type="button" class="btn btn-block" id="rsClose">${esc(t('report.close.btn'))}</button>
+      <p class="form-error" id="rsCloseErr" role="alert"></p>
+    </section>`;
+}
+
+async function askClose() {
+  const { code } = target;
+  if (!confirm(t('report.close.confirm', { code }))) return;
+  const btn = $('#rsClose');
+  btn.disabled = true;
+  try {
+    const closed = await closeNight(code);
+    const room = (await get(roomRef(code))).val();
+    if (room?.meta) { target.owner = room.meta; renderRoom(code, room); }
+    const box = $('#app .rs-hero');
+    if (box) box.insertAdjacentHTML('beforeend', `<p class="rs-status" role="status">✅ ${esc(t(closed ? 'report.close.done' : 'report.close.already'))}</p>`);
+  } catch (err) {
+    btn.disabled = false;
+    $('#rsCloseErr').textContent = /permission/i.test(String(err?.code || err?.message || '')) ? t('report.close.denied') : explainError(err);
+  }
 }
 
 /** Stessi dati del PDF della TV (report.js), presi dalla stanza. Le foto restano nell'album del gruppo. */
@@ -250,6 +288,7 @@ async function askDelete() {
 
 function bind() {
   $('#rsDelete')?.addEventListener('click', askDelete);
+  $('#rsClose')?.addEventListener('click', askClose);
   bindStory();
   $('#rsPrint')?.addEventListener('click', () => {
     if (isApp()) {

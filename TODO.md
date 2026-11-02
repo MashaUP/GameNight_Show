@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.3.0** (sistema di design più leggibile, home riordinata, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.4.0** (stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -17,12 +17,20 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 
 ## 🧩 Idee fatte solo in parte (con il motivo)
 
+- [ ] **Stanza sul telefono in verticale (2.4).** La pagina scorre: «Inizia la serata» è in fondo, non sempre a vista. Da valutare una barra fissa in basso.
+- [ ] **Sidebar richiudibile (2.4).** Sui monitor grandi la sidebar è a larghezza fissa; non si può ancora ridurre a sole icone.
+- [ ] **«Pronto» per giocatore (2.4).** La lobby mostra collegato/non collegato, non chi si dichiara pronto.
+
 - [ ] **Webhook verso altri servizi (idea 53).** C'è Discord (webhook del canale, dal browser della TV). Mandare eventi a servizi qualsiasi (Telegram, Zapier…) vorrebbe dire custodire i loro segreti: serve un server come il proxy BGG (`bgg-proxy/`, Cloudflare Worker), da aggiungere con una rotta `/hook` e i segreti con `wrangler secret`.
 - [ ] **Esportazione verso altri tracker (idea 55).** C'è il CSV "una riga per giocatore" con l'id di BoardGameGeek (formato in `docs/DATI.md`). Un formato preciso per un'app (es. BG Stats) va aggiunto solo quando quell'app ne pubblica uno documentato.
 - [ ] **Voti segreti anche per le regole del database (opportunità D).** Oggi prima del reveal i voti sono nascosti dall'interfaccia, ma `rooms/<codice>/votes` è leggibile da chi è collegato e conosce il codice. Per nasconderli davvero servirebbe un nodo leggibile solo dalla regia fino al reveal (e cambiare il conteggio "ha votato / manca" sui telefoni): cambiamento grande, da fare in una versione dedicata.
 - [ ] **Prove su Firefox e Safari (idea 75).** Il controllo "Altri browser" su GitHub (`.github/workflows/altri-browser.yml`, Firefox e WebKit) è pronto ma non è mai stato eseguito: avviarlo a mano (Actions › Altri browser › Run workflow), guardare il risultato e correggere le differenze. Non blocca la "Verifica".
 
 ## 🔌 Da configurare (fuori dal codice)
+
+- [ ] **Regole del database 2.4**: ricopiare `firebase/database.rules.json` e **Pubblica** (chiusura della serata dal creatore, posti fino a 100, `meta/muted`).
+- [ ] **Release `v2.4.0`** su GitHub per l'APK.
+- [ ] **Prove a mano 2.4**: TV vera (Android TV / Fire TV), telefono verticale in regia, Firefox e Safari; serata con più di 20 telefoni veri.
 
 - [ ] **Regole del database**: ricopiare `firebase/database.rules.json` in Firebase e premere **Pubblica** (cambiate nella 2.0 e nella 2.1).
 - [ ] **Account**: in Firebase › Authentication attivare **Google** ed **Email/password** (lasciare attivo **Anonimo**) — `docs/INSTALLAZIONE.md`, passo 2.4.1.

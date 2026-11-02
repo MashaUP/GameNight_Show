@@ -4,7 +4,7 @@
 // barra in basso sul telefono. Tutti i testi vengono da js/lang/<lingua>.js.
 import {
   $, $$, esc, normalizeCode, registerSW, applyTheme, ErrLog, toast, themeSwitchHTML, a11yHTML, PLAYER_COLORS,
-  squarePhoto, qrSVG, cleanName, param, randomCode, userError
+  squarePhoto, qrSVG, cleanName, param, randomCode, userError, densityHTML, setDensity
 } from './util.js';
 import { t, fmtDate, langSwitchHTML, applyStatic } from './i18n.js';
 import { isConfigured, connect, get, set, dbRef, roomRef, groupRef, memberRef, armadioRef, onValue, explainError, explainAuthError, accountInfo, isDemo, startDemo, stopDemo } from './fb.js';
@@ -15,7 +15,10 @@ import { avatarHTML, avatarOptions, avatarUri } from './avatars.js';
 import { progressFor, ACHIEVEMENTS } from './stats.js';
 import { isApp, isAndroid, apkUrl, canScanQR, scanQR, routeFromQR } from './native.js';
 import { mountUpdatePanel, autoCheck } from './updates.js';
-import { Notices, noticesHTML, bindNotices } from './notices.js';
+import { isNightCreator } from './nights.js';
+import { Notices, noticesHTML, bindNotices, NOTICE_CATS } from './notices.js';
+import { LEADS, reminderLead, setReminderLead } from './reminders.js';
+import { lobbyPrefsHTML, bindLobbyPrefs } from './lobby-prefs.js';
 import { links, bindLinks, refreshLinks } from './links.js';
 import { APP_VERSION } from './version.js';
 import { initSpatialNav, isTvDevice } from './spatialnav.js';
@@ -88,11 +91,12 @@ document.addEventListener('click', (e) => {
 
 const Sheet = {
   el: null,
-  open(html, { onClose, wide = false } = {}) {
+  open(html, { onClose, wide = false, cls = '' } = {}) {
     this.close();
     const el = document.createElement('div');
     el.className = 'overlay overlay--sheet hub-overlay';
-    el.innerHTML = `<div class="card sheet ${wide ? 'sheet--tall' : ''}" role="dialog" aria-modal="true">${html}</div>`;
+    // 2.4: le finestre larghe (wide) sono davvero più larghe (sheet--wide), non solo più alte
+    el.innerHTML = `<div class="card sheet ${wide ? 'sheet--tall sheet--wide' : ''} ${cls}" role="dialog" aria-modal="true">${html}</div>`;
     document.body.appendChild(el);
     el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('[data-close]')) this.close(); });
     this.el = el;
@@ -246,9 +250,30 @@ function meHTML(state, full) {
     </div>` : `<a class="ui-btn ui-btn--ghost ui-btn--block ui-btn--sm" href="#altro">${esc(t('home.me.open'))}</a>`}`;
 }
 
+/** 2.4: QR e codice per collegare un altro dispositivo, in cima a "Profilo e app" (prima solo in una finestra). */
+function devicesHTML() {
+  const head = `<div class="tile-head"><span class="tile-ico tile-ico--sky" aria-hidden="true">📲</span><div><h2 id="devTitle">${esc(t('home.dev.title'))}</h2><p class="tile-sub">${esc(t('home.dev.lead'))}</p></div></div>`;
+  if (!Person.local()) return `${head}<p class="muted">${esc(t('home.dev.none'))}</p><button type="button" class="ui-btn ui-btn--primary" data-act="create">✨ ${esc(t('home.me.createShort'))}</button>`;
+  const url = Person.linkUrl();
+  const code = Person.linkCode();
+  return `${head}
+    <div class="dev-body">
+      <div class="dev-qr hub-qr" aria-label="QR">${qrSVG(url)}</div>
+      <div class="dev-text">
+        <ol class="tile-steps"><li><b aria-hidden="true">1</b><span>${esc(t('home.dev.step1'))}</span></li><li><b aria-hidden="true">2</b><span>${esc(t('home.dev.step2'))}</span></li><li><b aria-hidden="true">3</b><span>${esc(t('home.dev.step3'))}</span></li></ol>
+        <p class="hub-link-code"><span class="code-chip">${esc(code)}</span><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="devCopy">${esc(t('common.copy'))}</button></p>
+        <details class="hub-details"><summary>${esc(t('home.dev.link'))}</summary><p class="dev-url"><a href="${esc(url)}">${esc(url.replace(/^https?:\/\//, ''))}</a></p></details>
+        <p class="muted small">${esc(t('home.share.secret'))}</p>
+        <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-act="share">🔐 ${esc(t('home.dev.manage'))}</button>
+      </div>
+    </div>`;
+}
+
 function paintMe(state = Person.data) {
   $('#hubMe').innerHTML = meHTML(state, false);
   $('#hubMeFull').innerHTML = `<h2 class="sr-only">${esc(t('home.me.title'))}</h2>${meHTML(state, true)}${accountHTML()}`;
+  $('#hubDevices').innerHTML = devicesHTML();
+  $('#devCopy')?.addEventListener('click', async () => { const c = Person.linkCode(); try { await navigator.clipboard.writeText(c); toast(t('home.share.copied')); } catch { toast(c); } });
   paintHero(state?.info ? state : null);
   paintSideFoot(state);
 }
@@ -560,7 +585,7 @@ async function adoptMember(id) {
 async function openTrophies() {
   const d = Person.data;
   if (!d) return;
-  const el = Sheet.open(`${head(`🏆 ${esc(t('home.tr.title'))}`)}<div id="trBody"><p class="muted">${esc(t('home.tr.loading'))}</p></div>`, { wide: true });
+  const el = Sheet.open(`${head(`🏆 ${esc(t('home.tr.title'))}`)}<div id="trBody"><p class="muted">${esc(t('home.tr.loading'))}</p></div>`, { wide: true, cls: 'sheet--trophies' });
   const got = new Map();
   const rows = [];
   for (const gid of Object.keys(d.groups || {})) {
@@ -573,17 +598,53 @@ async function openTrophies() {
     } catch { rows.push({ name: gid, locked: true }); }
   }
   if (!el.isConnected) return;
-  $('#trBody', el).innerHTML = rows.length ? `
+  $('#trBody', el).innerHTML = rows.length ? trophiesHTML(rows, got) : `<p>${esc(t('home.tr.none'))}</p>`;
+}
+
+// 2.4: categorie solo per la presentazione (i criteri di sblocco restano quelli di stats.js)
+const TR_CATS = [
+  ['presence', ['first', 'regular', 'veteran', 'loyal']],
+  ['explore', ['explorer', 'explorer2', 'complete']],
+  ['wins', ['winner', 'machine', 'marathon', 'star']],
+  ['votes', ['oracle', 'seer', 'rebel']],
+  ['social', ['social']],
+  ['secret', ['harsh', 'gold', 'night-owl']]
+];
+function trophiesHTML(rows, got) {
+  // Avanzamento migliore fra tutti i gruppi (es. 3 serate su 5 nel gruppo dove ne hai fatte di più)
+  const best = new Map();
+  for (const r of rows) for (const a of r.pr?.achievements || []) {
+    if (!a.progress) continue;
+    const [cur, goal] = a.progress;
+    const prev = best.get(a.id);
+    if (!prev || cur / goal > prev[0] / prev[1]) best.set(a.id, [Math.min(cur, goal), goal]);
+  }
+  const total = ACHIEVEMENTS.length;
+  const pct = Math.round((got.size / total) * 100);
+  const known = new Set(TR_CATS.flatMap(([, ids]) => ids));
+  const cats = [...TR_CATS, ['other', ACHIEVEMENTS.map((a) => a.id).filter((id) => !known.has(id))]].filter(([, ids]) => ids.length);
+  const byId = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
+  const card = (a) => {
+    const ok = got.has(a.id);
+    if (a.secret && !ok) return `<li class="tr-card is-off is-secret"><span class="tr-ico" aria-hidden="true">❔</span><div><b>${esc(t('home.tr.secret'))}</b><small>${esc(t('home.tr.secretHint'))}</small></div></li>`;
+    const p = best.get(a.id);
+    return `<li class="tr-card ${ok ? 'is-on' : 'is-off'}"><span class="tr-ico" aria-hidden="true">${a.icon}</span><div><b>${esc(a.name)}</b><small>${esc(a.desc)}</small>
+      ${ok ? `<span class="badge badge--done">✓ ${esc(t('tr.done'))}</span>` : p ? `<span class="tr-prog"><i class="tr-bar"><i style="width:${Math.round((p[0] / p[1]) * 100)}%"></i></i><small>${esc(t('tr.progress', { cur: p[0], goal: p[1] }))}</small></span>` : `<span class="badge">${esc(t('tr.todo'))}</span>`}</div></li>`;
+  };
+  return `
+    <div class="tr-summary">
+      <div class="tr-ring" style="--p:${pct}" role="img" aria-label="${pct}%"><b>${pct}%</b></div>
+      <div><p class="tr-summary-title">${esc(t('tr.summary', { n: got.size, total }))}</p><i class="tr-bar tr-bar--big"><i style="width:${pct}%"></i></i></div>
+    </div>
+    <h3>${esc(t('tr.groupsTitle'))}</h3>
     <div class="tr-groups">${rows.map((r) => r.locked
       ? `<div class="tr-group"><b>${esc(r.name)}</b><span class="muted small">${esc(t('home.tr.private'))}</span></div>`
       : `<div class="tr-group"><b>${esc(r.name)}</b><span class="lv-badge">${esc(t('home.tr.level', { n: r.pr.level }))}</span><span class="muted small">${esc(r.pr.levelName)} · ${esc(t('home.tr.nights', { n: r.pr.nights }))} · ${esc(t('home.tr.wins', { n: r.pr.wins }))}</span><i class="tr-bar"><i style="width:${Math.round(r.pr.levelProgress * 100)}%"></i></i></div>`).join('')}</div>
-    <h3>${esc(t('home.tr.unlocked', { n: got.size, total: ACHIEVEMENTS.length }))}</h3>
-    <ul class="tr-list">${ACHIEVEMENTS.map((a) => {
-      const ok = got.has(a.id);
-      if (a.secret && !ok) return `<li class="tr-item is-off"><span>❔</span><div><b>${esc(t('home.tr.secret'))}</b><small>${esc(t('home.tr.secretHint'))}</small></div></li>`;
-      return `<li class="tr-item ${ok ? '' : 'is-off'}"><span>${a.icon}</span><div><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div></li>`;
-    }).join('')}</ul>`
-    : `<p>${esc(t('home.tr.none'))}</p>`;
+    ${cats.map(([c, ids]) => {
+      const n = ids.filter((id) => got.has(id)).length;
+      return `<section class="tr-cat"><h3>${esc(c === 'other' ? t('home.tr.title') : t(`tr.cat.${c}`))} <small class="muted">${esc(t('tr.catCount', { n, total: ids.length }))}</small></h3>
+        <ul class="tr-list tr-grid">${ids.map((id) => card(byId[id])).join('')}</ul></section>`;
+    }).join('')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -598,21 +659,52 @@ function armadiList() {
 }
 const armUrl = (id) => `armadio.html?a=${id}`; // i18n-ok
 
+/** 2.4: intestazione comune delle pagine (titolo, descrizione, azione principale, riepilogo). */
+function pageHead({ id, ico, title, lead, action = '', stats = [] }) {
+  return `<header class="page-head">
+      <div class="page-head-text"><h1 class="page-title" id="${id}">${ico} ${esc(title)}</h1><p class="page-lead">${esc(lead)}</p></div>
+      ${action ? `<div class="page-head-acts">${action}</div>` : ''}
+    </header>
+    ${stats.length ? `<ul class="page-stats" aria-label="${esc(t('page.stats'))}">${stats.map(([n, label, cls]) => `<li class="${cls || ''}"><b>${n}</b><span>${esc(label)}</span></li>`).join('')}</ul>` : ''}`;
+}
+/** Riquadro "Cosa puoi fare" accanto alle card: la pagina resta completa anche con pochi elementi. */
+function pageAside(lines, extra = '') {
+  return `<aside class="tile page-aside" aria-label="${esc(t('page.help'))}"><h2 class="sec-title">💡 ${esc(t('page.help'))}</h2>
+    <ul class="page-help">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${extra}</aside>`;
+}
+
+H.armInfo = H.armInfo || {};
+function armCardHTML(a) {
+  const info = H.armInfo[a.id] || {};
+  const role = a.own ? t('home.arm.own') : a.key ? t('home.arm.editor') : t('home.arm.viewer');
+  const upd = Number(info.updatedAt || info.createdAt) || 0;
+  return `<li><a class="row hub-item card-item" href="${armUrl(a.id)}">
+      <span class="card-item-top"><span class="tile-ico tile-ico--violet" aria-hidden="true">${esc(info.emoji || '📦')}</span><span class="badge ${a.own ? 'badge--own' : ''}">${esc(role)}</span></span>
+      <span class="mini-text"><b>${esc(info.name || a.name)}</b>${info.desc ? `<small>${esc(info.desc)}</small>` : ''}</span>
+      <span class="card-item-meta"><span>${esc(t('home.arm.code', { code: a.id }))}</span>${upd ? `<span>${esc(t('home.arm.updated', { date: fmtDate(upd, { day: 'numeric', month: 'short', year: 'numeric' }) }))}</span>` : ''}</span>
+      <span class="card-item-go">${esc(t('home.arm.open'))} <span aria-hidden="true">›</span></span>
+    </a></li>`; // i18n-ok
+}
 function paintArmadi() {
   const list = armadiList();
   $('#tileArmTxt').textContent = list.length
     ? `${t('home.arm.count', { n: list.length })}: ${list.slice(0, 2).map((a) => a.name).join(', ')}${list.length > 2 ? '…' : ''}`
     : t('home.arm.empty');
+  const own = list.filter((a) => a.own).length;
   const box = $('#hubArmadi');
   box.innerHTML = `
-    <div class="sec-row"><h1 class="page-title" id="armTitle">📦 ${esc(t('home.arm.title'))}</h1><button type="button" class="ui-btn ui-btn--primary ui-btn--sm" id="armNew">➕ <span>${esc(t('home.arm.new'))}</span></button></div>
-    ${list.length ? `<ul class="rows">${list.map((a) => `<li><a class="row hub-item" href="${armUrl(a.id)}"><span class="tile-ico tile-ico--violet" aria-hidden="true">📦</span><span class="mini-text"><b>${esc(a.name)}</b><small>${esc(a.own ? t('home.arm.own') : a.key ? t('home.arm.editor') : t('home.arm.viewer'))} · ${esc(t('home.arm.code', { code: a.id }))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>` // i18n-ok
-      : `<p class="empty">${esc(t('home.arm.none'))}</p>`}
-    <details class="hub-details"><summary>${esc(t('home.arm.haveCode'))}</summary>
-      <div class="hub-code-row"><input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-label="${esc(t('home.arm.codeAria'))}"><button type="button" class="btn-sec" id="armCodeGo">${esc(t('common.open'))}</button></div>
-      <p class="form-error" id="armCodeErr" role="alert"></p>
-    </details>
-    ${Person.local() ? '' : `<p class="muted small">${esc(t('home.arm.withProfile'))}</p>`}`;
+    ${pageHead({ id: 'armTitle', ico: '📦', title: t('home.arm.title'), lead: t('home.arm.lead'),
+    action: `<button type="button" class="ui-btn ui-btn--primary" id="armNew">➕ <span>${esc(t('home.arm.new'))}</span></button>`,
+    stats: list.length ? [[list.length, t('home.arm.stTotal', { n: list.length })], [own, t('home.arm.stOwn', { n: own })], [list.length - own, t('home.arm.stShared', { n: list.length - own })]] : [] })}
+    <div class="page-body">
+      <div class="page-main">${list.length ? `<ul class="rows card-grid">${list.map(armCardHTML).join('')}</ul>` : `<p class="empty empty--big">${esc(t('home.arm.none'))}</p>`}</div>
+      ${pageAside([t('home.arm.help1'), t('home.arm.help2'), t('home.arm.help3')], `
+        <details class="hub-details" open><summary>${esc(t('home.arm.haveCode'))}</summary>
+          <div class="hub-code-row"><input class="input code-input code-input--6" id="armCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" aria-label="${esc(t('home.arm.codeAria'))}"><button type="button" class="btn-sec" id="armCodeGo">${esc(t('common.open'))}</button></div>
+          <p class="form-error" id="armCodeErr" role="alert"></p>
+        </details>
+        ${Person.local() ? '' : `<p class="muted small">${esc(t('home.arm.withProfile'))}</p>`}`)}
+    </div>`;
   $('#armNew').addEventListener('click', openNewArmadio);
   $('#armCode').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
   $('#armCodeGo').addEventListener('click', async () => {
@@ -628,6 +720,16 @@ function paintArmadi() {
       location.href = armUrl(id);
     } catch (ex) { err.textContent = explainError(ex); }
   });
+  loadArmInfo(list);
+}
+/** Nome aggiornato, emoji, descrizione e data degli armadi (una lettura per armadio, solo "info"). */
+async function loadArmInfo(list) {
+  if (!H.uid) return;
+  const todo = list.filter((a) => !H.armInfo[a.id]).slice(0, 24);
+  if (!todo.length) return;
+  await Promise.all(todo.map((a) => get(armadioRef(a.id, 'info')).then((sn) => { H.armInfo[a.id] = sn.val() || {}; }).catch(() => { H.armInfo[a.id] = {}; })));
+  const grid = $('#hubArmadi .card-grid');
+  if (grid) grid.innerHTML = armadiList().map(armCardHTML).join('');
 }
 // ---------------------------------------------------------------------------
 // Prestiti scaduti e in scadenza (dagli armadi che questo dispositivo può modificare)
@@ -717,16 +819,62 @@ function openNewArmadio() {
 function historyList() {
   return (ls.json('gnr_history', []) || []).filter((n) => /^[A-Z0-9]{4}$/.test(n?.room || ''));
 }
+H.nightSt = H.nightSt || {};
+/** Stato di una serata dello storico: live (in corso), done, saved (solo riassunto nel gruppo), gone. */
+async function nightStatus(n) {
+  const [meta, state] = await Promise.all([get(roomRef(n.room, 'meta')).then((x) => x.val()), get(roomRef(n.room, 'state')).then((x) => x.val())]).catch(() => [null, null]);
+  if (meta) return { st: state?.phase === 'awards' ? 'done' : 'live', meta };
+  if (n.gid) {
+    const has = (await get(groupRef(n.gid, `nights/${n.room}`)).catch(() => null))?.exists();
+    if (has) return { st: 'saved' };
+  }
+  return { st: 'gone' };
+}
+function reportUrl(n, extra = '') {
+  const regia = ls.get(`gnr_regia_${n.room}`) ? '&s=regia' : ''; // sulla TV che l'ha guidata vale la sessione della regia
+  return `resoconto.html?room=${esc(n.room)}${n.gid ? `&g=${esc(n.gid)}` : ''}${regia}${extra}`;
+}
+function nightCardHTML(n) {
+  const x = H.nightSt[n.room];
+  const st = x?.st || 'checking';
+  const canClose = st === 'live' && (Boolean(ls.get(`gnr_regia_${n.room}`)) || isNightCreator(x.meta, H.uid, Person.data?.pid || ''));
+  const ico = { live: '🔴', done: '🏆', saved: '📋', gone: '🗃️', checking: '📋' }[st];
+  return `<li><div class="row hub-item card-item card-item--night is-${st}">
+      <span class="card-item-top"><span class="tile-ico tile-ico--${st === 'live' ? 'live' : st === 'done' ? 'sun' : 'teal'}" aria-hidden="true">${ico}</span><span class="badge badge--${st}">${esc(t(`home.hist.st.${st}`))}</span></span>
+      <span class="mini-text"><b>${esc(n.group || t('home.hist.night'))} · ${esc(n.room)}</b><small>${esc(fmtDate(n.at, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</small></span>
+      <span class="card-item-acts">
+        ${st !== 'gone' ? `<a class="ui-btn ui-btn--ghost ui-btn--sm" href="${reportUrl(n)}">📋 ${esc(t('home.hist.openReport'))}</a>` : ''}
+        ${canClose ? `<a class="ui-btn ui-btn--outline ui-btn--sm" href="${reportUrl(n, '&do=close')}" title="${esc(t('home.hist.closeTitle'))}">🏁 ${esc(t('home.hist.close'))}</a>` : ''}
+      </span>
+    </div></li>`; // i18n-ok
+}
 function paintHistory() {
   const list = historyList();
   $('#tileHistTxt').textContent = list.length
     ? t('home.hist.count', { n: list.length, last: fmtDate(list[0].at, { day: 'numeric', month: 'short' }) })
     : t('home.hist.empty');
+  const known = list.filter((n) => H.nightSt[n.room]);
+  const live = known.filter((n) => H.nightSt[n.room].st === 'live').length;
+  const done = known.filter((n) => ['done', 'saved'].includes(H.nightSt[n.room].st)).length;
+  const full = known.length === list.length;
   const box = $('#hubHistory');
   box.innerHTML = `
-    <h1 class="page-title" id="histTitle">📋 ${esc(t('home.hist.title'))}</h1>
-    ${list.length ? `<ul class="rows">${list.map((n) => `<li><a class="row hub-item" href="resoconto.html?room=${esc(n.room)}${n.gid ? `&g=${esc(n.gid)}` : ''}"><span class="tile-ico tile-ico--teal" aria-hidden="true">📋</span><span class="mini-text"><b>${esc(n.group || t('home.hist.night'))} · ${esc(n.room)}</b><small>${esc(fmtDate(n.at, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} · ${esc(t('home.hist.report'))}</small></span><span class="mini-go" aria-hidden="true">›</span></a></li>`).join('')}</ul>`
-      : `<p class="empty">${esc(t('home.hist.none'))}</p>`}`;
+    ${pageHead({ id: 'histTitle', ico: '📋', title: t('home.hist.title'), lead: t('home.hist.lead'),
+    action: `<a class="ui-btn ui-btn--primary" href="host.html">📺 <span>${esc(t('home.host.go'))}</span></a>`,
+    stats: list.length ? [[list.length, t('home.hist.stTotal', { n: list.length })], [full ? done : '…', t('home.hist.stDone', { n: done })], [full ? live : '…', t('home.hist.stLive'), live ? 'is-live' : '']] : [] })}
+    <div class="page-body">
+      <div class="page-main">${list.length ? `<ul class="rows card-grid">${list.map(nightCardHTML).join('')}</ul>` : `<p class="empty empty--big">${esc(t('home.hist.none'))}</p>`}</div>
+      ${pageAside([t('home.hist.help1'), t('home.hist.help2'), t('home.hist.help3')])}
+    </div>`;
+  if (H.uid && list.some((n) => !H.nightSt[n.room])) loadNightStatus(list);
+}
+async function loadNightStatus(list) {
+  if (H.nightBusy) return;
+  H.nightBusy = true;
+  try {
+    await Promise.all(list.filter((n) => !H.nightSt[n.room]).map(async (n) => { H.nightSt[n.room] = await nightStatus(n); }));
+  } finally { H.nightBusy = false; }
+  paintHistory();
 }
 
 // ---------------------------------------------------------------------------
@@ -745,11 +893,31 @@ function groupRowHTML(gid) {
   }
   return `<div class="row hub-item"><span class="tile-ico tile-ico--violet" aria-hidden="true">🎲</span><span class="mini-text"><b>${esc(name)}</b><small>${esc(g.checked ? t('home.groups.idle') : t('home.groups.checking'))}</small></span></div>`;
 }
+function groupCardHTML(gid) {
+  const g = H.groups[gid] || {};
+  const name = g.name || gid;
+  const role = g.owner ? 'owner' : ls.get(`gnr_gkey_${gid}`) ? 'key' : 'member';
+  const live = g.live && !g.live.done;
+  return `<li id="grp_${esc(gid)}"><div class="row hub-item card-item ${live ? 'hub-item--live is-live' : ''}">
+      <span class="card-item-top"><span class="tile-ico tile-ico--${live ? 'live' : g.live ? 'sun' : 'violet'}" aria-hidden="true">${live ? '🔴' : g.live ? '🏆' : '🎲'}</span><span class="badge ${role === 'owner' ? 'badge--own' : ''}">${esc(t(`home.groups.role.${role}`))}</span></span>
+      <span class="mini-text"><b>${esc(name)}</b><small>${esc(g.live ? (g.live.done ? t('home.groups.ended') : t('home.groups.live', { code: g.live.room })) : g.checked ? t('home.groups.idle') : t('home.groups.checking'))}</small></span>
+      <span class="card-item-meta">${g.nights === null ? `<span>🔒 ${esc(t('home.groups.private'))}</span>` : Number.isFinite(g.nights) ? `<span>${esc(t('home.groups.nights', { n: g.nights }))}</span>${g.lastAt ? `<span>${esc(t('home.groups.last', { date: fmtDate(g.lastAt, { day: 'numeric', month: 'short' }) }))}</span>` : ''}` : ''}</span>
+      ${g.live ? `<span class="card-item-acts"><a class="ui-btn ${live ? 'ui-btn--primary' : 'ui-btn--ghost'} ui-btn--sm" href="play.html?room=${esc(g.live.room)}">${esc(live ? t('home.groups.join') : t('home.groups.results'))} ›</a></span>` : ''}
+    </div></li>`; // i18n-ok
+}
 function renderGroups() {
   const ids = groupIds();
   const full = $('#hubGroups');
-  full.innerHTML = `<h1 class="page-title" id="grpTitle">👥 ${esc(t('home.groups.title'))}</h1>
-    ${ids.length ? `<ul class="rows" id="grpList">${ids.map((g) => `<li id="grp_${esc(g)}">${groupRowHTML(g)}</li>`).join('')}</ul>` : `<p class="empty">${esc(t('home.groups.none'))}</p>`}`;
+  const liveN = ids.filter((g) => H.groups[g]?.live && !H.groups[g].live.done).length;
+  const nights = ids.reduce((a, g) => a + (Number(H.groups[g]?.nights) || 0), 0);
+  full.innerHTML = `
+    ${pageHead({ id: 'grpTitle', ico: '👥', title: t('home.groups.title'), lead: t('home.groups.lead'),
+    action: `<a class="ui-btn ui-btn--primary" href="host.html">📺 <span>${esc(t('home.groups.newNight'))}</span></a>`,
+    stats: ids.length ? [[ids.length, t('home.groups.stTotal', { n: ids.length })], [liveN, t('home.groups.stLive'), liveN ? 'is-live' : ''], [nights, t('home.groups.stNights', { n: nights })]] : [] })}
+    <div class="page-body">
+      <div class="page-main">${ids.length ? `<ul class="rows card-grid" id="grpList">${ids.map(groupCardHTML).join('')}</ul>` : `<p class="empty empty--big">${esc(t('home.groups.none'))}</p>`}</div>
+      ${pageAside([t('home.groups.help1'), t('home.groups.help2')])}
+    </div>`;
   const live = ids.filter((g) => H.groups[g]?.live && !H.groups[g].live.done);
   const order = [...live, ...ids.filter((g) => !live.includes(g))].slice(0, 3);
   $('#grpMini').innerHTML = ids.length
@@ -763,7 +931,9 @@ function paintGroups() {
   renderGroups();
   for (const gid of ids) {
     H.groups[gid] ||= {};
-    get(groupRef(gid, 'info')).then((s) => { H.groups[gid].name = s.val()?.name || gid; renderGroups(); }).catch(() => {});
+    get(groupRef(gid, 'info')).then((s) => { const i = s.val() || {}; H.groups[gid].name = i.name || gid; H.groups[gid].owner = Boolean(H.uid && i.ownerUid === H.uid); renderGroups(); }).catch(() => {});
+    // Quante serate e l'ultima (riassunti piccoli; un gruppo privato di cui non si è membri non si legge)
+    get(groupRef(gid, 'nights')).then((s) => { const all = Object.values(s.val() || {}); H.groups[gid].nights = all.length; H.groups[gid].lastAt = Math.max(0, ...all.map((n) => Number(n?.at) || 0)) || 0; renderGroups(); }).catch(() => { H.groups[gid].nights = null; renderGroups(); });
     H.groupStops.push(onValue(groupRef(gid, 'current'), async (snap) => {
       const cur = snap.val();
       let live = null;
@@ -791,7 +961,7 @@ function paintApp() {
   // Nell'app la sezione sta in "Profilo e app" e nelle Impostazioni (e nell'avviso degli aggiornamenti)
   const hide = isApp() || !apkUrl();
   box.hidden = hide;
-  box.parentElement.classList.toggle('no-app', hide);
+  $('#homeGrid').classList.toggle('no-app', hide);
   if (hide) return;
   box.innerHTML = `${appTileHead()}<div id="hubVerPanel" class="ver-panel ver-panel--tile"></div>`;
   H.appPanel = mountUpdatePanel($('#hubVerPanel'), { qrSVG, toast, showQR: !isAndroid() });
@@ -833,23 +1003,45 @@ window.addEventListener('gnr-lang', () => setTimeout(paintLinksStatus, 0));
 // Impostazioni e introduzione
 // ---------------------------------------------------------------------------
 
+/**
+ * 2.4: Impostazioni a sezioni (Generali, Aspetto e accessibilità, Consigli, Notifiche, Partita e regia, Privacy,
+ * Aiuto), con un indice in alto e una finestra più larga (sheet--settings). Ogni controllo usa il sistema che
+ * c'era già: lingua, tema e accessibilità (util.js), consigli (tips.js), centro avvisi (notices.js), promemoria
+ * (reminders.js), dati (datacenter.js). Nuove: densità (util.js) e lobby della TV (lobby-prefs.js).
+ */
 function openSettings() {
+  const sec = (id, ico, title, body) => `<section class="set-sec" id="set-${id}" aria-labelledby="set-${id}-t"><h3 id="set-${id}-t">${ico} ${esc(title)}</h3>${body}</section>`;
+  const secs = [
+    ['general', '🌐', t('set.sec.general'), `<p class="field-label" id="stLangT">${esc(t('common.language'))}</p>${langSwitchHTML('hubLang')}<p class="muted small">${esc(t('home.set.langHint'))}</p>`],
+    ['look', '🎨', t('set.sec.look'), `<p class="field-label">${esc(t('home.set.theme'))}</p>${themeSwitchHTML('hubTheme')}
+      <p class="field-label">${esc(t('home.set.a11y'))}</p>${a11yHTML('hubA11y')}
+      <p class="field-label">${esc(t('density.label'))}</p>${densityHTML()}<p class="muted small">${esc(t('density.hint'))}</p>`],
+    ['tips', '💡', t('set.sec.tips'), `${tipsSettingsHTML()}<p class="muted small">${esc(t('tips.lead'))}</p>`],
+    ['notify', '🔔', t('set.sec.notify'), `<p class="muted small">${esc(t('set.notify.lead'))}</p>
+      <p class="field-label">${esc(t('set.notify.cats'))}</p><div class="tips-cats">${NOTICE_CATS.map((c) => `<label class="quick-toggle"><input type="checkbox" data-nccat="${c}" ${Notices.catOff(c) ? '' : 'checked'}><span>${esc(t(`nc.cat.${c}`))}</span></label>`).join('')}</div>
+      <label class="field"><span class="field-label">${esc(t('set.notify.remind'))}</span><select class="input select" id="stRemind">${LEADS.map((v) => `<option value="${v}" ${v === reminderLead() ? 'selected' : ''}>${esc(t(`rem.lead.${v}`))}</option>`).join('')}</select></label>`],
+    ['room', '📺', t('set.sec.room'), `<p class="muted small">${esc(t('set.room.lead'))}</p><div id="stLobby">${lobbyPrefsHTML('stLobbyPrefs')}</div>`],
+    ['privacy', '🔐', t('set.sec.privacy'), `<p class="muted small">${esc(t('set.privacy.lead'))}</p>
+      <div class="set-grid"><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-open="export">📤 ${esc(t('dc.exp.title'))}</button><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-open="import">📥 ${esc(t('dc.imp.title'))}</button><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-open="privacy">🔐 ${esc(t('dc.priv.title'))}</button>${Person.local() ? `<button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="stShare">🔗 ${esc(t('home.set.share'))}</button>` : ''}</div>`],
+    ['help', '🩺', t('set.sec.help'), `<div class="set-grid"><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="stIntro">👋 ${esc(t('home.set.intro'))}</button><a class="ui-btn ui-btn--ghost ui-btn--sm" href="test.html">🩺 ${esc(t('home.info.firebase'))}</a><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-open="diag">🧪 ${esc(t('dc.diag.title'))}</button>${isDemo ? `<button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="stDemo">🧪 ${esc(t('demo.exit'))}</button>` : `<button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="stDemo">🧪 ${esc(t('demo.try'))}</button>`}<a class="ui-btn ui-btn--ghost ui-btn--sm" href="setup.html">🛠️ ${esc(t('setup.open'))}</a><button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" id="stUpd">🔄 ${esc(t('upd.check'))}</button></div>
+      <p class="muted small">${esc(t('demo.lead'))}</p><p class="muted small" id="stVer"></p>`]
+  ];
   const el = Sheet.open(`
     ${head(`⚙️ ${esc(t('home.nav.settings'))}`)}
-    <h3 id="stLangT">${esc(t('common.language'))}</h3>${langSwitchHTML('hubLang')}
-    <p class="muted small">${esc(t('home.set.langHint'))}</p>
-    <h3>${esc(t('home.set.theme'))}</h3>${themeSwitchHTML('hubTheme')}
-    <h3>${esc(t('home.set.a11y'))}</h3>${a11yHTML('hubA11y')}
-    <h3>💡 ${esc(t('tips.title'))}</h3>${tipsSettingsHTML()}
-    <p class="muted small">${esc(t('tips.lead'))}</p>
-    <h3>${esc(t('home.set.help'))}</h3>
-    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stIntro">👋 ${esc(t('home.set.intro'))}</button><a class="btn-sec btn-sec--sm" href="test.html">🩺 ${esc(t('home.info.firebase'))}</a></div>
-    <div class="hub-row">${isDemo ? `<button type="button" class="btn-sec btn-sec--sm" id="stDemo">🧪 ${esc(t('demo.exit'))}</button>` : `<button type="button" class="btn-sec btn-sec--sm" id="stDemo">🧪 ${esc(t('demo.try'))}</button>`}<a class="btn-sec btn-sec--sm" href="setup.html">🛠️ ${esc(t('setup.open'))}</a></div>
-    <p class="muted small">${esc(t('demo.lead'))}</p>
-    ${Person.local() ? `<div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stShare">🔗 ${esc(t('home.set.share'))}</button></div>` : ''}
-    <h3>${esc(t('home.set.version'))}</h3>
-    <div class="hub-row"><button type="button" class="btn-sec btn-sec--sm" id="stUpd">🔄 ${esc(t('upd.check'))}</button></div>
-    <p class="muted small" id="stVer"></p>`, { wide: true });
+    <nav class="set-nav" aria-label="${esc(t('set.nav'))}">${secs.map(([id, ico, title]) => `<a href="#set-${id}" data-set-jump="${id}">${ico} <span>${esc(title)}</span></a>`).join('')}</nav>
+    <div class="set-body">${secs.map((x) => sec(...x)).join('')}</div>`, { wide: true, cls: 'sheet--settings' });
+  el.addEventListener('click', (e) => {
+    const j = e.target.closest('[data-set-jump]');
+    if (j) { e.preventDefault(); $(`#set-${j.dataset.setJump}`, el)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const d = e.target.closest('[data-density]');
+    if (d) { setDensity(d.dataset.density); el.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b === d))); }
+  });
+  el.addEventListener('change', (e) => {
+    const c = e.target.closest('[data-nccat]');
+    if (c) Notices.setCat(c.dataset.nccat, c.checked);
+    if (e.target.id === 'stRemind') setReminderLead(e.target.value);
+  });
+  bindLobbyPrefs($('#stLobby', el), () => { $('#stLobby', el).innerHTML = lobbyPrefsHTML('stLobbyPrefs'); });
   $('#stUpd', el).addEventListener('click', () => { Sheet.close(); openUpdates(true); });
   $('#stIntro', el).addEventListener('click', () => { Sheet.close(); showIntro(true); });
   $('#stShare', el)?.addEventListener('click', () => { Sheet.close(); openShare(); });

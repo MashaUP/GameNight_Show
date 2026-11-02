@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261102b';
+const BUILD = '20261102c';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -18,6 +18,8 @@ const SHELL = [
   "js/i18n.js",
   "js/lang/it.js",
   "js/lang/en.js",
+  "js/lang/it-v24.js",
+  "js/lang/en-v24.js",
   "js/lang/it-report.js",
   "js/lang/it-selftest.js",
   "js/lang/it-voice.js",
@@ -69,6 +71,7 @@ const SHELL = [
   "js/music.js",
   "js/report.js",
   "js/nights.js",
+  "js/lobby-prefs.js",
   "js/night-fix.js",
   "js/manual-search.js",
   "js/discord.js",

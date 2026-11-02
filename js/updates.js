@@ -426,10 +426,10 @@ export function mountUpdatePanel(box, { qrSVG, toast, showQR = false, page = fal
         ${r?.size ? `<div class="ver-kv"><span>${esc(t('upd.p.size'))}</span><b>${esc(fmtSize(r.size))}</b></div>` : ''}
         <div class="ver-kv ver-kv--wide"><span>${esc(t('upd.p.requires'))}</span><b>${esc(t('upd.p.android', { v: r?.minAndroid || MIN_ANDROID }))}</b></div>
       </div>
+      <!-- 2.4: il QR per installare su un altro dispositivo sta in alto, subito dopo stato e versione -->
+      ${showQR && qrSVG ? `<div class="ver-qr"><h3>${esc(t('upd.p.qrTitle'))}</h3><p class="muted small">${esc(t('upd.p.qrText'))}</p><div class="hub-qr">${qrSVG(downloadPageUrl(), 4)}</div><p class="muted small ver-url"><a href="${esc(downloadPageUrl())}" target="_blank" rel="noopener">${esc(downloadPageUrl().replace(/^https?:\/\//, ''))}</a></p></div>` : ''}
       ${st.phase === 'downloading' ? `<div class="ver-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${st.progress[1] ? Math.floor((st.progress[0] / st.progress[1]) * 100) : 0}"><i style="width:${st.progress[1] ? Math.min(100, (st.progress[0] / st.progress[1]) * 100) : 8}%"></i></div>` : ''}
-      ${notes.length ? `<details class="hub-details ver-notes" ${s?.status === 'update' || page ? 'open' : ''}><summary>${esc(t('upd.p.notes', { v: r?.version || s?.web?.version || '' }))}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
       <div class="hub-row ver-actions">
-        <button type="button" class="btn-sec" data-ver="check" ${['checking', 'downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>🔄 ${esc(t('upd.check'))}</button>
         ${app
     ? (st.phase === 'ready' || st.phase === 'installing'
       ? `<button type="button" class="btn" data-ver="install">📲 ${esc(t('upd.p.install'))}</button>`
@@ -437,12 +437,13 @@ export function mountUpdatePanel(box, { qrSVG, toast, showQR = false, page = fal
         ? `<button type="button" class="${s.status === 'update' || s.status === 'build' ? 'btn' : 'btn-sec'}" data-ver="download" ${['downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>⬇️ ${esc(t('upd.p.download'))}${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</button>`
         : canDl ? `<a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">⬇️ ${esc(t('upd.p.downloadBrowser'))}</a>` : '')
     : (showDl && !tooOld && (r.url || '') ? `<a class="btn" href="${esc(r.url)}" rel="noopener" data-ver="link">⬇️ ${esc(t('upd.p.download'))}${r.size ? ` (${esc(fmtSize(r.size))})` : ''}</a>` : '')}
+        <button type="button" class="btn-sec" data-ver="check" ${['checking', 'downloading', 'verifying'].includes(st.phase) ? 'disabled' : ''}>🔄 ${esc(t('upd.check'))}</button>
       </div>
       ${app && st.phase === 'installing' ? `<p class="muted small">${t('upd.p.installHelp')}</p>` : ''}
       ${app && canDl && !canInstallInApp() ? `<p class="muted small">${esc(t('upd.p.oldApp'))}</p>` : ''}
       ${!app && tooOld ? `<p class="form-error">${esc(t('upd.p.tooOld', { v: androidVer, min: r?.minAndroid || MIN_ANDROID }))}</p>` : ''}
       ${!app && showDl && !page ? `<p class="muted small">${esc(isAndroid() ? t('upd.p.afterDl') : t('upd.p.fromPc'))}</p>` : ''}
-      ${showQR && qrSVG ? `<div class="ver-qr"><h3>${esc(t('upd.p.qrTitle'))}</h3><p class="muted small">${esc(t('upd.p.qrText'))}</p><div class="hub-qr">${qrSVG(downloadPageUrl(), 4)}</div><p class="muted small ver-url"><a href="${esc(downloadPageUrl())}" target="_blank" rel="noopener">${esc(downloadPageUrl().replace(/^https?:\/\//, ''))}</a></p></div>` : ''}
+      ${notes.length ? `<details class="hub-details ver-notes" ${s?.status === 'update' || page ? 'open' : ''}><summary>${esc(t('upd.p.notes', { v: r?.version || s?.web?.version || '' }))}</summary><ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
       ${r?.sha256 && (page || !app) ? `<details class="hub-details"><summary>${esc(t('upd.p.sha'))}</summary><code class="ver-sha">${esc(r.sha256)}</code></details>` : ''}`;
   };
   const run = async (force) => {

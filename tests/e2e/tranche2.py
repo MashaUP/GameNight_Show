@@ -63,7 +63,7 @@ async def main():
         print('foto:', [(x['by'], x.get('caption'), len(x['data'])) for x in ph.values()])
 
         # 3. Ludoteca: ricerca e scheda gioco
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpSearch')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpSearch')
         await host.fill('#lpSearch', 'per 4 persone massimo 30 minuti'); await asyncio.sleep(0.5)
         print('ricerca 1:', await host.inner_text('#lpChips'), '→', await host.evaluate("[...document.querySelectorAll('#lpList .lib-name')].map(x=>x.textContent)"))
         await shot(host, '04_lib_search')
@@ -173,7 +173,7 @@ async def main():
         await host.click('[data-view="calendar"]'); await shot(host, '20b_night_calendar')
         await host.click('[data-view="stats"]'); await shot(host, '20c_night_stats')
         await shot(A, '21_night_phone_profile', full=True)
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpSearch'); await asyncio.sleep(0.4); await shot(host, '22_night_lib')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpSearch'); await asyncio.sleep(0.4); await shot(host, '22_night_lib')
         await host.click('[data-edit="l3"]'); await host.wait_for_selector('#gsSave'); await shot(host, '23_night_sheet')
         await b.close()
     print(errs or 'no errors')

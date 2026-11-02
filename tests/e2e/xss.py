@@ -39,7 +39,7 @@ async def check(pg, where):
 async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        hctx, host, code = await tv(b, seats=4, group='Gruppo XSS')
+        hctx, host, code = await tv(b, seats=4, group='Gruppo XSS', lobby_all=True)
         A = (await join(b, code, 'Andrea', 0))[1]
         G = (await join(b, code, 'Giulia', 1))[1]
         room = db()['rooms'][code]; gid = room['meta']['groupId']
@@ -79,7 +79,7 @@ async def main():
         await host.keyboard.press('g'); await asyncio.sleep(0.6); await check(host, 'TV pannello giocatori'); await host.click('#ppClose')
         await host.click('#startBtn'); await host.wait_for_selector('#gameName'); await asyncio.sleep(0.8)
         await check(host, 'TV prossimo gioco + ludoteca')
-        await host.click('#hdrLib'); await host.wait_for_selector('#lpSearch'); await asyncio.sleep(0.6); await check(host, 'TV ludoteca')
+        await tool(host, '#hdrLib'); await host.wait_for_selector('#lpSearch'); await asyncio.sleep(0.6); await check(host, 'TV ludoteca')
         await host.click('[data-edit="l1"]'); await asyncio.sleep(0.6); await check(host, 'TV scheda gioco'); await host.click('#gsClose')
         await host.fill('#lpSearch', 'party'); await asyncio.sleep(0.5); await check(host, 'TV ricerca ludoteca'); await host.click('#lpClose')
         await host.click('#openPlan'); await asyncio.sleep(0.6); await check(host, 'TV scaletta'); await host.click('#plClose')

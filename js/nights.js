@@ -14,7 +14,7 @@
 // Vale anche per l'ultima serata e per quella ancora aperta sulla TV: nessun controllo lo impedisce.
 // Niente cancellazione logica: un riassunto nascosto ma ancora conteggiato renderebbe incoerenti le
 // statistiche. Per tornare indietro restano il backup del gruppo e le copie locali della TV.
-import { dbRef, roomRef, groupRef, secretRef, get, update, remove } from './fb.js';
+import { dbRef, roomRef, groupRef, secretRef, get, set, update, remove, serverTimestamp } from './fb.js';
 import { Vault } from './vault.js';
 
 const CODE4 = /^[A-Z0-9]{4}$/;
@@ -113,4 +113,19 @@ export async function deleteNight(code, gid) {
   }
   await forgetLocalNight(code);
   return { room: roomExists, night };
+}
+
+/**
+ * 2.4: chiude una serata ancora in corso (dalla pagina Serate o dal resoconto), senza cancellare niente.
+ * Porta la stanza alla premiazione conclusa: è lo stesso stato del pulsante "Fine serata" della TV.
+ * Le regole permettono questa scrittura anche al creatore (non solo alla TV), ma solo verso la premiazione.
+ * Il riassunto nel gruppo lo salva la TV (le serve la chiave del gruppo): appena la stanza si riapre,
+ * vede remote:true e lo scrive. Restituisce false se la serata era già chiusa.
+ */
+export async function closeNight(code) {
+  if (!CODE4.test(code || '')) throw new Error('codice non valido'); // i18n-ok: errore interno
+  const st = (await get(roomRef(code, 'state'))).val();
+  if (st?.phase === 'awards') return false;
+  await set(roomRef(code, 'state'), { phase: 'awards', done: true, remote: true, at: serverTimestamp() });
+  return true;
 }

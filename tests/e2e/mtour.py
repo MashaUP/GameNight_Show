@@ -31,6 +31,7 @@ async def main():
         b = await p.chromium.launch()
         ctx = await b.new_context(viewport={'width': W, 'height': H}, is_mobile=True, has_touch=True, device_scale_factor=2)
         await ctx.add_init_script("try { localStorage.setItem('gnr_tour_off', '1'); localStorage.setItem('gnr_tour_phone', '1'); localStorage.setItem('gnr_lite', 'off'); } catch (e) {}")
+        await ctx.add_init_script(LOBBY_ALL)
         h = await ctx.new_page(); watch(h, 'mhost')
         await h.goto(BASE + '/index.html'); await asyncio.sleep(0.6); await ovf(h, 'home')
         await h.goto(BASE + '/host.html?armadio=1'); await asyncio.sleep(1.2); await ovf(h, 'armadio_page')

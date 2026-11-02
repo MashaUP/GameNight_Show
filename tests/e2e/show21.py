@@ -34,7 +34,7 @@ async def tools(host):
 async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        tctx, host, code = await tv(b, seats=4)
+        tctx, host, code = await tv(b, seats=4, lobby_all=True)
         # ---------------- Checklist della lobby (idea 30)
         await host.wait_for_selector('.prep-ready')
         txt = await host.inner_text('.prep-ready')

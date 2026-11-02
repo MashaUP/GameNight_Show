@@ -47,7 +47,8 @@ import { settingsFromMeta, settingsPatch, settingsDiff, settingLabel, makeTempla
 import { isNightCreator, markDeleted, nightWasDeleted } from './nights.js';
 import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
 import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
-import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel, setReadyView } from './tv-prep.js';
+import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
+import { lobbyPrefs, lobbyPrefsHTML, bindLobbyPrefs } from './lobby-prefs.js';
 import { nightStory, storyText, gameSessions, durationInfo } from './insights.js';
 import { bindVotes, LateVotePanel, processLate, lateCount } from './tv-votes.js';
 import { Tips } from './tips.js';
@@ -503,10 +504,10 @@ function renderCreate(opts = {}) {
           <span class="field-label" id="countLabel">${tr('tv.players')}</span>
           <div class="stepper" role="group" aria-labelledby="countLabel">
             <button type="button" class="step-btn" data-step="-1" aria-label="${tr('tv.create.oneLess')}">${ICONS.minus}</button>
-            <output id="countOut" aria-live="polite">${S.setupCount}</output>
+            <input id="countOut" class="step-num" type="number" inputmode="numeric" min="${MIN_PLAYERS}" max="${MAX_PLAYERS}" value="${S.setupCount}" aria-labelledby="countLabel" aria-describedby="countHint">
             <button type="button" class="step-btn" data-step="1" aria-label="${tr('tv.create.oneMore')}">${ICONS.plus}</button>
           </div>
-          <span class="muted small">${tr('tv.create.range', { min: MIN_PLAYERS, max: MAX_PLAYERS })}</span>
+          <span class="muted small" id="countHint">${tr('tv.create.range', { min: MIN_PLAYERS, max: MAX_PLAYERS })}</span>
         </div>
         <div class="group-field">
           <label class="field-label" for="groupSel">${tr('tv.create.group')}</label>
@@ -643,11 +644,14 @@ function renderCreate(opts = {}) {
   $('#groupCode').addEventListener('input', (e) => { e.target.value = normalizeCode(e.target.value, 6); });
   syncGroup();
 
+  // 2.4: niente tetto fisso a 12. Pulsanti per i piccoli ritocchi, campo numerico per i gruppi grandi.
   const out = $('#countOut');
+  const clampSeats = (v) => Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.round(Number(v)) || DEFAULT_PLAYERS));
   app.querySelectorAll('.step-btn').forEach((b) => b.addEventListener('click', () => {
-    S.setupCount = Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, S.setupCount + Number(b.dataset.step)));
-    out.textContent = S.setupCount;
+    S.setupCount = clampSeats(S.setupCount + Number(b.dataset.step));
+    out.value = S.setupCount;
   }));
+  out.addEventListener('change', () => { S.setupCount = clampSeats(out.value); out.value = S.setupCount; });
   $('#createForm').addEventListener('submit', (e) => { e.preventDefault(); createRoom(); });
   $('#demoBtn').addEventListener('click', () => createDemo().catch((err) => { $('#createErr').textContent = explainError(err); }));
   $('#installTvBtn').addEventListener('click', () => InstallQR.open());
@@ -751,7 +755,7 @@ async function createDemo() {
     const info = (await get(armadioRef(armSel, 'info')).catch(() => null))?.val();
     if (info) arm = { id: armSel, name: info.name };
   }
-  await set(roomRef(code, 'meta'), { hostUid: S.uid, maxPlayers: 8, createdAt: serverTimestamp(), demo: true, ...(arm ? { armadioId: arm.id, armadioName: arm.name, armadioReadOnly: true } : {}) });
+  await set(roomRef(code, 'meta'), { hostUid: S.uid, maxPlayers: 8, createdAt: serverTimestamp(), demo: true, ...creatorMeta(), ...(arm ? { armadioId: arm.id, armadioName: arm.name, armadioReadOnly: true } : {}) });
   if (arm) await copyPicks(code, arm.id);
   const regia = randomCode(8);
   await set(secretRef(code), regia).catch(() => {});
@@ -970,6 +974,8 @@ function openRoom(code) {
       S[key] = (key === 'meta' || key === 'state' || key === 'pendingImage' || key === 'poll') ? val : (val || {});
       S.loaded.add(key);
       render();
+      if (key === 'state' || key === 'games' || key === 'votes') remoteCloseSave();
+      if (key === 'meta') publishMute();
     }, (err) => showFatal(app, tr('tv.boot.lost'), explainError(err)));
   }
   requestWakeLock();
@@ -1982,6 +1988,25 @@ const ToolsPanel = {
     el.innerHTML = `
       <div class="card panel panel--wide" role="dialog" aria-modal="true" aria-labelledby="tlTitle">
         <div class="panel-head"><h2 id="tlTitle">${tr('tv.tl.title')}</h2><button type="button" class="icon-btn" id="tlClose" aria-label="${tr('tv.close')}">${ICONS.x}</button></div>
+        <section class="tool-acts" aria-labelledby="tlActsT">
+          <h3 id="tlActsT">${esc(tr('tools.acts'))}</h3>
+          <div class="acts-grid">
+            <div class="acts-cat"><h4>${esc(tr('tools.cat.room'))}</h4>
+              <a class="btn-sec" id="hdrHome" href="index.html" title="${tr('tv.hdr.homeTitle')}">🏠 ${esc(tr('tools.home'))}</a>
+              <button type="button" class="btn-sec btn-sec--danger" id="newNightBtn" title="${esc(tr('tools.newNightHint'))}">🆕 ${tr('tv.create.title')}</button>
+            </div>
+            <div class="acts-cat"><h4>${esc(tr('tools.cat.people'))}</h4>
+              ${isApp() ? '' : `<button type="button" class="btn-sec hdr-play" id="hdrPlayHere" title="${esc(tr('tv.hdr.playHereTitle'))}">🎮 ${esc(tr('tv.hdr.playHere'))}</button>`}
+              <button type="button" class="btn-sec" id="tlPlayers">${ICONS.users} ${esc(tr('tools.players'))}</button>
+            </div>
+            <div class="acts-cat"><h4>${esc(tr('tools.cat.content'))}</h4>
+              ${hasLib() ? `<button type="button" class="btn-sec" id="hdrLib" title="${tr('tv.hdr.libTitle')}">${ICONS.books} ${tr('tv.armadio')}</button>` : ''}
+              <button type="button" class="btn-sec" id="tlPlan">🗓️ ${esc(tr('tools.plan'))}</button>
+            </div>
+            <div class="acts-cat acts-cat--wide" id="tlLobby"><h4>${esc(tr('tools.cat.view'))}</h4>${lobbyPrefsHTML('tlLobbyPrefs')}</div>
+          </div>
+        </section>
+        <h3 class="tools-more">${esc(tr('tools.cat.more'))}</h3>
         <div class="tools-grid">
           <section class="tool"><h3>${tr('tv.tl.pause')}</h3><p class="muted">${tr('tv.tl.pauseText')}</p><button type="button" class="btn" id="tlPause"></button></section>
           <section class="tool"><h3>🌙 ${esc(tr('amb.toolTitle'))}</h3><p class="muted">${esc(tr('amb.toolLead'))}</p><button type="button" class="btn-sec" id="tlAmbient"></button></section>
@@ -2073,6 +2098,7 @@ const ToolsPanel = {
       </div>`;
     document.body.appendChild(el);
     this.el = el;
+    bindLobbyPrefs($('#tlLobby', el), () => { const box = $('#tlLobby', el); if (box) box.innerHTML = `<h4>${esc(tr('tools.cat.view'))}</h4>${lobbyPrefsHTML('tlLobbyPrefs')}`; });
     this.sig = '';
     this.gsig = '';
     el.addEventListener('click', async (e) => {
@@ -2082,6 +2108,12 @@ const ToolsPanel = {
       if (e.target.closest('#tlAmbient')) { setAmbient(!S.meta?.ambient).catch((err) => toast(explainError(err), 'error')); this.close(); return; }
       if (e.target.closest('#tlTimer')) { this.close(); TablePanel.open('timer'); return; }
       if (e.target.closest('#tlIdentity')) { this.close(); IdentityPanel.open(); return; }
+      // 2.4: azioni spostate dalla barra in alto
+      if (e.target.closest('#hdrLib')) { this.close(); LibPanel.open(); return; }
+      if (e.target.closest('#hdrPlayHere')) { this.close(); openPlayerHere(); return; }
+      if (e.target.closest('#newNightBtn')) { this.close(); newNight(); return; }
+      if (e.target.closest('#tlPlayers')) { this.close(); Panel.open(); return; }
+      if (e.target.closest('#tlPlan')) { this.close(); PlanPanel.open(); return; }
       if (e.target.closest('#tlAlbum')) { this.close(); AlbumPanel.open(); return; }
       if (e.target.closest('#tlInterval')) { this.close(); Interval.open(); return; }
       if (e.target.closest('#tlTable')) { this.close(); TablePanel.open(); return; }
@@ -2156,7 +2188,7 @@ const ToolsPanel = {
         return;
       }
       if (t.id === 'tlSounds') { setSounds(t.checked); if (t.checked) ding(); }
-      if (t.id === 'tlMute') { setMuted(t.checked); if (t.checked) stopSpeaking(); syncMusic(); }
+      if (t.id === 'tlMute') setMuted(t.checked);
       if (t.id === 'tlMusic') { Music.setMode(t.value); syncMusic(true); }
       if (t.id === 'tlAtmo') metaFlag('atmosphere', t.value === 'none' ? null : t.value);
       if (t.id === 'tlAtmoLevel') metaFlag('atmoLevel', t.value === 'normal' ? null : t.value);
@@ -2292,7 +2324,8 @@ const QUICK = {
   reveal: { ico: '🃏', label: () => tr('qc.reveal'), ok: () => S.state?.phase === 'voting' && Boolean(S.state?.gameId), run: () => { const b = document.getElementById('revealBtn'); if (b) b.click(); else return revealGame(S.state.gameId); return null; } },
   next: { ico: '⏭️', label: () => tr('qc.next'), ok: () => ['reveal', 'board'].includes(S.state?.phase), run: () => goNext() },
   timer: { ico: '⏱️', label: () => tr('timer.title'), ok: () => S.state?.phase !== 'lobby', run: () => TablePanel.open('timer') },
-  mute: { ico: '🔇', label: () => tr(isMuted() ? 'qc.unmute' : 'qc.mute'), ok: () => true, run: () => { setMuted(!isMuted()); if (isMuted()) stopSpeaking(); syncMusic(); paintQuick(true); } },
+  // 2.4: icona e stato premuto seguono il silenzioso (prima mostrava sempre 🔇 e non si capiva se era acceso)
+  mute: { ico: () => (isMuted() ? '🔇' : '🔊'), pressed: () => isMuted(), label: () => tr(isMuted() ? 'qc.unmute' : 'qc.mute'), ok: () => true, run: () => setMuted(!isMuted()) },
   ambient: { ico: '🌙', label: () => tr(S.meta?.ambient ? 'amb.off' : 'amb.on'), ok: () => true, run: () => setAmbient(!S.meta?.ambient) },
   public: { ico: '📺', label: () => tr(S.meta?.publicTv ? 'tvpub.off' : 'tvpub.on'), ok: () => true, run: () => setPublicTv(!S.meta?.publicTv) },
   interval: { ico: '☕', label: () => tr('tv.tl.startInt'), ok: () => ['idle', 'board'].includes(S.state?.phase), run: () => Interval.open() },
@@ -2319,7 +2352,12 @@ function paintQuick(force = false) {
   const sig = JSON.stringify(items);
   if (!force && sig === quickSig && bar.childElementCount === items.length) return;
   quickSig = sig;
-  bar.innerHTML = items.map((x) => `<button type="button" class="chip chip-btn quick-btn" data-quick="${x.k}" ${x.on ? '' : 'disabled'} title="${esc(x.label)}" aria-label="${esc(x.label)}"><span aria-hidden="true">${QUICK[x.k].ico}</span></button>`).join('');
+  bar.innerHTML = items.map((x) => {
+    const q = QUICK[x.k];
+    const ico = typeof q.ico === 'function' ? q.ico() : q.ico;
+    const pressed = q.pressed ? ` aria-pressed="${q.pressed()}"` : '';
+    return `<button type="button" class="chip chip-btn quick-btn quick-btn--${x.k}" data-quick="${x.k}" ${x.on ? '' : 'disabled'}${pressed} title="${esc(x.label)}" aria-label="${esc(x.label)}"><span aria-hidden="true">${ico}</span></button>`;
+  }).join('');
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-quick]');
@@ -2848,7 +2886,18 @@ function syncAtmo() {
   const vol = { soft: 0.35, normal: 0.6, strong: 0.9 }[S.meta?.atmoLevel] ?? 0.6;
   AtmoSound.set(Atmo.scene, Boolean(S.meta?.atmoSound) && !document.hidden, Music.playing() ? vol * 0.4 : vol);
 }
-window.addEventListener('gnr-mute', () => syncAtmo());
+// 2.4: un solo punto per il silenzioso (barra, Strumenti, tasto M, telefono della regia): musica, atmosfere,
+// commentatore e suoni personalizzati seguono l'evento "gnr-mute" di sounds.js; qui si aggiornano musica e pulsanti.
+window.addEventListener('gnr-mute', () => { syncAtmo(); syncMusic(); paintQuick(true); const cb = document.getElementById('tlMute'); if (cb) cb.checked = isMuted(); publishMute(); });
+/**
+ * 2.4: lo stato "Silenzioso" della TV si vede anche sul telefono della regia (meta/muted), che può cambiarlo
+ * con un comando. La scelta resta salvata su questo computer (gnr_mute): la stanza ne riceve solo una copia.
+ */
+function publishMute() {
+  if (!S.code || !S.meta || S.meta.hostUid !== S.uid) return;
+  if (Boolean(S.meta.muted) === isMuted()) return;
+  update(roomRef(S.code, 'meta'), { muted: isMuted() || null }).catch(() => {});
+}
 document.addEventListener('visibilitychange', () => syncAtmo());
 window.addEventListener('gnr-theme', () => syncAtmo());
 
@@ -3284,39 +3333,56 @@ function maybeTour(phase) {
   }, 900);
 }
 
+/**
+ * Barra in alto della TV (2.4). Prima aveva 14 elementi in fila e sforava sulle TV: ora tre zone.
+ * Sinistra: indietro, stemma e marchio (identità della regia, anche nella lobby). Centro: tempo, stanza,
+ * giocatori. Destra: Fine serata, comandi rapidi (pausa, timer, silenzioso), schermo intero, Strumenti e
+ * Chiudi/Riapri la stanza. Gioca anche tu, Armadio, Nuova serata e Home sono negli Strumenti (Azioni).
+ * Su schermi stretti la barra va su due righe invece di scorrere di lato.
+ */
 function shellHTML(phase) {
   return `
     <div class="tv-shell">
-      <header class="topbar ${phase === 'lobby' ? 'topbar--lobby' : ''}">
-        <div class="brand-wrap">
-          <button class="chip chip-btn hdr-back" type="button" id="hdrBack" title="${tr('tv.hdr.backTitle')}">← <span>${tr('tv.back')}</span></button>
+      <header class="topbar tvbar ${phase === 'lobby' ? 'topbar--lobby' : ''}">
+        <div class="tvbar-brand brand-wrap">
+          <button class="icon-btn hdr-back" type="button" id="hdrBack" title="${tr('tv.hdr.backTitle')}" aria-label="${tr('tv.back')}">←</button>
           <span class="topbar-emblem" id="hdrEmblem"></span>
           <div class="brand">GameNight <span class="logo-tag logo-tag--sm">Show</span></div>
           ${S.meta?.groupName ? `<span class="topbar-group">${esc(S.meta.groupName)}</span>` : ''}
         </div>
-        <div class="topbar-right">
-          <div class="tb-group tb-info" role="group" aria-label="${esc(tr('tv.hdr.infoGroup'))}">
-          <a class="chip chip-btn hdr-home" id="hdrHome" href="index.html" title="${tr('tv.hdr.homeTitle')}">🏠 <span>Home</span></a>
+        <div class="tvbar-info tb-group tb-info" role="group" aria-label="${esc(tr('tv.hdr.infoGroup'))}">
           <span class="chip chip--clock" id="hdrClock" title="${tr('tv.hdr.clockTitle')}"></span>
           ${S.meta?.demo ? `<span class="chip chip--demo" title="${tr('tv.hdr.demoTitle')}">🧪 ${tr('tv.hdr.demo')}</span>` : ''}
           <button class="chip chip-btn chip--safe" type="button" id="hdrSafe" hidden title="${tr('tv.hdr.safeTitle')}">🚨 <span>Safe Mode</span></button>
-          <span class="chip">${tr('tv.tr.room')} <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="${tr('tv.hdr.locked')}" hidden> 🔒</span></span>
+          <span class="chip chip--code">${tr('tv.tr.room')} <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="${tr('tv.hdr.locked')}" hidden> 🔒</span></span>
           <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="${tr('tv.hdr.playersTitle')}">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
-          </div>
-          <div class="tb-group tb-actions" role="group" aria-label="${esc(tr('tv.hdr.actionsGroup'))}">
-          ${isApp() ? '' : `<button class="chip chip-btn hdr-play" type="button" id="hdrPlayHere" title="${esc(tr('tv.hdr.playHereTitle'))}">🎮 <span>${esc(tr('tv.hdr.playHere'))}</span></button>`}
+        </div>
+        <div class="tvbar-acts tb-group tb-actions" role="group" aria-label="${esc(tr('tv.hdr.actionsGroup'))}">
           <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="${tr('tv.hdr.endTitle')}">🏁 <span>${tr('tv.endNight')}</span></button>
           <span class="quick-bar" id="quickBar" role="toolbar" aria-label="${esc(tr('qc.title'))}"></span>
-          <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="${tr('tv.hdr.toolsTitle')}">${ICONS.edit}<span>${tr('tv.tl.title')}</span></button>
-          ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="${tr('tv.hdr.libTitle')}">${ICONS.books}<span>${tr('tv.armadio')}</span></button>` : ''}
           <button class="icon-btn" type="button" id="fsBtn" aria-label="${tr('tv.hdr.fs')}" title="${tr('tv.hdr.fsTitle')}">${ICONS.expand}</button>
-          <button class="text-btn" type="button" id="newNightBtn">${tr('tv.create.title')}</button>
-          </div>
+          <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="${tr('tv.hdr.toolsTitle')}">${ICONS.edit}<span>${tr('tv.tl.title')}</span></button>
+          <button class="chip chip-btn chip--lock" type="button" id="lobbyLock" aria-pressed="false"></button>
         </div>
       </header>
       <main id="screen" class="screen screen--${phase}"></main>
       <button type="button" class="pub-exit" id="pubExit" title="${esc(tr('tvpub.exitTitle'))}">🎛️ <span>${esc(tr('tvpub.exit'))}</span></button>
     </div>`;
+}
+
+/** Chiudi / riapri la stanza: chiudere chiede conferma (i telefoni nuovi non entrano più), riaprire no. */
+async function toggleLock() {
+  const on = !S.meta?.locked;
+  if (on && !confirm(tr('room.lockAsk'))) return;
+  await setLocked(on);
+}
+function paintLock() {
+  const b = $('#lobbyLock');
+  if (!b || !S.meta) return;
+  const locked = Boolean(S.meta.locked);
+  b.innerHTML = locked ? `🔓 <span>${esc(tr('room.unlock'))}</span>` : `🔒 <span>${esc(tr('room.lock'))}</span>`;
+  b.setAttribute('aria-pressed', String(locked));
+  b.classList.toggle('is-locked', locked);
 }
 
 /** Pulsante "Indietro" della TV: torna alla schermata precedente della serata. */
@@ -3351,12 +3417,10 @@ function bindShell() {
   $('#hdrBack').addEventListener('click', goBack);
   $('#fsBtn').addEventListener('click', toggleFullscreen);
   $('#hdrPlayers').addEventListener('click', () => Panel.open());
-  $('#hdrLib')?.addEventListener('click', () => LibPanel.open());
   $('#hdrTools')?.addEventListener('click', () => ToolsPanel.open());
   $('#pubExit')?.addEventListener('click', () => setPublicTv(false).catch((err) => toast(explainError(err), 'error')));
   $('#hdrEnd')?.addEventListener('click', () => endNight());
-  $('#hdrPlayHere')?.addEventListener('click', openPlayerHere);
-  $('#newNightBtn').addEventListener('click', newNight);
+  $('#lobbyLock').addEventListener('click', () => toggleLock().catch((err) => toast(explainError(err), 'error')));
   $('#hdrSafe').addEventListener('click', () => { if (confirm(tr('tv.safe.offConfirm'))) applySafeMode(false); });
 }
 
@@ -3374,6 +3438,7 @@ function paintClock() {
 
 function updateShell() {
   paintClock();
+  paintLock();
   const n = activePlayers(S.players).length;
   const el = $('#hdrPlayersTxt');
   if (el) el.textContent = tr('tv.hdr.players', { n: `${n} / ${S.meta.maxPlayers || DEFAULT_PLAYERS}` });
@@ -4085,6 +4150,7 @@ async function runCommand(c) {
     case 'lock': await setLocked(Boolean(a.on)); break;
     case 'kick': if (a.uid && S.players[a.uid]) await kickPlayer(a.uid, Boolean(a.all)); break;
     case 'safe': applySafeMode(Boolean(a.on)); break;
+    case 'mute': setMuted(Boolean(a.on)); break;
     case 'step': if (phase === 'awards' && S.screen === SCREENS.awards) SCREENS.awards.next(); break;
     case 'pollStart': if (phase === 'idle') await startPoll(); break;
     case 'pollClose': if (phase === 'poll') await SCREENS.poll.close(); break;
@@ -4303,6 +4369,17 @@ function creatorMeta() {
   return { creatorUid: S.uid, ...(pid && /^[A-Z0-9]{6}$/.test(pid) ? { creatorPid: pid } : {}) };
 }
 
+/**
+ * 2.4: serata chiusa da un altro dispositivo (pagina Serate o resoconto, state.remote): la stanza è già alla
+ * premiazione, ma il riassunto nel gruppo lo può scrivere solo la TV. Lo fa una volta, a dati caricati.
+ */
+function remoteCloseSave() {
+  if (S.remoteSaved || !S.state?.remote || S.state.phase !== 'awards' || S.meta?.hostUid !== S.uid) return;
+  if (!['meta', 'games', 'votes', 'players'].every((k) => S.loaded.has(k))) return;
+  S.remoteSaved = true;
+  if (buildBoard(S.games, S.votes).length) saveNight();
+}
+
 /** Salva il riassunto della serata nel gruppo, per la classifica di sempre. */
 function saveNight() {
   const gid = S.meta?.groupId;
@@ -4360,110 +4437,194 @@ async function copyPicks(code, aid) {
 // Lobby
 // ---------------------------------------------------------------------------
 
+/**
+ * Lobby (2.4): i partecipanti sono il centro della pagina.
+ * - Colonna a sinistra stretta: QR (dritto, non più inclinato), codice, link, gruppo e codice regia.
+ * - Al centro la griglia dei partecipanti: si calcola (layoutPeople) quante colonne e quanto grandi in base al
+ *   numero di card e allo spazio vero, così 1–2 giocatori hanno card grandi e 12 o più vanno su più righe senza
+ *   schiacciarsi; sotto una misura minima la griglia scorre invece di rimpicciolire. Nessun numero fisso di posti:
+ *   i posti liberi sono UNA card discreta («+3 posti liberi»), non tanti segnaposto.
+ * - Sotto, i pannelli opzionali (tutti spenti di base, vedi lobby-prefs.js) in una fascia compatta.
+ * - In fondo, sempre visibile: suggerimento, armadio e «Inizia la serata» (prima finivano fuori dallo schermo).
+ * Posti previsti (stepper) e giocatori collegati sono due numeri distinti.
+ */
 SCREENS.lobby = {
   mount(el) {
     this.sig = '';
+    this.prepSig = null;
     this.known = new Set(activePlayers(S.players).map((p) => p.uid));
     const joinUrl = playUrl();
     el.innerHTML = `
-      <section class="lobby">
-        <div class="lobby-left">
-          <h1 class="logo logo--xl">GameNight <span class="logo-tag">Show</span></h1>
-          <div class="card qr-card tilt-left" id="lobbyQr">
+      <section class="room lobby" data-mode="${esc(lobbyPrefs().mode)}">
+        <aside class="room-side">
+          <div class="room-qr card" id="lobbyQr">
             <div class="qr" id="qr"></div>
-            <p class="qr-title">${tr('tv.lb.scan')}</p>
-            <p class="qr-code">${tr('tv.roomCode')} <span class="code-chip">${esc(S.code)}</span></p>
+            <p class="room-scan">${esc(tr('room.scan'))}</p>
+            <p class="room-code"><span>${esc(tr('room.codeLabel'))}</span><b class="code-chip">${esc(S.code)}</b></p>
           </div>
-          <div class="card qr-card qr-card--locked tilt-left" id="lobbyLocked" hidden>
+          <div class="room-qr room-qr--locked card" id="lobbyLocked" hidden>
             <p class="lock-big" aria-hidden="true">🔒</p>
-            <p class="qr-title">${tr('tv.hdr.locked')}</p>
+            <p class="room-scan">${tr('tv.hdr.locked')}</p>
             <p class="muted">${tr('tv.lb.lockedText')}</p>
           </div>
-          <p class="qr-url" id="lobbyUrl">${esc(joinUrl.replace(/^https?:\/\//, ''))}</p>
-          ${S.meta.groupName ? `<p class="lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
-          ${regiaCode() ? `<div class="lobby-regia" id="lobbyRegia" title="${esc(tr('tv.lb.regiaHint'))}"><small>${esc(tr('tv.lb.regiaLabel'))}</small><b class="regia-code" id="regiaCodeTxt">${esc(prettyRegia(regiaCode()))}</b><button type="button" class="link-btn" id="regiaCopy">📋 ${esc(tr('tv.lb.regiaCopy'))}</button></div>` : ''}
-        </div>
-        <div class="lobby-right">
-          <div class="lobby-head">
-            <h2>${tr('tv.lb.who')}</h2>
-            <button type="button" class="btn-sec btn-sec--sm" id="lobbyLock"></button>
-            <div class="stepper" role="group" aria-label="${tr('tv.lb.seats')}">
-              <button type="button" class="step-btn" data-step="-1" aria-label="${tr('tv.pl.seatMinus')}">${ICONS.minus}</button>
-              <output id="lobbyCount" aria-live="polite"></output>
-              <button type="button" class="step-btn" data-step="1" aria-label="${tr('tv.pl.seatPlus')}">${ICONS.plus}</button>
+          <p class="room-url" id="lobbyUrl">${esc(joinUrl.replace(/^https?:\/\//, ''))}</p>
+          ${S.meta.groupName ? `<p class="room-group lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
+          ${regiaCode() ? `<div class="room-regia lobby-regia" id="lobbyRegia" title="${esc(tr('tv.lb.regiaHint'))}"><small>${esc(tr('tv.lb.regiaLabel'))}</small><b class="regia-code" id="regiaCodeTxt">${esc(prettyRegia(regiaCode()))}</b><button type="button" class="link-btn" id="regiaCopy">📋 ${esc(tr('tv.lb.regiaCopy'))}</button></div>` : ''}
+        </aside>
+        <div class="room-main">
+          <div class="room-head">
+            <p class="room-count" id="lobbyConnected" aria-live="polite"></p>
+            ${S.meta.demo ? `<p class="demo-note">${tr('tv.lb.demo')} <button type="button" class="btn-sec btn-sec--sm" id="addBot">${tr('tv.lb.addBot')}</button></p>` : ''}
+            <div class="room-seats" role="group" aria-label="${esc(tr('room.seats'))}" title="${esc(tr('room.seatsHint'))}">
+              <span class="room-seats-label">${esc(tr('room.seats'))}</span>
+              <div class="stepper">
+                <button type="button" class="step-btn" data-step="-1" aria-label="${tr('tv.pl.seatMinus')}">${ICONS.minus}</button>
+                <output id="lobbyCount" aria-live="polite"></output>
+                <button type="button" class="step-btn" data-step="1" aria-label="${tr('tv.pl.seatPlus')}">${ICONS.plus}</button>
+              </div>
             </div>
           </div>
-          <div class="slots" id="slots"></div>
-          <div class="prep" id="lobbyPrep"></div>
-          ${S.meta.demo ? `<p class="demo-note">${tr('tv.lb.demo')} <button type="button" class="btn-sec btn-sec--sm" id="addBot">${tr('tv.lb.addBot')}</button></p>` : ''}
-          <div class="lobby-foot">
-            <p id="lobbyHint" class="hint-line"></p>
-            ${hasLib() ? `<button class="btn-sec" type="button" id="lobbyLib">${ICONS.books}<span id="lobbyLibTxt">${tr('tv.armadio')}</span></button>` : ''}
-            <button class="btn btn-big" type="button" id="startBtn">${ICONS.play}<span id="startLabel">${tr('tv.lb.start')}</span></button>
-          </div>
+          <div class="room-people" id="peopleBox"><div class="people-grid slots" id="slots" role="list"></div></div>
+          <div class="room-panels prep" id="lobbyPrep" aria-label="${esc(tr('room.panels'))}" hidden></div>
+        </div>
+        <div class="room-foot lobby-foot">
+          <p id="lobbyHint" class="hint-line"></p>
+          ${hasLib() ? `<button class="btn-sec" type="button" id="lobbyLib">${ICONS.books}<span id="lobbyLibTxt">${tr('tv.armadio')}</span></button>` : ''}
+          <button class="btn btn-big" type="button" id="startBtn">${ICONS.play}<span id="startLabel">${tr('tv.lb.start')}</span></button>
         </div>
       </section>`;
     renderQR($('#qr', el), joinUrl);
-
+    this.root = el;
     el.addEventListener('click', (e) => {
       const step = e.target.closest('.step-btn');
       if (step) { changeSeats(Number(step.dataset.step)); return; }
       const kick = e.target.closest('[data-kick]');
       if (kick) { confirmKick(kick.dataset.kick); return; }
-      if (e.target.closest('#lobbyLock')) setLocked(!S.meta?.locked).catch((err) => toast(explainError(err), 'error'));
       if (e.target.closest('#addBot')) Demo.addBot();
       if (e.target.closest('#regiaCopy')) {
         const txt = prettyRegia(regiaCode());
         (navigator.clipboard?.writeText(txt) || Promise.reject(new Error('no'))).then(() => toast(tr('tv.lb.regiaCopied'))).catch(() => toast(txt));
       }
       if (e.target.closest('#openPlan')) PlanPanel.open();
-      const rv = e.target.closest('[data-ready-view]');
-      if (rv) { setReadyView(rv.dataset.readyView); this.prepSig = ''; this.update(); }
     });
     $('#startBtn', el).addEventListener('click', () => setPhase('idle'));
     $('#lobbyLib', el)?.addEventListener('click', () => LibPanel.open());
+    // La griglia si ricalcola quando cambia lo spazio (finestra, schermo intero, pannelli accesi o spenti)
+    this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.layout()) : null;
+    this.ro?.observe($('#peopleBox', el));
+    this.onPrefs = () => { this.prepSig = null; this.sig = ''; this.update(); };
+    window.addEventListener('gnr-lobby', this.onPrefs);
+    this.onStorage = (e) => { if (e.key === 'gnr_lobby') this.onPrefs(); };
+    window.addEventListener('storage', this.onStorage);
+  },
+
+  unmount() {
+    this.ro?.disconnect();
+    window.removeEventListener('gnr-lobby', this.onPrefs);
+    window.removeEventListener('storage', this.onStorage);
+  },
+
+  /** Colonne e misura delle card: la più grande che fa stare tutto, con un minimo sotto il quale si scorre. */
+  layout() {
+    const box = $('#peopleBox');
+    const grid = $('#slots');
+    if (!box || !grid) return;
+    // La card «posti liberi» è solo informativa: se lo spazio non basta lascia il posto ai giocatori
+    const ghost = grid.querySelector('.pcard--free');
+    ghost?.removeAttribute('hidden');
+    const n = grid.childElementCount;
+    if (!n) return;
+    const W = box.clientWidth;
+    const H = box.clientHeight;
+    const gap = parseFloat(getComputedStyle(grid).columnGap) || 16;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const ratio = 1.18; // altezza / larghezza della card
+    const maxSize = Math.min(W, 22 * rem);
+    const minSize = 6.5 * rem; // sulla TV non si scorre: meglio card un po' più piccole che una riga nascosta
+    const fit = (count) => {
+      let best = { cols: 1, size: 0 };
+      for (let cols = 1; cols <= count; cols++) {
+        const rows = Math.ceil(count / cols);
+        const w = (W - gap * (cols - 1)) / cols;
+        const h = (H - gap * (rows - 1)) / rows / ratio;
+        const size = Math.min(w, h, maxSize);
+        if (size > best.size + 0.5) best = { cols, size };
+      }
+      return best;
+    };
+    // In verticale (telefono, tablet in piedi) la pagina scorre: contano solo la larghezza e una misura comoda
+    if (matchMedia('(max-width: 760px), (orientation: portrait) and (max-width: 1100px)').matches) {
+      const target = 9 * rem;
+      const cols = Math.max(2, Math.min(n, Math.floor((W + gap) / (target + gap))));
+      grid.style.setProperty('--pc-cols', String(cols));
+      grid.style.setProperty('--pc-size', `${Math.floor((W - gap * (cols - 1)) / cols)}px`);
+      box.classList.remove('is-scroll');
+      return;
+    }
+    let best = fit(n);
+    if (best.size < minSize && ghost && n > 1) { ghost.setAttribute('hidden', ''); best = fit(n - 1); }
+    // Troppe card per lo spazio: misura minima e scorrimento verticale (mai card illeggibili)
+    if (best.size < minSize) {
+      const cols = Math.max(1, Math.floor((W + gap) / (minSize + gap)));
+      best = { cols, size: Math.min(minSize, (W - gap * (cols - 1)) / cols) };
+      box.classList.add('is-scroll');
+    } else box.classList.remove('is-scroll');
+    grid.style.setProperty('--pc-cols', String(best.cols));
+    grid.style.setProperty('--pc-size', `${Math.floor(best.size)}px`);
   },
 
   update() {
     const ps = activePlayers(S.players);
     const max = S.meta.maxPlayers || DEFAULT_PLAYERS;
     const n = ps.length;
-    $('#lobbyCount').textContent = `${n} / ${max}`;
+    const prefs = lobbyPrefs();
+    const root = $('.room');
+    if (root && root.dataset.mode !== prefs.mode) root.dataset.mode = prefs.mode;
+    $('#lobbyCount').textContent = String(max);
+    const online = ps.filter((p) => isOnline(p.uid)).length;
+    $('#lobbyConnected').innerHTML = `<b>${n}</b> ${esc(tr('room.connectedLabel', { n }))}${online < n ? ` <small>· ${esc(tr('tv.lb.offline'))}: ${n - online}</small>` : ''}`;
     const prep = prepHTML();
-    if (prep !== this.prepSig) { this.prepSig = prep; $('#lobbyPrep').innerHTML = prep; $('#lobbyPrep').hidden = !prep; }
+    if (prep !== this.prepSig) {
+      this.prepSig = prep;
+      $('#lobbyPrep').innerHTML = prep;
+      $('#lobbyPrep').hidden = !prep;
+      requestAnimationFrame(() => this.layout());
+    }
     const locked = Boolean(S.meta?.locked);
     $('#lobbyQr').hidden = locked;
     $('#lobbyUrl').hidden = locked;
     $('#lobbyLocked').hidden = !locked;
-    $('#lobbyLock').innerHTML = locked ? `🔓 <span>${tr('tv.pl.unlock')}</span>` : `🔒 <span>${tr('tv.tour.l3.t')}</span>`;
 
     const sig = JSON.stringify([max, ps.map((p) => [p.uid, p.name, p.style, p.seed, p.color, p.opts, (p.photo || '').length, p.motto, isOnline(p.uid)]), Object.keys(S.nights || {}).length]);
     if (sig !== this.sig) {
-      if (ps.some((p) => !this.known.has(p.uid)) && this.known.size + 1 > 0 && this.sig) joinSound();
+      if (ps.some((p) => !this.known.has(p.uid)) && this.sig) joinSound();
       this.sig = sig;
-      const slots = $('#slots');
-      slots.classList.toggle('slots--many', Math.max(max, n) > 8);
-      const filled = ps.map((p, i) => {
+      const filled = ps.map((p) => {
         const isNew = !this.known.has(p.uid);
+        const on = isOnline(p.uid);
+        const title = trophyTitle(p);
         return `
-          <div class="slot ${isNew ? 'is-new' : ''} ${isOnline(p.uid) ? '' : 'is-offline'}" style="--tilt:${TILTS[i % TILTS.length]}deg">
-            ${isOnline(p.uid) ? '' : `<span class="offline-badge" title="${tr('tv.lb.offline')}">${ICONS.wifiOff}</span>`}
-            <span class="slot-av">${avatarHTML(p, 'var(--slot-av)')}${trophyBadges(p)}</span>
-            <span class="slot-name">${esc(p.name)} <small class="lv-badge">Lv ${progressFor(S.nights, personKey(p), S.library).level}</small></span>
-            ${trophyTitle(p) ? `<span class="slot-title">${esc(trophyTitle(p))}</span>` : ''}
-            ${p.motto ? `<span class="slot-motto">«${esc(p.motto)}»</span>` : ''}
+          <div class="pcard slot ${isNew ? 'is-new' : ''} ${on ? '' : 'is-offline'}" role="listitem">
+            <span class="pcard-status ${on ? 'is-on' : 'is-off'}" title="${esc(on ? tr('room.online') : tr('room.offline'))}"><i aria-hidden="true"></i><span class="sr-only">${esc(on ? tr('room.online') : tr('room.offline'))}</span></span>
+            <span class="pcard-av slot-av">${avatarHTML(p, 'var(--pc-av)')}${trophyBadges(p)}</span>
+            <span class="pcard-name slot-name">${esc(p.name)}</span>
+            <span class="pcard-meta"><small class="lv-badge">Lv ${progressFor(S.nights, personKey(p), S.library).level}</small>${title ? `<span class="pcard-title">${esc(title)}</span>` : ''}</span>
+            ${p.motto ? `<span class="pcard-motto">«${esc(p.motto)}»</span>` : ''}
             <button type="button" class="kick" data-kick="${esc(p.uid)}" aria-label="${tr('tv.lb.remove', { name: esc(p.name) })}">${ICONS.x}</button>
           </div>`;
       }).join('');
-      const empty = Array.from({ length: Math.max(0, max - n) }, () => `
-          <div class="slot slot--empty"><span class="slot-q">?</span><span class="slot-name">${tr('tv.lb.waiting')}</span></div>`).join('');
-      slots.innerHTML = filled + empty;
+      const free = Math.max(0, max - n);
+      const ghost = !n
+        ? `<div class="pcard pcard--empty" role="listitem"><span class="pcard-ghost" aria-hidden="true">📱</span><span class="pcard-name">${esc(tr('room.empty'))}</span><span class="pcard-motto">${esc(tr('room.emptyHint'))}</span></div>`
+        : free ? `<div class="pcard pcard--free" role="listitem"><span class="pcard-ghost" aria-hidden="true">＋</span><span class="pcard-name">${esc(tr('room.free', { n: free }))}</span><span class="pcard-motto">${esc(tr('room.freeHint'))}</span></div>` : '';
+      $('#slots').innerHTML = filled + ghost;
       this.known = new Set(ps.map((p) => p.uid));
+      this.layout();
     }
 
     const idBox = $('#lobbyIdentity');
     if (idBox) {
-      const h = `${emblemHTML(S.identity, 'emblem--lobby')}<span>${tr('tv.lb.group', { name: `<b>${esc(S.meta.groupName)}</b>` })}${S.identity?.motto ? `<br><i>«${esc(S.identity.motto)}»</i>` : ''}</span>`;
+      const h = `${emblemHTML(S.identity, 'emblem--lobby')}<span>${tr('tv.lb.group', { name: `<b>${esc(S.meta.groupName)}</b>` })}${S.identity?.motto && prefs.mode === 'info' ? `<br><i>«${esc(S.identity.motto)}»</i>` : ''}</span>`;
       if (idBox.innerHTML !== h) idBox.innerHTML = h;
     }
     const libTxt = $('#lobbyLibTxt');
