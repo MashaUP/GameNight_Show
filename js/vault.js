@@ -218,6 +218,26 @@ export const Vault = {
     return out;
   },
 
+  /**
+   * 2.3: cancella da questo dispositivo tutte le copie di una serata (copie a rotazione, istantanee,
+   * cronologia). Si usa quando la serata viene eliminata: senza, la TV la riproponeva come "serata interrotta"
+   * e "Riprendi" la ricreava nel database (per questo l'ultima serata sembrava impossibile da eliminare).
+   */
+  async drop(room) {
+    try { localStorage.removeItem(lsKey(room)); } catch { /* niente */ }
+    if (!(await this.ready())) return;
+    const db = await open();
+    const tx = db.transaction(['slots', 'snaps', 'log'], 'readwrite');
+    const slots = tx.objectStore('slots');
+    for (const slot of ['current', 'b1', 'b2', 'b3']) slots.delete(`${room}:${slot}`);
+    for (const name of ['snaps', 'log']) {
+      const st = tx.objectStore(name);
+      const keys = await reqP(st.index('room').getAllKeys(room));
+      for (const k of keys) st.delete(k);
+    }
+    await done(tx);
+  },
+
   /** Cancella le copie delle serate più vecchie di `days` giorni (tranne `keep`). */
   async prune(days = 30, keep = null) {
     if (!(await this.ready())) return 0;

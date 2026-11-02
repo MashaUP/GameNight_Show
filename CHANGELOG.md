@@ -1,5 +1,34 @@
 # Novità
 
+## 2.3.0 · Sistema di design più leggibile, home riordinata, si elimina anche l'ultima serata (2 novembre 2026)
+
+> **Le regole del database sono cambiate** (solo la presenza nella stanza): ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica**. Per l'app Android la release da pubblicare è `v2.3.0`.
+
+**Perché 2.3.0 (MINOR)**: sistema di design rivisto su tutte le pagine, novità piccole ma nuove (notifica che si nasconde, «Come funziona» nella card «Crea una stanza») e una correzione; tutto retrocompatibile, nessun dato da convertire.
+
+**Eliminare l'ultima serata**
+- Si può eliminare anche l'ultima serata giocata (e quella ancora aperta sulla TV). Prima l'eliminazione riusciva, ma la TV teneva la copia locale come «serata interrotta» e «Riprendi» la ricreava nel database con voti e classifica.
+- Ora l'eliminazione cancella anche le copie locali, il rientro nella serata e il codice regia su quel dispositivo; la TV riconosce una serata eliminata (anche da un altro dispositivo) e mostra «Serata eliminata» invece di «Ricrea la serata». Classifica di sempre, statistiche e «Le tue serate» si aggiornano come prima.
+- Un telefono o una TV rimasti aperti non ricreano più la stanza eliminata con la loro presenza (regole del database).
+
+**Leggibilità e contrasti**
+- Avviso della versione («La versione 2.2.0 è appena uscita…») leggibile nella finestra «Scarica», nella scheda «App Android» e nella pagina di download: testo scuro su fondo chiaro con una barra colorata (prima arancione su lavanda, contrasto 1,4:1; ora 11,7:1). Stesso stile per gli altri stati (aggiornato, nuova versione, errore).
+- Testi descrittivi e secondari più chiari su tutte le pagine (11,8:1 e 7,9:1 sulle card), anche nella card «Sostieni GameNight»; il pulsante Ko-fi tiene il suo rosso con il testo scuro (5,9:1; in bianco era 3:1). Controllo automatico axe-core (WCAG 2.2 A/AA) su home, profilo, download, telefono in serata e resoconto: da 7 problemi a 0.
+- Caratteri: 17 px sul telefono e 18 px dal computer, descrizioni a 1rem, titoli che si adattano allo schermo senza diventare enormi.
+- Focus da tastiera giallo con anello scuro, visibile su fondi chiari e scuri.
+
+**Pulsanti, campi e spazi**
+- Controlli normali alti almeno 48 px, azioni principali almeno 56 px, controlli compatti mai sotto i 44 px; stato disabilitato uguale per tutti.
+- Spazi tra e dentro le card da una scala unica, che cresce un poco con lo schermo.
+
+**Home**
+- «Entra in una stanza»: campo del codice più chiaro della card con bordo visibile, «Entra» con bordo viola (secondaria, «Crea la stanza» resta la principale).
+- «Crea una stanza»: i tre passaggi (crei la stanza, gli amici inquadrano il QR, votate) al posto dello spazio vuoto; pulsante più grande.
+- «La tua collezione»: «I tuoi armadi» e «Le tue serate» affiancati a metà della card e alti uguali; quando la card è stretta (telefono, tablet) vanno uno sotto l'altro per non troncare i testi.
+- «Risultati della serata» è una **notifica**: barra laterale, etichetta «Risultati pronti» / «Serata in corso» e pulsante ✕ per nasconderla (torna se cambia lo stato della serata).
+- Card più ariose (profilo, gruppi); sul laptop la scheda «App Android» resta larga tutta la riga invece di essere schiacciata.
+- «Profilo e app»: card a colonne, ognuna alta quanto il suo contenuto (niente più card mezze vuote).
+
 ## 2.2.0 · Lobby partita con la copertina protagonista, rivelazione dei voti a scelta, regia che gioca (2 novembre 2026)
 
 > **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (nuovi `meta/manualReveal`, `armadi/…/viewers` e `armadi/…/blocked`). Per l'app Android la release da pubblicare è `v2.2.0`.

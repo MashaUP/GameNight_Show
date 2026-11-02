@@ -206,6 +206,8 @@ export default {
   'tv.gone.copy': 'This computer has a good copy from <b>{time}</b>: I can recreate the night with players, games and votes.',
   'tv.gone.restore': 'Recreate the night from this copy',
   'tv.gone.noCopy': 'I couldn’t find any local copies of this night.',
+  'tv.gone.deletedTitle': 'Night deleted',
+  'tv.gone.deletedText': 'Night <b>{code}</b> was deleted by the person who created it: votes, report and group stats are gone. The copies on this computer won’t recreate it.',
   'tv.log.locked': 'Room locked: no new arrivals',
   'tv.log.unlocked': 'Room reopened',
   'tv.lock.on': 'Room locked: the QR code no longer works for anyone not already in',
@@ -996,6 +998,7 @@ export default {
 
   'tv.ng.report': 'Full report',
   'tv.ng.canDelete': 'You created this night: you can also delete it from the full report.',
+  'tv.ng.canDeleteNow': 'You created this night: even though it is the current one, you can delete it from the full report (the TV won’t bring it back).',
 
   'tpl.title': 'Templates and past nights',
   'tpl.lead': 'Reuse a night’s settings: questions, Chaos, vote timer, atmosphere, music and seats. Before applying you see what changes.',

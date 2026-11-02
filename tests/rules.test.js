@@ -182,6 +182,10 @@ check('serata: riassunto rimasto senza stanza: lo cancella il creatore', (() => 
 check('serata: riassunto rimasto senza stanza: NON un altro master', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'master2', 'set', '/groups/GRP123/nights/ABCD', null, false);
 check('serata: stanza già sparita, il creatore toglie riassunto, album ed elenco insieme', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'host', 'update', '/', { 'groups/GRP123/nights/ABCD': null, 'groups/GRP123/rooms/ABCD': null, 'groups/GRP123/photos/ABCD': null }, true);
 check('serata: stanza già sparita, un altro master NON toglie l\'album', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'master2', 'update', '/', { 'groups/GRP123/photos/ABCD': null }, false);
+// 2.3 · Serata eliminata: un dispositivo rimasto aperto non ricrea la stanza con la sua presenza
+check('presenza: nella stanza che esiste si scrive', made(), 'p1', 'set', `${R}/presence/p1`, true, true);
+check('presenza: in una stanza eliminata NON si scrive (niente stanza fantasma)', (() => { const d = made(); delete d.rooms.ABCD; return d; })(), 'p1', 'set', `${R}/presence/p1`, true, false);
+check('presenza: si toglie anche a stanza eliminata (onDisconnect)', (() => { const d = made(); delete d.rooms.ABCD.meta; d.rooms.ABCD.presence = { p1: true }; return d; })(), 'p1', 'set', `${R}/presence/p1`, null, true);
 check('creatore: si scrive alla creazione della stanza', { rooms: {} }, 'host', 'set', `${R}/meta`, { hostUid: 'host', creatorUid: 'host', maxPlayers: 6 }, true);
 check('creatore: una stanza ripristinata da un backup tiene il creatore originale', { rooms: {} }, 'host', 'set', `${R}/meta`, { hostUid: 'host', creatorUid: 'altro', maxPlayers: 6 }, true);
 check('creatore: NON si cambia dopo', made(), 'host', 'update', `${R}/meta`, { creatorUid: 'master2' }, false);

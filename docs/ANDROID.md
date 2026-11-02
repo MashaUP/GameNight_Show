@@ -14,11 +14,11 @@ Nella cartella `android-app/` c'è l'app Android vera e propria (fatta con [Capa
 Non serve installare niente sul computer: l'APK la prepara GitHub, **solo quando pubblichi tu una release**. I caricamenti di file (codice, link, documenti) non la ricostruiscono e non toccano le Releases, quindi non fanno partire i webhook o le notifiche delle release.
 
 1. Aggiorna lo stesso numero in `version.json` (con data e novità in italiano e inglese), `js/version.js` e `sw.js`, e carica i file su GitHub.
-2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v2.2.0`, scegli **Create new tag: v2.2.0 on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
-3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`v2.2.0` per la versione `2.2.0`; `v2.2` varrebbe come `2.2.0`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
+2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v2.3.0`, scegli **Create new tag: v2.3.0 on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
+3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`v2.3.0` per la versione `2.3.0`; `v2.3` varrebbe come `2.3.0`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
 4. Alla fine aggiunge **GameNight-Show.apk** alla tua release. Carica solo il file: la release non viene modificata (il tuo testo resta com'è e non partono altri eventi). L'impronta SHA-256 la calcola GitHub.
 
-Un tag creato da terminale (`git push origin v2.2.0`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
+Un tag creato da terminale (`git push origin v2.3.0`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
 
 Nei minuti tra la pubblicazione e la fine del lavoro, le app vedono la nuova versione come **in preparazione**: è normale, basta aspettare. Se il tag non corrisponde a `version.json`, cancella la release e il tag, correggi e pubblica di nuovo.
 

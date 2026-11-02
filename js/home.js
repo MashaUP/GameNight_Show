@@ -180,10 +180,18 @@ async function paintBack() {
     ]);
     if (!meta) { input.value = ''; return; }
     const done = state?.phase === 'awards' && state?.done;
-    box.innerHTML = `<a class="back-link hub-back-link" href="play.html?room=${esc(last)}">
-      ${me ? avatarHTML(me, '2.6rem') : '<span class="tile-ico tile-ico--sun" aria-hidden="true">↩️</span>'}
-      <span class="mini-text"><b>${esc(done ? t('home.back.results', { code: last }) : t('home.back.rejoin', { code: last }))}</b><small>${esc(meta.groupName || t('home.back.noGroup'))}${done ? ` · ${esc(t('home.back.ended'))}` : ''}</small></span>
-      <span class="mini-go" aria-hidden="true">›</span></a>`;
+    // 2.3: è una notifica (si può nascondere), non una scheda come le altre. Nascosta resta nascosta
+    // solo per questa serata e per questo stato: quando la serata finisce torna con i risultati.
+    const sig = `${last}:${done ? 'done' : 'live'}`;
+    if (ls.get('gnr_back_hidden') === sig) return;
+    box.innerHTML = `<div class="notice notice--${done ? 'done' : 'live'}">
+      <a class="notice-main back-link hub-back-link" href="play.html?room=${esc(last)}">
+        ${me ? avatarHTML(me, '2.6rem') : `<span class="tile-ico tile-ico--${done ? 'sun' : 'live'}" aria-hidden="true">${done ? '🏆' : '↩️'}</span>`}
+        <span class="mini-text"><span class="notice-kicker">${esc(t(done ? 'home.back.kickerDone' : 'home.back.kickerLive'))}</span><b>${esc(done ? t('home.back.results', { code: last }) : t('home.back.rejoin', { code: last }))}</b><small>${esc(meta.groupName || t('home.back.noGroup'))}${done ? ` · ${esc(t('home.back.ended'))}` : ''}</small></span>
+        <span class="mini-go" aria-hidden="true">›</span></a>
+      <button type="button" class="notice-close" id="backHide" aria-label="${esc(t('home.back.hide'))}" title="${esc(t('home.back.hide'))}">✕</button>
+    </div>`;
+    $('#backHide').addEventListener('click', () => { ls.set('gnr_back_hidden', sig); box.hidden = true; box.innerHTML = ''; });
     box.hidden = false;
   } catch { /* stanza non leggibile: niente scorciatoia */ }
 }

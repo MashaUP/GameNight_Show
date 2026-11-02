@@ -44,7 +44,7 @@ import { Lite } from './lite.js';
 import { publicUrl, isApp } from './native.js';
 import { Person } from './person.js';
 import { settingsFromMeta, settingsPatch, settingsDiff, settingLabel, makeTemplate, templateList, planFromNight, LocalTemplates, TEMPLATE_MAX } from './templates.js';
-import { isNightCreator } from './nights.js';
+import { isNightCreator, markDeleted, nightWasDeleted } from './nights.js';
 import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
 import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
 import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel, setReadyView } from './tv-prep.js';
@@ -277,8 +277,25 @@ async function boot() {
   }
   localStorage.removeItem(STORE_KEY);
   // Mai dritti alla schermata iniziale se c'è una serata interrotta da riprendere.
-  const sess = (await Vault.sessions().catch(() => []))[0];
+  const sess = await liveSession();
   renderCreate({ ...(sess ? { recover: sess } : {}), armadio: param('armadio') === '1' && !sess });
+}
+
+/**
+ * 2.3: la serata interrotta più recente da proporre, saltando quelle eliminate (da qui o da un altro
+ * dispositivo). Prima la TV riproponeva anche una serata appena eliminata e "Riprendi" la ricreava:
+ * per questo l'ultima serata sembrava impossibile da eliminare.
+ */
+async function liveSession() {
+  for (const sess of await Vault.sessions().catch(() => [])) {
+    const d = (await Vault.loadCurrent(sess.room).catch(() => null))?.data || {};
+    if (await nightWasDeleted(sess.room, { gid: d.meta?.groupId || '', votes: d.votes })) {
+      await Vault.close(sess.room).catch(() => {});
+      continue;
+    }
+    return sess;
+  }
+  return null;
 }
 
 /** Dopo un ricaricamento: "Serata ripresa, copia valida delle 22:14:31". */
@@ -920,6 +937,7 @@ async function createRoom() {
       if (!snap.exists()) code = candidate;
     }
     if (!code) throw new Error(tr('tv.noFreeCode'));
+    markDeleted(code, false); // codice riusato per una stanza nuova: non è più "eliminata"
     await set(roomRef(code, 'meta'), {
       hostUid: S.uid, maxPlayers: S.setupCount, createdAt: serverTimestamp(), ...creatorMeta(),
       groupId: group.id, groupName: group.name, soundboard: true,
@@ -1514,6 +1532,21 @@ async function renderRoomGone() {
   S.screen?.unmount?.();
   S.screen = null;
   const saved = await Vault.loadCurrent(S.code).catch(() => null);
+  // 2.3: serata eliminata (non sparita per un guasto): niente "Ricrea", la copia locale si chiude.
+  if (await nightWasDeleted(S.code, { gid: saved?.data?.meta?.groupId || '', votes: saved?.data?.votes })) {
+    await Vault.close(S.code).catch(() => {});
+    localStorage.removeItem(STORE_KEY);
+    app.innerHTML = `
+      <main class="create">
+        <section class="card create-card">
+          <h2>${tr('tv.gone.deletedTitle')}</h2>
+          <p>${tr('tv.gone.deletedText', { code: esc(S.code) })}</p>
+          <button type="button" class="btn btn-big btn-block" id="goneNew">${tr('tv.lost.new')}</button>
+        </section>
+      </main>`;
+    $('#goneNew').addEventListener('click', () => { location.href = location.pathname; });
+    return;
+  }
   app.innerHTML = `
     <main class="create">
       <section class="card create-card">

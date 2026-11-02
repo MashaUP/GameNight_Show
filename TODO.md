@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.2.0** (ridisegno della lobby e della lobby partita, rivelazione dei voti a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.3.0** (sistema di design più leggibile, home riordinata, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -29,11 +29,14 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [x] **BoardGameGeek**: proxy pubblicato su `https://gamenight-bgg.mashaup.workers.dev` con il token (`/health` → `token: true`), indirizzo in `js/services.js`. Si attiva sul sito con la prossima pubblicazione.
 - [ ] **Regole del database 2.2**: ricopiare di nuovo `firebase/database.rules.json` e **Pubblica** (nuovi `manualReveal`, `viewers`, `blocked` degli armadi).
 - [ ] **App Android 2.2**: pubblicare la release `v2.2.0` (comprende tutta la 2.1; serve per i promemoria con le notifiche).
+- [ ] **Regole del database 2.3**: ricopiare `firebase/database.rules.json` e **Pubblica** (presenza nella stanza solo se la stanza esiste).
+- [ ] **App Android 2.3**: pubblicare la release `v2.3.0` (comprende la 2.2).
 
 ## ✋ Da provare a mano (serve un dispositivo vero)
 
 - [ ] 2.2 sulla TV vera: lobby partita con una copertina vera, «Gioca anche tu» con i popup consentiti, rivelazione manuale.
 - [ ] 2.2 armadio: «Rimuovi accesso» a un amico con account Google, poi lui riapre il link.
+- [ ] 2.3: eliminare l'ultima serata dal resoconto con la TV aperta su quella serata, poi ricaricare la TV (deve dire «Serata eliminata», senza «Riprendi»).
 
 - [ ] Notifiche dei promemoria nell'app Android (permesso, orario giusto, cambio di data).
 - [ ] Accesso con Google sul dominio vero; email e password nell'app installata.
@@ -46,6 +49,9 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [ ] Costruzione dell'APK su GitHub Actions dopo una release (spunta verde).
 
 ## ⚠️ Limiti noti
+
+- **Schermate da rivedere una per una con il sistema di design 2.3**: statistiche, gruppi e resoconti della TV prendono i nuovi controlli, focus e avvisi, ma non sono stati ridisegnati (la TV usa ancora il tema pop di `style.css`).
+- **Serata eliminata da un altro dispositivo**: la TV la riconosce solo se la serata aveva già voti e un gruppo; altrimenti alla riapertura propone ancora «Riprendi» (si può scegliere «Nuova serata»).
 
 - **Codice a barre con più edizioni**: non esiste un database gratuito codice → gioco; la prima volta si abbina a mano (ricerca per nome), poi quel dispositivo lo riconosce.
 - **Descrizione dei giochi da BGG**: non si importa (testo protetto dai termini di BGG); nella scheda c'è il link alla pagina di BGG.

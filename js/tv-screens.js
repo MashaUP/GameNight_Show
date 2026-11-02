@@ -1254,7 +1254,7 @@ export const AlltimeScreen = {
           ${(n.quotes || []).length ? `<h2>${tr('tv.ng.quotes')}</h2><ul class="quote-list">${(Array.isArray(n.quotes) ? n.quotes : Object.values(n.quotes)).slice(0, 6).map((q) => `<li>«${esc(q.text)}» <small>${esc(q.name)}, ${esc(q.game)}</small></li>`).join('')}</ul>` : ''}
           <button type="button" class="btn-sec" data-album="${esc(n.room)}" data-title="Album · Game Night #${n.number}">📸 ${tr('tv.al.title')}${photos !== null ? ` (${photos})` : ''}</button>
           <a class="btn-sec" href="resoconto.html?room=${esc(n.room)}&g=${esc(S.meta?.groupId || '')}&s=regia" target="_blank" rel="noopener">📋 ${tr('tv.ng.report')}</a>
-          ${n.room !== S.code && isNightCreator(n, S.uid, Person.data?.pid || '') ? `<p class="muted small">${tr('tv.ng.canDelete')}</p>` : ''}
+          ${isNightCreator(n, S.uid, Person.data?.pid || '') ? `<p class="muted small">${tr(n.room === S.code ? 'tv.ng.canDeleteNow' : 'tv.ng.canDelete')}</p>` : ''}
           <button type="button" class="link-btn" data-view="memories">${tr('tv.ng.allMem')}</button>
         </aside>
       </div>`;

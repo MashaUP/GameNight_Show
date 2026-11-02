@@ -48,6 +48,18 @@
   --body: 'GNR UI', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --bw: 0.19rem;
   --pop: cubic-bezier(.2, 1.6, .4, 1);
+  /* 2.3 · Sistema di design comune a tutte le pagine (anche la TV): misure minime dei controlli,
+     contorno del focus e colori degli avvisi. Gli avvisi hanno fondo chiaro e inchiostro scuro in tutti
+     i temi: contrasto da 10:1 a 13:1 (WCAG AA chiede 4,5:1). css/ui.css aggiunge il resto per le pagine nuove. */
+  --ctl-h: 3rem;          /* controlli normali: 48–54 px */
+  --ctl-h-sm: 2.75rem;    /* controlli compatti (barre, filtri): mai sotto i 44 px */
+  --focus: #FFD23F;
+  --focus-ring: 0 0 0 3px #1A1236, 0 0 0 6px var(--focus);
+  --al-warn-bg: #FFF1C7; --al-warn-ink: #3D2E00; --al-warn-line: #E0A800;
+  --al-ok-bg: #D6F5E7;   --al-ok-ink: #0B3D27;   --al-ok-line: #1FA56A;
+  --al-new-bg: #FFE58F;  --al-new-ink: #2B2000;  --al-new-line: #E0B000;
+  --al-err-bg: #FFE1DE;  --al-err-ink: #6B0F0F;  --al-err-line: #D9342B;
+  --al-info-bg: #DCEBFF; --al-info-ink: #13315C; --al-info-line: #2B7FE0;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -81,7 +93,8 @@ button, input { font: inherit; color: inherit; }
 img { max-width: 100%; }
 code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; padding: 0 0.3em; }
 
-:focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; }
+/* Focus da tastiera: giallo con un anello scuro, visibile sia sui fondi chiari sia su quelli scuri */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; box-shadow: 0 0 0 6px rgba(26, 18, 54, 0.55); }
 
 [hidden] { display: none !important; }
 
@@ -91,7 +104,7 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
 }
 .muted { color: var(--ink-soft); font-weight: 700; }
 .center { text-align: center; }
-.small { font-size: 0.85rem; }
+.small { font-size: 0.875rem; }
 .full-width { align-self: stretch; }
 
 .ico { width: 1.2em; height: 1.2em; flex-shrink: 0; }
@@ -127,7 +140,7 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
   color: var(--cream); background: var(--ink);
   border: var(--bw) solid var(--ink); border-radius: 1rem;
   box-shadow: 0.32rem 0.32rem 0 var(--tomato);
-  padding: 0.7em 1.3em; min-height: 3rem;
+  padding: 0.7em 1.3em; min-height: var(--ctl-h);
   cursor: pointer; text-decoration: none;
   transition: transform .08s ease, box-shadow .08s ease;
 }
@@ -143,16 +156,17 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
   background: var(--paper); color: var(--ink);
   border: var(--bw) solid var(--ink); border-radius: 0.8rem;
   box-shadow: 0.2rem 0.2rem 0 var(--ink);
-  padding: 0.5em 0.95em; min-height: 2.75rem;
+  padding: 0.5em 0.95em; min-height: var(--ctl-h);
   cursor: pointer;
   transition: transform .08s ease, box-shadow .08s ease;
 }
-.btn-sec:active { transform: translate(0.12rem, 0.12rem); box-shadow: 0.08rem 0.08rem 0 var(--ink); }
+.btn-sec:active:not(:disabled) { transform: translate(0.12rem, 0.12rem); box-shadow: 0.08rem 0.08rem 0 var(--ink); }
+.btn-sec:disabled, .btn-sec[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 .btn-sec[aria-pressed="true"], .btn-sec[aria-expanded="true"] { background: var(--sun); }
-.btn-sec--sm { font-size: 0.95rem; padding: 0.4em 0.8em; }
+.btn-sec--sm { font-size: 0.95rem; padding: 0.4em 0.8em; min-height: var(--ctl-h-sm); }
 
 .link-btn {
-  background: none; border: none; padding: 0.6rem; min-height: 2.75rem;
+  background: none; border: none; padding: 0.6rem; min-height: var(--ctl-h-sm);
   font-weight: 900; text-decoration: underline; text-underline-offset: 0.2em; cursor: pointer;
 }
 .text-btn {
@@ -160,12 +174,12 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
   text-decoration: underline; text-underline-offset: 0.2em; padding: 0.4rem;
 }
 .icon-btn {
-  width: 2.6rem; height: 2.6rem; display: grid; place-items: center;
+  width: var(--ctl-h-sm); height: var(--ctl-h-sm); display: grid; place-items: center;
   background: var(--paper); border: var(--bw) solid var(--ink); border-radius: 0.7rem; cursor: pointer;
 }
 
 .input {
-  width: 100%; min-height: 3rem;
+  width: 100%; min-height: var(--ctl-h);
   border: var(--bw) solid var(--ink); border-radius: 0.9rem;
   background: var(--paper); color: var(--ink);
   padding: 0.55rem 0.9rem;
@@ -1268,7 +1282,7 @@ code { font-size: 0.95em; background: var(--paper); border: 2px solid var(--ink)
 .lib-add { grid-template-columns: auto minmax(0, 1fr) auto; }
 .lib-add-more { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .lib-add-more .field-label { margin: 0 0.2rem 0 0; }
-.select--sm { width: auto; min-height: 2.6rem; padding-top: 0.3rem; padding-bottom: 0.3rem; font-size: 1rem; }
+.select--sm { width: auto; min-height: var(--ctl-h-sm); padding-top: 0.3rem; padding-bottom: 0.3rem; font-size: 1rem; }
 .lib-info { font-size: 0.85rem; font-weight: 900; min-height: 1.1em; }
 .lib-edit {
   position: absolute; top: -0.7rem; left: -0.7rem;
@@ -1576,7 +1590,7 @@ html.save-power *, html.save-power *::before, html.save-power *::after { animati
 .trash-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
 .trash-list [aria-pressed="true"] { background: var(--tomato); }
 .seg { display: inline-flex; border: var(--bw) solid var(--ink); border-radius: 999px; overflow: hidden; background: var(--paper); }
-.seg button { border: none; background: transparent; padding: 0.45rem 0.9rem; font: inherit; font-weight: 900; cursor: pointer; color: inherit; min-height: 2.6rem; }
+.seg button { border: none; background: transparent; padding: 0.45rem 0.9rem; font: inherit; font-weight: 900; cursor: pointer; color: inherit; min-height: var(--ctl-h-sm); }
 .seg button + button { border-left: var(--bw) solid var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--sun); color: #1F1A3D; }
 /* 1.11: sui telefoni stretti i selettori vanno a capo invece di tagliare l'ultima scelta ("Automatico" a 360 px) */
@@ -3474,8 +3488,10 @@ html.theme-show .slot-name, html.theme-show .panel-name, html.theme-show .vcard-
 .home-donate { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.4rem 1.4rem; padding: 1.1rem 1.4rem; }
 .home-donate h2 { grid-column: 1 / -1; font-size: 1.5rem; }
 .home-donate p { font-weight: 700; margin: 0; }
-.kofi-btn { background: #FF5E5B; color: #FFFFFF; white-space: nowrap; }
-html.theme-show .kofi-btn, html[data-theme="night"] .kofi-btn { background: #FF5E5B; color: #FFFFFF; }
+/* Rosso del marchio Ko-fi con inchiostro scuro: 5,9:1 (in bianco era 3:1, sotto la soglia WCAG AA) */
+.kofi-btn { background: #FF5E5B; color: #1A1236; white-space: nowrap; }
+html.theme-show .kofi-btn, html[data-theme="night"] .kofi-btn { background: #FF5E5B; color: #1A1236; }
+.kofi-btn:hover { background: #FF7572; }
 @media (max-width: 560px) { .home-donate { grid-template-columns: 1fr; } .kofi-btn { justify-self: start; } }
 
 /* Slider del voto: il colore finisce esattamente al centro del cursore, i numeri sotto ogni scatto */
@@ -4444,11 +4460,19 @@ html.in-app .am-desk-only { display: none !important; }
 .ver-kv b { font-size: 1.05rem; overflow-wrap: anywhere; }
 .ver-kv small { font-weight: 700; color: var(--ink-soft); }
 .ver-status { margin: 0; }
-.ver-state { display: inline-block; padding: 0.35rem 0.7rem; border-radius: 0.8rem; border: 2px solid var(--ink); font-weight: 900; background: var(--paper); }
-.ver-state--new { background: var(--sun); color: #1F1A3D; }
-.ver-state--ok { background: #D4F5EF; color: #1F1A3D; }
-.ver-state--busy, .ver-state--wait { background: #E7DEFF; color: #1F1A3D; }
-.ver-state--err { background: #FFE3DF; color: #8A1A12; border-color: #B3261E; }
+/* 2.3 · Stato della versione = avviso del sistema di design: fondo chiaro tenue, inchiostro scuro, barra a
+   sinistra del colore del significato. Uguale nella finestra "Scarica", nella scheda "App Android", nella
+   pagina di download e nella TV (prima: testo arancione su lavanda, contrasto 1,4:1). */
+.ver-state {
+  --al-bg: var(--al-info-bg); --al-ink: var(--al-info-ink); --al-line: var(--al-info-line);
+  display: inline-block; max-width: 100%; padding: 0.55rem 0.85rem; border-radius: 0.75rem;
+  border: 1px solid var(--al-line); border-left: 0.3rem solid var(--al-line);
+  background: var(--al-bg); color: var(--al-ink); font-weight: 800; line-height: 1.4; overflow-wrap: anywhere;
+}
+.ver-state--new { --al-bg: var(--al-new-bg); --al-ink: var(--al-new-ink); --al-line: var(--al-new-line); }
+.ver-state--ok { --al-bg: var(--al-ok-bg); --al-ink: var(--al-ok-ink); --al-line: var(--al-ok-line); }
+.ver-state--busy, .ver-state--wait { --al-bg: var(--al-warn-bg); --al-ink: var(--al-warn-ink); --al-line: var(--al-warn-line); }
+.ver-state--err { --al-bg: var(--al-err-bg); --al-ink: var(--al-err-ink); --al-line: var(--al-err-line); }
 .ver-bar { height: 0.8rem; border-radius: 999px; border: 2px solid var(--ink); background: var(--cream); overflow: hidden; }
 .ver-bar i { display: block; height: 100%; background: var(--teal); transition: width .2s; }
 .ver-notes ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.2rem; }

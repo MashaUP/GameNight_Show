@@ -206,6 +206,8 @@ export default {
   'tv.gone.copy': 'Su questo computer c’è una copia valida delle <b>{time}</b>: posso ricreare la serata con giocatori, giochi e voti.',
   'tv.gone.restore': 'Ricrea la serata da questa copia',
   'tv.gone.noCopy': 'Non ho trovato copie locali di questa serata.',
+  'tv.gone.deletedTitle': 'Serata eliminata',
+  'tv.gone.deletedText': 'La serata <b>{code}</b> è stata eliminata da chi l’ha creata: voti, resoconto e statistiche del gruppo non ci sono più. Le copie su questo computer non la ricreano.',
   'tv.log.locked': 'Stanza chiusa: niente nuovi ingressi',
   'tv.log.unlocked': 'Stanza riaperta',
   'tv.lock.on': 'Stanza chiusa: il QR non funziona più per chi non è già dentro',
@@ -996,6 +998,7 @@ export default {
 
   'tv.ng.report': 'Resoconto completo',
   'tv.ng.canDelete': 'Hai creato tu questa serata: dal resoconto completo puoi anche eliminarla.',
+  'tv.ng.canDeleteNow': 'Hai creato tu questa serata: anche se è quella in corso, dal resoconto completo puoi eliminarla (la TV poi non la ripropone più).',
 
   'tpl.title': 'Modelli e serate precedenti',
   'tpl.lead': 'Riusa le impostazioni di una serata: domande, Chaos, timer del voto, atmosfera, musica e posti. Prima di applicare vedi che cosa cambia.',

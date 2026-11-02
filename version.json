@@ -1,21 +1,21 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "date": "2026-11-02",
   "minAndroid": "7.0",
   "notes": [
-    "Lobby della partita ridisegnata: la copertina del gioco al centro, un'azione principale alla volta, classifica compatta e barra delle azioni.",
-    "Rivelazione dei voti automatica o decisa dalla regia (Strumenti), con il conto di chi manca su TV e telefoni.",
-    "La regia può giocare dallo stesso PC: «Gioca anche tu» apre la pagina del giocatore in una finestra a parte.",
-    "Lobby più pulita: giocatori protagonisti, checklist «Pronti?» riducibile o nascosta, codice regia in un riquadro da copiare.",
-    "Armadio: elenco di chi lo visualizza e «Rimuovi accesso» (anche nelle regole del database).",
-    "Home su PC più ordinata, testi un po' più grandi, icona del sito con il dado intero."
+    "Ora si può eliminare anche l'ultima serata: la TV non la ripropone più come «serata interrotta» e non la ricrea.",
+    "Testi più leggibili e contrasti controllati su tutte le pagine; pulsanti e campi più comodi da toccare.",
+    "Avviso della versione leggibile (testo scuro su fondo chiaro) nella finestra «Scarica» e nella scheda «App Android».",
+    "Home: campo del codice e «Entra» ben visibili, «Crea una stanza» spiega i tre passaggi, collezione su due colonne.",
+    "«Risultati della serata» è una notifica: si riconosce subito e si può nascondere.",
+    "Pagina «Profilo e app» e schede che si adattano alla larghezza reale, dal telefono al computer."
   ],
   "notesEn": [
-    "Game lobby redesigned: the game cover in the middle, one main action at a time, a compact leaderboard and an action bar.",
-    "Votes revealed automatically or when the host decides (Tools), with who's missing on TV and phones.",
-    "The host can play from the same PC: “Play too” opens the player page in a separate window.",
-    "Cleaner lobby: players first, the “Ready?” checklist can be collapsed or hidden, host code in a copyable box.",
-    "Shelf: list of who views it and “Remove access” (enforced by the database rules too).",
-    "Tidier home page on PC, slightly larger text, site icon with the whole die."
+    "You can now delete the latest night too: the TV no longer offers it as an “interrupted night” and doesn't recreate it.",
+    "More readable text with checked contrast on every page; buttons and fields easier to tap.",
+    "Readable version notice (dark text on a light background) in the “Download” window and in the “Android app” card.",
+    "Home: room code field and “Join” stand out, “Create a room” explains the three steps, collection in two columns.",
+    "“Night results” is a notification: easy to recognise and you can hide it.",
+    "“Profile and app” page and cards that adapt to the real width, from phone to computer."
   ]
 }

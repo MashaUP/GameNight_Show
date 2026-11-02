@@ -65,7 +65,7 @@
           <img class="hero-art" src="assets/brand/logo-512.webp" alt="" width="180" height="180">
         </header>
 
-        <div id="backBox" class="back-box" hidden></div>
+        <div id="backBox" class="back-box" role="status" hidden></div>
         <section class="tile loan-alert" id="loanAlert" hidden aria-live="polite"></section>
 
         <div class="grid grid--top">
@@ -76,7 +76,7 @@
               <label class="join-label" for="homeCode" id="codeLabel" data-i18n="home.join.codeLabel">Codice della stanza</label>
               <div class="join-row">
                 <input class="ui-input code-field" id="homeCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q2" inputmode="text">
-                <button class="ui-btn ui-btn--accent" type="submit" id="joinGo" data-i18n="home.join.go">Entra</button>
+                <button class="ui-btn ui-btn--outline" type="submit" id="joinGo" data-i18n="home.join.go">Entra</button>
               </div>
               <p class="form-error" id="homeErr" role="alert"></p>
             </form>
@@ -84,7 +84,12 @@
 
           <section class="tile tile--host" id="tileHost" aria-labelledby="createTitle">
             <div class="tile-head"><span class="tile-ico tile-ico--sun" aria-hidden="true">📺</span><div><h2 id="createTitle" data-i18n="home.host.title">Crea una stanza</h2><p class="tile-sub" id="createTxt" data-i18n="home.host.sub">Sul PC collegato alla TV (o da qui): compare il QR e guidi lo show.</p></div></div>
-            <a class="ui-btn ui-btn--primary ui-btn--block" href="host.html" id="createGo" data-i18n="home.host.go">Crea la stanza</a>
+            <ol class="tile-steps" aria-label="Come funziona" data-i18n-attr="aria-label:home.host.stepsLabel">
+              <li><b aria-hidden="true">1</b><span data-i18n="home.host.step1">Crei la stanza</span></li>
+              <li><b aria-hidden="true">2</b><span data-i18n="home.host.step2">Gli amici inquadrano il QR</span></li>
+              <li><b aria-hidden="true">3</b><span data-i18n="home.host.step3">Votate, la TV svela la classifica</span></li>
+            </ol>
+            <a class="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" href="host.html" id="createGo" data-i18n="home.host.go">Crea la stanza</a>
           </section>
 
           <section class="tile tile--me" id="hubMe" aria-live="polite">
