@@ -1,23 +1,21 @@
 {
-  "version": "2.1.1",
-  "date": "2026-11-01",
+  "version": "2.2.0",
+  "date": "2026-11-02",
   "minAndroid": "7.0",
   "notes": [
-    "Regia dello show sulla TV: scene per ogni fase, cinque volumi separati, profili (famiglia, competitiva, party, minimal), vista da lontano, tema, pacchetti di atmosfera, anteprima del reveal.",
-    "Imprevisti scelti e ruota degli imprevisti, domande diverse per modalità di gioco, finali diversi per verdetto, classifica a squadre.",
-    "Presenze e spettatori, limiti della serata, checklist «Pronti?», ospiti anonimi a fine serata.",
-    "Correzione del riassunto di una serata chiusa, controllo dello storico, confronto dei primi tre consigli.",
-    "Bacheca e suggerimenti per la prossima serata, promemoria nell'app, centro avvisi nella home.",
-    "Armadio: proposte di modifica, collezione di BoardGameGeek, ricerca nei manuali PDF. Discord, CSV per altri tracker, sfide fra gruppi, demo senza Firebase.",
-    "2.1.1: il catalogo pubblico dell'armadio non perde più le modifiche fatte mentre si aggiornava."
+    "Lobby della partita ridisegnata: la copertina del gioco al centro, un'azione principale alla volta, classifica compatta e barra delle azioni.",
+    "Rivelazione dei voti automatica o decisa dalla regia (Strumenti), con il conto di chi manca su TV e telefoni.",
+    "La regia può giocare dallo stesso PC: «Gioca anche tu» apre la pagina del giocatore in una finestra a parte.",
+    "Lobby più pulita: giocatori protagonisti, checklist «Pronti?» riducibile o nascosta, codice regia in un riquadro da copiare.",
+    "Armadio: elenco di chi lo visualizza e «Rimuovi accesso» (anche nelle regole del database).",
+    "Home su PC più ordinata, testi un po' più grandi, icona del sito con il dado intero."
   ],
   "notesEn": [
-    "Show control on the TV: scenes for each phase, five separate volumes, profiles (family, competitive, party, minimal), far view, theme, atmosphere packs, reveal preview.",
-    "Chosen twists and a twist wheel, different questions per game type, finales by verdict, team leaderboard.",
-    "Attendance and spectators, night limits, “Ready?” checklist, guests anonymised at the end of the night.",
-    "Correct a closed night's summary, history check, compare the top three suggestions.",
-    "Board and suggestions for the next night, reminders in the app, notice centre on the home page.",
-    "Shelf: change suggestions, BoardGameGeek collection, search in PDF manuals. Discord, CSV for other trackers, group challenges, demo without Firebase.",
-    "2.1.1: the shelf's public catalogue no longer misses changes made while it was updating."
+    "Game lobby redesigned: the game cover in the middle, one main action at a time, a compact leaderboard and an action bar.",
+    "Votes revealed automatically or when the host decides (Tools), with who's missing on TV and phones.",
+    "The host can play from the same PC: “Play too” opens the player page in a separate window.",
+    "Cleaner lobby: players first, the “Ready?” checklist can be collapsed or hidden, host code in a copyable box.",
+    "Shelf: list of who views it and “Remove access” (enforced by the database rules too).",
+    "Tidier home page on PC, slightly larger text, site icon with the whole die."
   ]
 }

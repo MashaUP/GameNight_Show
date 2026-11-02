@@ -57,5 +57,9 @@ export default {
   'ph.guest.label': 'I’m joining as a guest',
   'ph.guest.hintGroup': 'You vote like everyone tonight, but nothing about you stays in the group: no profile, stats, signed comments or titles.',
   'ph.guest.hint': 'You vote like everyone tonight, without creating a profile on this phone.',
-  'ph.guest.you': 'You’re a guest: your vote counts tonight, but nothing about you is saved in the group.'
+  'ph.guest.you': 'You’re a guest: your vote counts tonight, but nothing about you is saved in the group.',
+
+  // ---------------------------------------------------------------- 2.2 rivelazione dei voti (telefono)
+  'ph.vote.allManual': 'Everyone has voted: the host reveals the votes when ready.',
+  'ph.vote.allAuto': 'Everyone has voted: watch the TV!'
 };

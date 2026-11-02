@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.1.1**: delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.2.0** (ridisegno della lobby e della lobby partita, rivelazione dei voti a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -27,9 +27,13 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [ ] **Regole del database**: ricopiare `firebase/database.rules.json` in Firebase e premere **Pubblica** (cambiate nella 2.0 e nella 2.1).
 - [ ] **Account**: in Firebase › Authentication attivare **Google** ed **Email/password** (lasciare attivo **Anonimo**) — `docs/INSTALLAZIONE.md`, passo 2.4.1.
 - [x] **BoardGameGeek**: proxy pubblicato su `https://gamenight-bgg.mashaup.workers.dev` con il token (`/health` → `token: true`), indirizzo in `js/services.js`. Si attiva sul sito con la prossima pubblicazione.
-- [ ] **App Android 2.1**: pubblicare la release `v2.1.1` (serve per i promemoria con le notifiche).
+- [ ] **Regole del database 2.2**: ricopiare di nuovo `firebase/database.rules.json` e **Pubblica** (nuovi `manualReveal`, `viewers`, `blocked` degli armadi).
+- [ ] **App Android 2.2**: pubblicare la release `v2.2.0` (comprende tutta la 2.1; serve per i promemoria con le notifiche).
 
 ## ✋ Da provare a mano (serve un dispositivo vero)
+
+- [ ] 2.2 sulla TV vera: lobby partita con una copertina vera, «Gioca anche tu» con i popup consentiti, rivelazione manuale.
+- [ ] 2.2 armadio: «Rimuovi accesso» a un amico con account Google, poi lui riapre il link.
 
 - [ ] Notifiche dei promemoria nell'app Android (permesso, orario giusto, cambio di data).
 - [ ] Accesso con Google sul dominio vero; email e password nell'app installata.

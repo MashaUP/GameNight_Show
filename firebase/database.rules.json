@@ -23,6 +23,9 @@
           "voteAuto": {
             ".validate": "newData.isBoolean()"
           },
+          "manualReveal": {
+            ".validate": "newData.isBoolean()"
+          },
           "banned": {
             "$uid": {
               ".validate": "newData.isString() && newData.val().length <= 16"
@@ -830,6 +833,9 @@
               "voteAuto": {
                 ".validate": "newData.val() === true"
               },
+              "manualReveal": {
+                ".validate": "newData.val() === true"
+              },
               "atmosphere": {
                 ".validate": "newData.isString() && newData.val().matches(/^[a-z]{2,12}$/)"
               },
@@ -930,7 +936,7 @@
       "$aid": {
         ".validate": "$aid.matches(/^[A-Z0-9]{6}$/)",
         "info": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           ".write": "auth != null && (!data.exists() || data.child('ownerUid').val() === auth.uid)",
           ".validate": "newData.hasChildren(['name', 'ownerUid']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 40 && ((!data.exists() && newData.child('ownerUid').val() === auth.uid) || (data.exists() && newData.child('ownerUid').val() === data.child('ownerUid').val()))",
           "desc": {
@@ -947,7 +953,7 @@
           }
         },
         "library": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           "$item": {
             ".write": "auth != null && root.child('armadi').child($aid).child('info').exists() && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true || root.child('armadi').child($aid).child('uids').child(auth.uid).val() === true)",
             ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 40",
@@ -1089,21 +1095,21 @@
           }
         },
         "admins": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           "$uid": {
-            ".write": "auth != null && ((root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid) || (auth.uid === $uid && root.child('armadioKeys').child($aid).exists() && root.child('armadioKeyClaims').child($aid).child(auth.uid).val() === root.child('armadioKeys').child($aid).val()) || (auth.uid === $uid && newData.exists() && root.child('armadioInviteClaims').child($aid).child(auth.uid).exists() && root.child('armadi').child($aid).child('invites').child(root.child('armadioInviteClaims').child($aid).child(auth.uid).val() + '').child('exp').val() > now && root.child('armadi').child($aid).child('invites').child(root.child('armadioInviteClaims').child($aid).child(auth.uid).val() + '').child('used').val() === auth.uid) || (auth.uid === $uid && !newData.exists()))",
+            ".write": "(auth != null && ((root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid) || (auth.uid === $uid && root.child('armadioKeys').child($aid).exists() && root.child('armadioKeyClaims').child($aid).child(auth.uid).val() === root.child('armadioKeys').child($aid).val()) || (auth.uid === $uid && newData.exists() && root.child('armadioInviteClaims').child($aid).child(auth.uid).exists() && root.child('armadi').child($aid).child('invites').child(root.child('armadioInviteClaims').child($aid).child(auth.uid).val() + '').child('exp').val() > now && root.child('armadi').child($aid).child('invites').child(root.child('armadioInviteClaims').child($aid).child(auth.uid).val() + '').child('used').val() === auth.uid) || (auth.uid === $uid && !newData.exists()))) && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
             ".validate": "newData.isBoolean()"
           }
         },
         "uids": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           "$uid": {
             ".write": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true)",
             ".validate": "newData.isBoolean()"
           }
         },
         "images": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           "$item": {
             ".write": "auth != null && root.child('armadi').child($aid).child('info').exists() && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true || root.child('armadi').child($aid).child('uids').child(auth.uid).val() === true)",
             ".validate": "newData.isString() && newData.val().length < 600000 && (newData.val().beginsWith('data:image/') || newData.val().beginsWith('https://') || newData.val().beginsWith('http://'))"
@@ -1204,13 +1210,40 @@
           }
         },
         "adminInfo": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists())",
           "$uid": {
             ".write": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || (auth.uid === $uid && (root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true || newData.parent().parent().child('admins').child(auth.uid).val() === true)) || (auth.uid === $uid && !newData.exists()))",
             ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length <= 40",
             "at": {
               ".validate": "newData.isNumber()"
             }
+          }
+        },
+        "viewers": {
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true)",
+          "$uid": {
+            ".write": "auth != null && ((auth.uid === $uid && !root.child('armadi').child($aid).child('blocked').child(auth.uid).exists()) || root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid)",
+            ".validate": "!newData.exists() || (newData.hasChildren(['name', 'at']) && newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.child('at').isNumber() && (!newData.child('acct').exists() || newData.child('acct').isBoolean()))",
+            "name": {
+              ".validate": true
+            },
+            "at": {
+              ".validate": true
+            },
+            "acct": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "blocked": {
+          ".read": "auth != null && (root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid || root.child('armadi').child($aid).child('admins').child(auth.uid).val() === true)",
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && root.child('armadi').child($aid).child('info').child('ownerUid').val() === auth.uid",
+            ".validate": "!newData.exists() || (newData.val() === true && $uid !== root.child('armadi').child($aid).child('info').child('ownerUid').val())"
           }
         },
         "$other": {

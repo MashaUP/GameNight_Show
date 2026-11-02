@@ -39,7 +39,17 @@ export function wishes() { return wishCounts(S().wish); }
  * Checklist "Pronti?" della lobby (2.1, idea 30): cosa è pronto e cosa manca, in una riga sola.
  * Solo indicazioni: nessuna voce blocca l'inizio della serata.
  */
+/**
+ * 2.2: la checklist si può ridurre a una riga ("mini", dal pulsante sulla lobby) o togliere del tutto
+ * ("off", da Regia dello show › Profilo). Preferenza di questa TV: è solo una questione di aspetto.
+ */
+const READY_KEY = 'gnr_ready_view';
+export function readyView() { try { const v = localStorage.getItem(READY_KEY); return v === 'mini' || v === 'off' ? v : 'full'; } catch { return 'full'; } }
+export function setReadyView(v) { try { if (v === 'full') localStorage.removeItem(READY_KEY); else localStorage.setItem(READY_KEY, v); } catch { /* niente */ } }
+
 export function readyHTML() {
+  const view = readyView();
+  if (view === 'off') return '';
   const m = S().meta || {};
   const lib = S().library || {};
   const plan = planList();
@@ -53,7 +63,9 @@ export function readyHTML() {
     [Boolean(m.maxMinutes || m.maxGames), t('prep.ck.limits'), [m.maxGames ? t('lim.vGames', { n: m.maxGames }) : '', m.maxMinutes ? t('lim.vMin', { n: m.maxMinutes }) : ''].filter(Boolean).join(' · ')],
     [ps >= 2, t('prep.ck.players'), String(ps)]
   ];
-  return `<div class="prep-block prep-ready"><b>${esc(t('prep.ck.title', { n: items.filter((x) => x[0]).length, all: items.length }))}</b><ul class="ready-list">${items.map(([ok, label, x]) => `<li class="${ok ? 'is-ok' : 'is-todo'}"><span aria-hidden="true">${ok ? '✅' : '⬜'}</span> ${esc(label)}${x ? ` <small>${esc(x)}</small>` : ''}<span class="sr-only">${esc(ok ? t('prep.ck.ok') : t('prep.ck.todo'))}</span></li>`).join('')}</ul></div>`;
+  const title = esc(t('prep.ck.title', { n: items.filter((x) => x[0]).length, all: items.length }));
+  if (view === 'mini') return `<button type="button" class="prep-ready-mini" data-ready-view="full" title="${esc(t('prep.ck.show'))}"><span aria-hidden="true">✅</span> ${title} <small>${esc(t('prep.ck.show'))}</small></button>`;
+  return `<div class="prep-block prep-ready"><div class="prep-ready-head"><b>${title}</b><button type="button" class="link-btn prep-ready-hide" data-ready-view="mini" aria-label="${esc(t('prep.ck.hideAria'))}">${esc(t('prep.ck.hide'))}</button></div><ul class="ready-list">${items.map(([ok, label, x]) => `<li class="${ok ? 'is-ok' : 'is-todo'}"><span aria-hidden="true">${ok ? '✅' : '⬜'}</span> ${esc(label)}${x ? ` <small>${esc(x)}</small>` : ''}<span class="sr-only">${esc(ok ? t('prep.ck.ok') : t('prep.ck.todo'))}</span></li>`).join('')}</ul></div>`;
 }
 
 export function prepHTML() {

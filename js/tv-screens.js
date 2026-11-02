@@ -81,6 +81,7 @@ export function bindScreens(c) {
 export const IdleScreen = {
   mount(el) {
     this.mode = 'drop';
+    this.ctaPlaying = undefined;
     const number = Object.keys(S.games).length + 1;
     // Tradizione del modello (1.12, idea 24): la serata si apre con il gioco d'apertura
     const opening = number === 1 && typeof S.meta.opening === 'string' ? S.meta.opening : '';
@@ -92,60 +93,71 @@ export const IdleScreen = {
       saveDraft();
     }
     const board = buildBoard(S.games, S.votes);
+    // 2.2: la copertina del gioco è la protagonista. In alto il nastro dei giochi, poi copertina grande
+    // (intera, mai tagliata) con le azioni della foto discrete; a destra nome, chi gioca e un'azione
+    // principale sola (cambia con lo stato: prima "Inizia la partita", a partita iniziata "Apri la votazione").
+    // La classifica è una colonna stretta con in cima la barra delle azioni della serata.
     el.innerHTML = `
-      <section class="idle">
+      <section class="idle idle--v22">
         <form class="card next-card" id="nextForm" novalidate>
-          <h1>${tr('tv.idle.game', { n: String(number) })}</h1>
-          ${opening ? `<p class="trad-chip">🎬 ${tr('mem.opening.chip', { name: esc(opening) })}</p>` : ''}
-          <p class="play-timer" id="playTimer" hidden></p>
+          <div class="ng-head">
+            <h1>${tr('tv.idle.game', { n: String(number) })}</h1>
+            ${opening ? `<p class="trad-chip">🎬 ${tr('mem.opening.chip', { name: esc(opening) })}</p>` : ''}
+            <p class="play-timer" id="playTimer" hidden></p>
+          </div>
           <div class="live-box" id="liveBox"></div>
           <div class="lib-pick" id="libPick"></div>
-          <label class="field-label" for="gameName">${tr('tv.eg.name')}</label>
-          <input class="input input--xl" id="gameName" maxlength="40" autocomplete="off" placeholder="${tr('tv.idle.namePh')}" value="${esc(S.draft.name)}">
-          <div class="house-note" id="houseNote" hidden></div>
-          <p class="field-label photo-label">${tr('tv.idle.photo')}</p>
-          <div class="photo-row">
-            <div class="dropzone" id="dropzone"></div>
-            <div class="img-actions">
-              <button type="button" class="btn-sec" id="pickFile">${ICONS.image}<span>${tr('tv.idle.file')}</span></button>
-              <button type="button" class="btn-sec" id="fromPhone" aria-pressed="false">${ICONS.phone}<span>${tr('tv.idle.phone')}</span></button>
-              <button type="button" class="btn-sec" id="fromUrl" aria-expanded="false" aria-controls="urlPanel">${ICONS.link}<span>${tr('tv.idle.link')}</span></button>
+          <div class="ng-body">
+            <div class="ng-hero">
+              <div class="dropzone" id="dropzone"></div>
+              <div class="img-actions" role="group" aria-label="${esc(tr('tv.idle.photo').replace(/<[^>]*>/g, ''))}">
+                <button type="button" class="btn-sec btn-sec--sm" id="pickFile" title="${tr('tv.idle.file')}">${ICONS.image}<span>${tr('tv.idle.file')}</span></button>
+                <button type="button" class="btn-sec btn-sec--sm" id="fromPhone" aria-pressed="false" title="${tr('tv.idle.phone')}">${ICONS.phone}<span>${tr('tv.idle.phone')}</span></button>
+                <button type="button" class="btn-sec btn-sec--sm" id="fromUrl" aria-expanded="false" aria-controls="urlPanel" title="${tr('tv.idle.link')}">${ICONS.link}<span>${tr('tv.idle.link')}</span></button>
+              </div>
+              <input type="file" id="fileInput" accept="image/*" hidden>
+              <div class="url-panel" id="urlPanel" hidden>
+                <label class="sr-only" for="urlInput">${tr('tv.idle.url')}</label>
+                <input class="input" id="urlInput" type="url" inputmode="url" placeholder="${tr('tv.idle.urlPh')}">
+                <button type="button" class="btn-sec" id="urlOk">${tr('tv.lib.urlOk')}</button>
+              </div>
             </div>
-          </div>
-          <input type="file" id="fileInput" accept="image/*" hidden>
-          <div class="url-panel" id="urlPanel" hidden>
-            <label class="sr-only" for="urlInput">${tr('tv.idle.url')}</label>
-            <input class="input" id="urlInput" type="url" inputmode="url" placeholder="${tr('tv.idle.urlPh')}">
-            <button type="button" class="btn-sec" id="urlOk">${tr('tv.lib.urlOk')}</button>
-          </div>
-          <div class="win-pick">
-            <div class="win-head">
-              <span class="field-label" id="winLabel">${tr('tv.idle.winners')}</span>
-              <label class="quick-toggle" title="${tr('tv.idle.quickTitle')}"><input type="checkbox" id="quickChk" ${S.draft.quick ? 'checked' : ''}><span>${tr('tv.idle.quick')}</span></label>
+            <div class="ng-side">
+              <label class="field-label" for="gameName">${tr('tv.eg.name')}</label>
+              <input class="input input--xl" id="gameName" maxlength="40" autocomplete="off" placeholder="${tr('tv.idle.namePh')}" value="${esc(S.draft.name)}">
+              <div class="house-note" id="houseNote" hidden></div>
+              <div class="win-pick">
+                <div class="win-head">
+                  <span class="field-label" id="winLabel">${tr('tv.idle.winners')}</span>
+                  <label class="quick-toggle" title="${tr('tv.idle.quickTitle')}"><input type="checkbox" id="quickChk" ${S.draft.quick ? 'checked' : ''}><span>${tr('tv.idle.quick')}</span></label>
+                </div>
+                <div class="win-avs" id="winAvs" role="group" aria-labelledby="winLabel"></div>
+              </div>
+              <p class="form-error" id="nextErr" role="alert"></p>
+              <div class="ov-row ng-cta">
+                <button class="btn-sec btn-sec--sm" type="button" id="openRules" title="${tr('tv.idle.rulesTitle')}">📖 <span>${tr('tv.idle.rules')}</span></button>
+                <button class="btn ng-primary" type="button" id="startPlay">${ICONS.clock}<span id="startPlayTxt">${tr('tv.tour.i4.t')}</span></button>
+                <button class="btn-sec ng-second" type="submit" id="openVote">${ICONS.lock}<span>${tr('tv.tour.i5.t')}</span></button>
+              </div>
             </div>
-            <div class="win-avs" id="winAvs" role="group" aria-labelledby="winLabel"></div>
-          </div>
-          <p class="form-error" id="nextErr" role="alert"></p>
-          <div class="ov-row">
-            <button class="btn-sec" type="button" id="openRules" title="${tr('tv.idle.rulesTitle')}">📖 <span>${tr('tv.idle.rules')}</span></button>
-            <button class="btn-sec" type="button" id="startPlay">${ICONS.clock}<span id="startPlayTxt">${tr('tv.tour.i4.t')}</span></button>
-            <button class="btn btn-big" type="submit" id="openVote">${ICONS.lock}<span>${tr('tv.tour.i5.t')}</span></button>
           </div>
         </form>
         <aside class="side-board">
+          <div class="side-toolbar" role="toolbar" aria-label="${tr('tv.idle.toolbar')}">
+            <button type="button" class="btn-sec btn-sec--sm" id="showInterval" title="${tr('tv.idle.intTitle')}">☕ <span>${tr('tv.tl.interval')}</span></button>
+            <button type="button" class="btn-sec btn-sec--sm" id="openTable" title="${tr('tv.idle.tableTitle')}">🎲 <span>${tr('tv.idle.table')}</span></button>
+            ${S.meta.groupId ? `<button type="button" class="btn-sec btn-sec--sm" id="openPlan" title="${tr('tv.idle.planTitle')}">🗓️ <span>${tr('tv.idle.plan')}</span></button>` : ''}
+            <button type="button" class="btn-sec btn-sec--sm" id="openQuiz" title="${tr('tv.idle.quizTitle')}">🧠 <span>Quiz</span></button>
+            <button type="button" class="btn-sec btn-sec--sm side-end" id="endNight" title="${tr('tv.hdr.endTitle')}">🏁 <span>${tr('tv.end.end')}</span></button>
+          </div>
           <div class="side-head">
             <h2>${tr('tv.ic.board')}</h2>
             ${board.length ? `<span class="muted">${tr('tv.ic.nGames', { n: board.length })}</span>` : ''}
           </div>
-          ${miniBoardHTML(board)}
+          <div class="side-scroll">${miniBoardHTML(board)}</div>
           <div class="side-actions">
-            ${board.length ? `<button type="button" class="btn-sec" id="showBoard">${ICONS.trophy}<span>${tr('tv.idle.fullBoard')}</span></button>` : ''}
-            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
-            <button type="button" class="btn-sec" id="showInterval" title="${tr('tv.idle.intTitle')}">☕ <span>${tr('tv.tl.interval')}</span></button>
-            <button type="button" class="btn-sec" id="openTable" title="${tr('tv.idle.tableTitle')}">🎲 <span>${tr('tv.idle.table')}</span></button>
-            ${S.meta.groupId ? `<button type="button" class="btn-sec" id="openPlan" title="${tr('tv.idle.planTitle')}">🗓️ <span>${tr('tv.idle.plan')}</span></button>` : ''}
-            <button type="button" class="btn-sec" id="openQuiz" title="${tr('tv.idle.quizTitle')}">🧠 <span>Quiz</span></button>
-            <button type="button" class="btn-sec" id="endNight">🏁 <span>${tr('tv.end.end')}</span></button>
+            ${board.length ? `<button type="button" class="btn-sec btn-sec--sm" id="showBoard">${ICONS.trophy}<span>${tr('tv.idle.fullBoard')}</span></button>` : ''}
+            ${S.meta.groupId ? `<button type="button" class="btn-sec btn-sec--sm" id="showAllTime">${ICONS.star}<span>${tr('tv.idle.allTime')}</span></button>` : ''}
           </div>
         </aside>
       </section>`;
@@ -459,6 +471,15 @@ export const IdleScreen = {
     const start = Number(S.state?.playStart) || 0;
     const btn = $('#startPlayTxt');
     if (btn) btn.textContent = start ? tr('tv.idle.restart') : tr('tv.tour.i4.t');
+    // Una sola azione principale: prima della partita "Inizia la partita", durante "Apri la votazione"
+    const sp = $('#startPlay');
+    const ov = $('#openVote');
+    if (sp && ov && this.ctaPlaying !== Boolean(start)) {
+      this.ctaPlaying = Boolean(start);
+      sp.className = start ? 'btn-sec btn-sec--sm ng-second' : 'btn ng-primary';
+      ov.className = start ? 'btn ng-primary' : 'btn-sec ng-second';
+      $('#nextForm')?.classList.toggle('is-playing', Boolean(start));
+    }
     if (!t) return;
     t.hidden = !start;
     const nb = Object.keys((S.state?.playId && S.bets?.[S.state.playId]) || {}).length;

@@ -582,5 +582,14 @@ export default {
   'ins.tl.k.newcomer': 'Prima serata di {name}',
   'ins.tl.k.rediscovered': '{name} torna sul tavolo dopo {days} giorni',
   'ins.tl.k.record': 'Record: {name} prende {avg} (prima era {prev})',
-  'ins.tl.k.leader': '{name} diventa il gioco più amato di sempre (al posto di {prev})'
+  'ins.tl.k.leader': '{name} diventa il gioco più amato di sempre (al posto di {prev})',
+
+  // ---------------------------------------------------------------- 2.2 checklist nascondibile
+  'prep.ck.hide': 'Nascondi',
+  'prep.ck.hideAria': 'Riduci la checklist «Pronti?» a una riga',
+  'prep.ck.show': 'Mostra',
+  'prep.ck.setting': 'Checklist «Pronti?» nella lobby',
+  'prep.ck.setFull': 'Completa',
+  'prep.ck.setMini': 'Una riga',
+  'prep.ck.setOff': 'Nascosta'
 };

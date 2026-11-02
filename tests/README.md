@@ -12,7 +12,7 @@ Tutte gratuite ed eseguite da GitHub a ogni caricamento (workflow **Verifica**, 
 | `tests/i18n-scan.mjs` | Testi italiani rimasti scritti nel codice (euristico); `check.mjs` lo usa sui moduli già tradotti | `node tests/i18n-scan.mjs --count js/*.js` |
 | `tests/rules.test.js` | Regole del database (`firebase/database.rules.json`) con il simulatore *targaryen*: chi può leggere e scrivere cosa | `cd tests && npm install && node rules.test.js` |
 | `bgg-proxy/test/` | Proxy BoardGameGeek con risposte simulate | `node --test bgg-proxy/test/worker.test.mjs` |
-| `tests/e2e/` | Il sito vero in Chromium (Playwright) con un **finto Firebase**: serate complete con TV e telefoni, armadio, profilo su più dispositivi, aggiornamenti dell'app, lingue, link ufficiali (`links.py`), pausa, timer e schermo ambiente (`night16.py`), dati, privacy, catalogo, BGG e manuali (`data16.py`), esportazioni dall'app Android (`exports16.py`), impostazioni e schermate del telefono a 360 px (`mobile17.py`), eliminazione delle serate (`delete17.py`), codice a barre (`barcode17.py`), modelli, modalità pubblico, comandi rapidi e ospiti (`phase17.py`), impaginazione da 360 a 1920 px | `python3 tests/e2e/run.py` |
+| `tests/e2e/` | Il sito vero in Chromium (Playwright) con un **finto Firebase**: serate complete con TV e telefoni, armadio, profilo su più dispositivi, aggiornamenti dell'app, lingue, link ufficiali (`links.py`), pausa, timer e schermo ambiente (`night16.py`), dati, privacy, catalogo, BGG e manuali (`data16.py`), esportazioni dall'app Android (`exports16.py`), impostazioni e schermate del telefono a 360 px (`mobile17.py`), eliminazione delle serate (`delete17.py`), codice a barre (`barcode17.py`), modelli, modalità pubblico, comandi rapidi e ospiti (`phase17.py`), checklist riducibile, lobby partita, rivelazione dei voti a scelta, «Gioca anche tu» e accessi agli armadi (`v22.py`), impaginazione da 360 a 1920 px | `python3 tests/e2e/run.py` |
 
 ## Prove nel browser (tests/e2e)
 
@@ -42,6 +42,6 @@ I browser di prova partono in italiano (`it-IT`): le prove dell'inglese stanno i
 
 ## Cosa non si prova qui
 
-- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v2.1.1`); controlla la spunta verde su GitHub.
+- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v2.2.0`); controlla la spunta verde su GitHub.
 - Firebase vero: lo prova il **tavolo di verifica** `test.html` sul sito pubblicato.
 - Fotocamera, installazione dell'APK, Android TV: vanno provati a mano su un dispositivo vero (elenco in `TODO.md`, sezione "Da provare a mano").

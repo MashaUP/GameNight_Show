@@ -3,7 +3,7 @@
 // armadio.html?p=TOKEN         catalogo pubblico in sola lettura (link condiviso)
 // &g=ID apre la scheda di un gioco (QR delle etichette), &pos=… filtra uno scaffale, #inv=CODICE invito, #ak=CHIAVE chiave
 import {
-  isConfigured, connect, useSession, armadioRef, dbRef, groupRef, get, set, update, remove, onValue, explainError, push, serverTimestamp
+  isConfigured, connect, useSession, armadioRef, dbRef, groupRef, get, set, update, remove, onValue, explainError, push, serverTimestamp, accountInfo
 } from './fb.js';
 import { makeProposal, proposalsHTML, proposeFormHTML } from './arm-proposals.js';
 import { pdfPages, searchPages, highlight, searchBoxHTML } from './manual-search.js';
@@ -44,7 +44,7 @@ const PAGE = 120;
 const A = {
   aid: '', token: '', pub: false, uid: '', info: null, lib: {}, loans: {}, trash: {}, log: {}, share: null,
   admins: {}, adminInfo: {}, uids: {}, invites: {}, role: 'viewer', f: {}, sort: 'name', view: 'grid', tab: 'games',
-  sel: new Set(), selecting: false, limit: PAGE, lastSig: '', pubPrev: null, pubFields: pubFieldsOf({ status: true }), undo: null, stops: [], loaded: false
+  viewers: {}, blocked: {}, sel: new Set(), selecting: false, limit: PAGE, lastSig: '', pubPrev: null, pubFields: pubFieldsOf({ status: true }), undo: null, stops: [], loaded: false
 };
 const ls = {
   get(k, fb = null) { try { const v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch { return fb; } },
@@ -128,10 +128,16 @@ async function boot() {
   A.sort = ls.get('gnr_am_sort', 'name');
   if (A.pub) return bootPublic();
   let info;
-  try { info = (await get(armadioRef(A.aid, 'info'))).val(); } catch (err) { showFatal(app, t('arm.boot.noRead'), explainError(err)); return; }
+  try { info = (await get(armadioRef(A.aid, 'info'))).val(); } catch (err) {
+    // 2.2: il proprietario può togliere l'accesso; chi è escluso lo legge qui invece di un errore generico
+    const blocked = (await get(armadioRef(A.aid, `blocked/${A.uid}`)).catch(() => null))?.val() === true;
+    if (blocked) { showFatal(app, t('arm.blocked.title'), t('arm.blocked.text')); return; }
+    showFatal(app, t('arm.boot.noRead'), explainError(err)); return;
+  }
   if (!info) { showFatal(app, t('arm.boot.notFound'), t('arm.boot.gone')); return; }
   A.info = info;
   await claimAccess(info);
+  registerViewer();
   // Dall'avviso della home: apre direttamente il prestito (scheda Prestiti + "Restituito").
   const lid = param('loan');
   if (lid && canEdit()) { A.pendingLoan = lid; A.tab = 'loans'; }
@@ -144,6 +150,20 @@ async function boot() {
   if (param('add') === '1' && canAdd()) setTimeout(() => openEditor(null), 300);
   // Ricaricando la pagina non si riapre la finestra di prima
   if (gid || pos || param('add') || lid) history.replaceState(null, '', `${location.pathname}?a=${A.aid}${sParam}`);
+}
+
+/**
+ * 2.2: chi apre l'armadio senza esserne proprietario o collaboratore compare in "Persone che possono
+ * visualizzare questo armadio" (nome del profilo, data, account o dispositivo). Così il proprietario sa chi
+ * lo vede e può togliere l'accesso. Una scrittura al giorno al massimo.
+ */
+function registerViewer() {
+  if (A.pub || A.role === 'owner' || A.role === 'editor') return;
+  const k = `gnr_armview_${A.aid}`;
+  try { if (Date.now() - Number(localStorage.getItem(k) || 0) < 86400000) return; } catch { /* niente */ }
+  const acc = accountInfo();
+  set(armadioRef(A.aid, `viewers/${A.uid}`), { name: (Person.data?.info?.name || acc?.name || t('arm.people.device')).slice(0, 40), at: Date.now(), acct: Boolean(acc && !acc.anonymous) })
+    .then(() => { try { localStorage.setItem(k, String(Date.now())); } catch { /* niente */ } }).catch(() => {});
 }
 
 const keyStore = () => `gnr_akey_${A.aid}`;
@@ -202,9 +222,12 @@ async function claimAccess(info) {
 }
 
 function watch() {
-  const on = (p, key, after, fb = {}) => A.stops.push(onValue(armadioRef(A.aid, p), (s) => { A[key] = s.val() ?? fb; after?.(); }, () => {}));
+  const lost = () => { if (A.role !== 'owner') { A.stops.forEach((f) => f()); A.stops = []; showFatal(app, t('arm.blocked.title'), t('arm.blocked.text')); } };
+  const on = (p, key, after, fb = {}, onErr = () => {}) => A.stops.push(onValue(armadioRef(A.aid, p), (s) => { A[key] = s.val() ?? fb; after?.(); }, onErr));
   on('info', 'info', () => { paintHero(); schedulePub(); }, null);
-  on('library', 'lib', () => { A.loaded = true; refresh(); schedulePub(); migrateLater(); });
+  on('library', 'lib', () => { A.loaded = true; refresh(); schedulePub(); migrateLater(); }, {}, lost);
+  // Accesso tolto dal proprietario: la pagina aperta lo sa subito (il proprio segno è leggibile da sé)
+  if (A.role !== 'owner') A.stops.push(onValue(armadioRef(A.aid, `blocked/${A.uid}`), (s) => { if (s.val() === true) lost(); }, () => {}));
   on('admins', 'admins', () => { if (A.tab === 'tools') paintTab(); });
   on('adminInfo', 'adminInfo', () => { if (A.tab === 'tools') paintTab(); });
   on('uids', 'uids');
@@ -222,6 +245,8 @@ function watch() {
     on('proposals', 'props', () => { paintTabs(); if (A.tab === 'props') paintTab(); });
     on('log', 'log', () => { if (A.tab === 'log') paintTab(); if (!A.pruned) { A.pruned = true; pruneLog(Number(A.info?.keepLogDays) || 0).catch(() => {}); } });
     on('share', 'share', () => { loadPubPrev(); if (A.tab === 'tools') paintTab(); }, null);
+    on('viewers', 'viewers', () => { if (A.tab === 'tools') paintTab(); });
+    on('blocked', 'blocked', () => { if (A.tab === 'tools') paintTab(); });
     if (A.role === 'owner') on('invites', 'invites', () => { if (A.tab === 'tools') paintTab(); });
   }
 }
@@ -1679,6 +1704,9 @@ function toolsHTML() {
   const admins = Object.keys(A.admins || {}).filter((u) => A.admins[u] === true);
   const players = Object.keys(A.uids || {}).length;
   const inv = Object.entries(A.invites || {}).filter(([, x]) => x.exp > Date.now() && !x.used);
+  const viewers = Object.entries(A.viewers || {}).filter(([u, v]) => v?.at && !A.admins?.[u] && !A.blocked?.[u]).sort((a, b) => b[1].at - a[1].at);
+  const blocked = Object.keys(A.blocked || {}).filter((u) => A.blocked[u] === true);
+  const avatarFor = () => '<span class="am-viewer-ico" aria-hidden="true">👤</span>';
   setTimeout(bindTools, 0);
   return `<div class="am-pane am-tools">
     <section class="card am-tool"><h2>${esc(t('arm.f.incomplete'))}</h2>
@@ -1707,6 +1735,12 @@ function toolsHTML() {
         <li><b>🎲 ${esc(t('arm.people.players'))}</b><span>${esc(t('arm.people.playersInfo', { n: players }))}</span></li>
         <li><b>👀 ${esc(t('arm.people.visitors'))}</b><span>${esc(t('arm.people.visitorsInfo', { code: A.aid }))}</span></li>
       </ul>
+      <h3 class="am-people-h">${esc(t('arm.viewers.title'))}</h3>
+      <ul class="am-people am-viewers">
+        ${viewers.map(([u, v]) => `<li>${avatarFor(u)}<b>${esc(v.name || t('arm.people.device'))}</b><span>${esc(v.acct ? t('arm.viewers.account') : t('arm.viewers.device'))} · ${esc(t('arm.viewers.since', { date: fmtDate(v.at) }))}</span>${A.role === 'owner' ? `<button type="button" class="btn-sec btn-sec--sm am-danger" data-block="${esc(u)}" data-name="${esc(v.name || '')}">${esc(t('arm.viewers.remove'))}</button>` : ''}</li>`).join('') || `<li class="muted">${esc(t('arm.viewers.none'))}</li>`}
+      </ul>
+      ${A.role === 'owner' && blocked.length ? `<details class="am-blocked"><summary>${esc(t('arm.viewers.blockedN', { n: blocked.length }))}</summary><ul class="am-people">${blocked.map((u) => `<li><b>${esc(A.adminInfo?.[u]?.name || A.viewers?.[u]?.name || t('arm.people.device'))}</b><span class="muted">${esc(u.slice(0, 6))}…</span><button type="button" class="btn-sec btn-sec--sm" data-unblock="${esc(u)}">${esc(t('arm.viewers.readmit'))}</button></li>`).join('')}</ul></details>` : ''}
+      <p class="muted small">${esc(t('arm.viewers.note'))}</p>
       ${A.role === 'owner' ? `<div class="hub-row"><button type="button" class="btn" data-act="invite">➕ ${esc(t('arm.invite.title'))}</button><button type="button" class="btn-sec btn-sec--sm" data-act="renewKey" title="${esc(t('arm.people.keyTitle'))}">🔑 ${esc(t('arm.people.renewKey'))}</button></div>
         ${inv.length ? `<p class="muted small">${esc(t('arm.people.invites'))} ${inv.map(([c, x]) => `<span class="code-chip code-chip--sm">${esc(c)}</span> ${esc(t('arm.people.until', { date: fmtDate(x.exp) }))} <button type="button" class="link-btn" data-uninvite="${esc(c)}">${esc(t('arm.people.cancelInv'))}</button>`).join(' ')}</p>` : ''}` : ''}
     </section>
@@ -1728,6 +1762,19 @@ function bindTools() {
     // Se era entrato con un invito, l'invito si cancella: con quello non può rientrare
     const usedInv = Object.entries(A.invites || {}).filter(([, x]) => x?.used === u).map(([c]) => [`invites/${c}`, null]);
     try { await update(armadioRef(A.aid), { [`admins/${u}`]: null, [`adminInfo/${u}`]: null, ...(A.role === 'owner' ? Object.fromEntries(usedInv) : {}) }); logEvent(A.aid, { op: 'people', msg: `revocato: ${whoIt}`, by: me() }); toast(t('common.done')); if (u === A.uid) location.reload(); } catch (err) { toast(userMsg(err), 'error'); } // i18n-ok: cronologia nel database
+  }));
+  b.querySelectorAll('[data-block]').forEach((x) => x.addEventListener('click', async () => {
+    const u = x.dataset.block;
+    const who = x.dataset.name || t('arm.people.device');
+    if (!confirm(t('arm.viewers.removeAsk', { who }))) return;
+    try {
+      await update(armadioRef(A.aid), { [`viewers/${u}`]: null, [`blocked/${u}`]: true, [`admins/${u}`]: null, [`adminInfo/${u}`]: null });
+      logEvent(A.aid, { op: 'people', msg: `accesso tolto: ${who}`, by: me() }); // i18n-ok: cronologia nel database
+      toast(t('arm.viewers.removed', { who }));
+    } catch (err) { toast(userMsg(err), 'error'); }
+  }));
+  b.querySelectorAll('[data-unblock]').forEach((x) => x.addEventListener('click', async () => {
+    try { await remove(armadioRef(A.aid, `blocked/${x.dataset.unblock}`)); toast(t('common.done')); } catch (err) { toast(userMsg(err), 'error'); }
   }));
   b.querySelectorAll('[data-uninvite]').forEach((x) => x.addEventListener('click', async () => {
     try { await remove(armadioRef(A.aid, `invites/${x.dataset.uninvite}`)); toast(t('arm.people.invCancelled')); } catch (err) { toast(userMsg(err), 'error'); }

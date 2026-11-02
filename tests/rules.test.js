@@ -522,5 +522,31 @@ check('modalità pubblico: un telefono NON la accende', base(), 'p1', 'update', 
   check('limiti: un telefono NON li cambia', base(), 'p1', 'update', `${R}/meta`, { maxGames: 1 }, false);
 }
 
+// 2.2 · rivelazione dei voti decisa dalla regia e accessi agli armadi
+{
+  check('rivelazione manuale: la regia la imposta', base(), 'host', 'update', `${R}/meta`, { manualReveal: true }, true);
+  check('rivelazione manuale: un telefono NON la cambia', base(), 'p1', 'update', `${R}/meta`, { manualReveal: true }, false);
+  check('rivelazione manuale: solo sì/no', base(), 'host', 'update', `${R}/meta`, { manualReveal: 'x' }, false);
+  check('rivelazione manuale nei modelli del gruppo', base(), 'owner', 'set', '/groups/GRP123/templates/t1', { name: 'Serata', at: 1, s: { manualReveal: true } }, true);
+  const AR = '/armadi/ARM001';
+  const arm = (extra = {}) => { const d = base(); d.armadi = { ARM001: { info: { name: 'Casa', ownerUid: 'own' }, library: { g1: { name: 'Dixit' } }, admins: { ed: true }, ...extra } }; return d; };
+  check('armadio: chi ha il codice lo vede', arm(), 'vis', 'read', `${AR}/library`, undefined, true);
+  check('armadio: il visitatore si registra', arm(), 'vis', 'set', `${AR}/viewers/vis`, { name: 'Vale', at: 1, acct: true }, true);
+  check('armadio: NON registra un altro', arm(), 'vis', 'set', `${AR}/viewers/altro`, { name: 'Vale', at: 1 }, false);
+  check('armadio: registrazione con campi strani rifiutata', arm(), 'vis', 'set', `${AR}/viewers/vis`, { name: 'Vale', at: 1, ruolo: 'admin' }, false);
+  check('armadio: il proprietario vede chi lo visualizza', arm({ viewers: { vis: { name: 'Vale', at: 1 } } }), 'own', 'read', `${AR}/viewers`, undefined, true);
+  check('armadio: un visitatore NON vede l\'elenco', arm({ viewers: { vis: { name: 'Vale', at: 1 } } }), 'vis', 'read', `${AR}/viewers`, undefined, false);
+  check('armadio: il proprietario rimuove l\'accesso', arm({ viewers: { vis: { name: 'Vale', at: 1 } } }), 'own', 'update', AR, { 'viewers/vis': null, 'blocked/vis': true }, true);
+  check('armadio: un collaboratore NON rimuove accessi', arm(), 'ed', 'set', `${AR}/blocked/vis`, true, false);
+  check('armadio: il proprietario non esclude sé stesso', arm(), 'own', 'set', `${AR}/blocked/own`, true, false);
+  check('armadio: escluso, non legge più i giochi', arm({ blocked: { vis: true } }), 'vis', 'read', `${AR}/library`, undefined, false);
+  check('armadio: escluso, non legge più le informazioni', arm({ blocked: { vis: true } }), 'vis', 'read', `${AR}/info`, undefined, false);
+  check('armadio: escluso, non si registra di nuovo', arm({ blocked: { vis: true } }), 'vis', 'set', `${AR}/viewers/vis`, { name: 'Vale', at: 2 }, false);
+  check('armadio: escluso, sa di esserlo', arm({ blocked: { vis: true } }), 'vis', 'read', `${AR}/blocked/vis`, undefined, true);
+  check('armadio: collaboratore escluso non rientra con la chiave', (() => { const d = arm({ blocked: { ex: true } }); d.armadioKeys = { ARM001: 'K1' }; d.armadioKeyClaims = { ARM001: { ex: 'K1' } }; return d; })(), 'ex', 'set', `${AR}/admins/ex`, true, false);
+  check('armadio: il proprietario riammette', arm({ blocked: { vis: true } }), 'own', 'set', `${AR}/blocked/vis`, null, true);
+  check('armadio: il proprietario legge sempre', arm({ blocked: { own: true } }), 'own', 'read', `${AR}/library`, undefined, true);
+}
+
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

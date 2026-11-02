@@ -8,6 +8,7 @@
 import { $, esc, toast, ICONS, activePlayers } from './util.js';
 import { avatarHTML } from './avatars.js';
 import { t } from './i18n.js';
+import { readyView, setReadyView } from './tv-prep.js';
 import { CRITERIA, GAME_MODES } from './stats.js';
 import { getVolume, setVolume } from './sounds.js';
 import { setCommentatorMode } from './commentary.js';
@@ -122,7 +123,8 @@ export const ShowPanel = {
     const cur = ShowPrefs.profile();
     return `<p class="muted">${esc(t('show.pr.lead'))}</p>
       <div class="show-profiles">${PRESENTATION_KEYS.map((k) => `<button type="button" class="card show-profile" data-sh-profile="${k}" aria-pressed="${k === cur}"><b>${esc(t(`show.pr.${k}`))}</b><small>${esc(t(`show.pr.${k}.x`))}</small></button>`).join('')}</div>
-      <label class="quick-toggle"><input type="checkbox" id="shFar" ${ShowPrefs.far() ? 'checked' : ''}><span><b>${esc(t('show.far.title'))}</b> · ${esc(t('show.far.lead'))}</span></label>`;
+      <label class="quick-toggle"><input type="checkbox" id="shFar" ${ShowPrefs.far() ? 'checked' : ''}><span><b>${esc(t('show.far.title'))}</b> · ${esc(t('show.far.lead'))}</span></label>
+      <div class="show-ready"><span class="field-label">${esc(t('prep.ck.setting'))}</span><div class="seg" role="group">${['full', 'mini', 'off'].map((v) => `<button type="button" data-sh-ready="${v}" aria-pressed="${readyView() === v}">${esc(t(`prep.ck.set${v[0].toUpperCase()}${v.slice(1)}`))}</button>`).join('')}</div></div>`;
   },
   tab_chaos() {
     const off = S().meta?.chaosOff || {};
@@ -192,7 +194,9 @@ export const ShowPanel = {
     if (pk) { ShowPrefs.setPack(pk.dataset.shPack); C.syncAtmo(); this.paint(); return; }
     const rm = e.target.closest('[data-sh-packrm]');
     if (rm) { ShowPrefs.setPacks(ShowPrefs.packs().filter((p) => p.id !== rm.dataset.shPackrm)); if (ShowPrefs.pack() === rm.dataset.shPackrm) ShowPrefs.setPack(''); C.syncAtmo(); this.paint(); return; }
-    if (e.target.closest('#shPackSample')) { this.addPack(JSON.stringify(SAMPLE_PACK)); }
+    if (e.target.closest('#shPackSample')) { this.addPack(JSON.stringify(SAMPLE_PACK)); return; }
+    const rv = e.target.closest('[data-sh-ready]');
+    if (rv) { setReadyView(rv.dataset.shReady); C.refreshLobby?.(); this.paint(); }
   },
   change(e) {
     const x = e.target;

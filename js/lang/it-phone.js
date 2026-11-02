@@ -57,5 +57,9 @@ export default {
   'ph.guest.label': 'Partecipo come ospite',
   'ph.guest.hintGroup': 'Stasera voti come tutti, ma nel gruppo non resta niente di te: niente profilo, statistiche, commenti firmati o titoli.',
   'ph.guest.hint': 'Stasera voti come tutti, senza creare un profilo su questo telefono.',
-  'ph.guest.you': 'Sei ospite: stasera il tuo voto conta, ma nel gruppo non si salva niente di te.'
+  'ph.guest.you': 'Sei ospite: stasera il tuo voto conta, ma nel gruppo non si salva niente di te.',
+
+  // ---------------------------------------------------------------- 2.2 rivelazione dei voti (telefono)
+  'ph.vote.allManual': 'Tutti hanno votato: la regia svela i voti quando vuole.',
+  'ph.vote.allAuto': 'Tutti hanno votato: guarda la TV!'
 };

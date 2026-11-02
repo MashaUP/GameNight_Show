@@ -3344,7 +3344,8 @@ SCREENS.voted = {
     if (!mine) return;
     const ps = activePlayers(P.players);
     const voted = ps.filter((p) => P.votes[gid]?.[p.uid]).length;
-    $('#voteProg').textContent = t('ph.rg.voted', { n: voted, total: ps.length });
+    // 2.2: con la rivelazione decisa dalla regia, il telefono dice che si aspetta lei (i voti restano segreti)
+    $('#voteProg').textContent = voted >= ps.length && ps.length ? t(P.meta?.manualReveal ? 'ph.vote.allManual' : 'ph.vote.allAuto') : t('ph.rg.voted', { n: voted, total: ps.length });
 
     const sig = JSON.stringify([mine, P.players[mine.mvp]?.name]);
     if (sig === this.sig) return;

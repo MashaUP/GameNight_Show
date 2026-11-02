@@ -692,7 +692,6 @@ export default {
   'tv.lb.scan': 'Inquadra per entrare',
   'tv.lb.lockedText': 'Nessun nuovo ingresso. Chi era già in partita può rientrare dal suo telefono.',
   'tv.lb.group': 'Gruppo: {name}',
-  'tv.lb.regia': 'Codice regia <b>{code}</b> (fotografalo: serve se il PC si spegne)',
   'tv.lb.who': 'Chi c\'è stasera',
   'tv.lb.seats': 'Posti nella stanza',
   'tv.lb.demo': '🧪 <b>Modalità prova:</b> i giocatori finti entrano, pronosticano e votano da soli. Niente viene salvato in un gruppo. Puoi far entrare anche un telefono vero.',
@@ -1074,5 +1073,28 @@ export default {
   'qc.k.ambient': 'Schermo ambiente',
   'qc.k.public': 'Modalità pubblico',
   'qc.k.interval': 'Intervallo',
-  'qc.k.check': 'Controllo della serata'
+  'qc.k.check': 'Controllo della serata',
+
+  // ---------------------------------------------------------------- 2.2 rivelazione dei voti
+  'tv.tl.revealAll': 'Rivela automaticamente i voti quando tutti hanno votato',
+  'tv.tl.revealAllText': 'Spento: quando tutti hanno votato i voti restano nascosti finché la regia non preme «Rivela i voti». Si può cambiare anche durante una votazione.',
+  'tv.vo.allManual': 'Tutti hanno votato · pronti per la rivelazione',
+  'tv.vo.left': { one: 'manca {n} voto', other: 'mancano {n} voti' },
+
+  // ---------------------------------------------------------------- 2.2 intestazione e gioca dalla regia
+  'tv.hdr.infoGroup': 'Informazioni della stanza',
+  'tv.hdr.actionsGroup': 'Azioni della regia',
+  'tv.hdr.playHere': 'Gioca anche tu',
+  'tv.hdr.playHereTitle': 'Apre la pagina del giocatore in una finestra a parte: voti e statistiche come gli altri, la regia resta qui',
+  'tv.hdr.playHereOpened': 'Pagina del giocatore aperta in un\'altra finestra: entra con il tuo profilo. La regia resta in questa.',
+  'tv.hdr.playHereBlocked': 'Il browser ha bloccato la finestra: consenti i popup per questo sito oppure apri play.html in un\'altra scheda.',
+
+  // ---------------------------------------------------------------- 2.2 lobby partita
+  'tv.idle.toolbar': 'Azioni della serata',
+
+  // ---------------------------------------------------------------- 2.2 codice regia
+  'tv.lb.regiaLabel': 'Codice regia · serve se il PC si spegne',
+  'tv.lb.regiaHint': 'Fotografalo o copialo: serve per riprendere la regia se il PC si spegne.',
+  'tv.lb.regiaCopy': 'Copia',
+  'tv.lb.regiaCopied': 'Codice regia copiato'
 };

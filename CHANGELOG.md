@@ -1,5 +1,39 @@
 # Novità
 
+## 2.2.0 · Lobby partita con la copertina protagonista, rivelazione dei voti a scelta, regia che gioca (2 novembre 2026)
+
+> **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (nuovi `meta/manualReveal`, `armadi/…/viewers` e `armadi/…/blocked`). Per l'app Android la release da pubblicare è `v2.2.0`.
+
+**Perché 2.2.0 (MINOR)**: funzioni nuove (rivelazione decisa dalla regia, «Gioca anche tu», chi vede l'armadio e rimozione dell'accesso) e un ridisegno di lobby e lobby partita, tutto retrocompatibile: stanze, voti, armadi e modelli di prima restano validi, i campi nuovi sono facoltativi.
+
+**Lobby partita (la schermata "Gioco N" sulla TV)**
+- La **copertina del gioco** è la protagonista: grande, intera (`object-fit: contain`, mai tagliata), con lo sfondo sfumato della stessa immagine. Le azioni della foto (file, telefono, link) sono pulsanti piccoli sotto la copertina.
+- In alto il **nastro dei giochi** dell'armadio; a destra della copertina nome, chi gioca e chi ha vinto in una griglia ordinata.
+- **Un'azione principale alla volta**: prima della partita «Inizia la partita», a partita iniziata «Apri la votazione» (l'altra resta disponibile, più discreta).
+- **Classifica compatta** in una colonna stretta, con in cima la **barra delle azioni** (Intervallo, Tavolo, Scaletta, Quiz) e «Termina la serata» separato e in rosso (chiede conferma come prima). Sotto i 1100 px la classifica va sotto, sotto i 760 px la copertina va sopra al modulo.
+
+**Lobby prepartita**
+- Intestazione a gruppi: informazioni della stanza da una parte, azioni della regia dall'altra.
+- Posti liberi come tessere piene e sobrie (non più tratteggiate con il "?"), giochi sul tavolo come pillole.
+- **Checklist «Pronti?»**: pulsante «Nascondi» che la riduce a una riga; in Regia dello show › Profilo si sceglie *Completa*, *Una riga* o *Nascosta* (preferenza di quella TV).
+- **Codice regia** in un riquadro con «Copia»; logo "Show" senza l'alone rosa; piede con avviso, armadio e «Inizia la serata» allineati.
+
+**Votazione**
+- Nuova impostazione in **Strumenti › Timer del voto**: «Rivela automaticamente i voti quando tutti hanno votato» (accesa di base, come prima). Spenta: quando tutti hanno votato la TV scrive «Tutti hanno votato · pronti per la rivelazione», il pulsante «Rivela i voti» pulsa e decide la regia. È salvata nella stanza (`meta/manualReveal`, solo la regia può cambiarla, anche nei modelli di serata) e vale subito, anche a votazione aperta.
+- Conto di chi manca sulla TV («3 / 5 hanno votato · mancano 2 voti») e sul telefono dopo il voto («Tutti hanno votato: la regia svela i voti quando vuole»). I voti restano nascosti fino alla rivelazione.
+- **Una sola rivelazione per gioco**: la TV ignora le richieste doppie (voti, cambio dell'impostazione e comando dal telefono della regia che arrivano insieme).
+
+**La regia gioca anche lei**
+- «🎮 Gioca anche tu» nell'intestazione della TV apre la pagina del giocatore in una finestra a parte sullo stesso PC: stesso account se collegato, un voto e le statistiche come tutti, mentre la regia resta nella sua scheda (sessioni separate dalla 2.0).
+
+**Armadio**
+- In Strumenti › Persone: **«Persone che possono visualizzare questo armadio»** (nome del profilo, account o dispositivo, da quando) e **«Rimuovi accesso»** con conferma. L'esclusione è nelle regole del database: chi è escluso non legge più giochi e informazioni nemmeno con il codice, non si registra di nuovo e, se era collaboratore, non rientra con la chiave. La pagina aperta mostra subito «Non hai più accesso». Il proprietario può riammettere.
+
+**Home e resto del sito**
+- Home su PC: una griglia sola (la riga collezione/gruppi e quella in basso seguono le colonne di quella in alto), banner «Risultati della serata» scuro con bordo giallo invece del blocco giallo, «Crea la stanza» azione principale e «Entra» secondaria, più spazio nelle schede.
+- Testo base un po' più grande (3%, 6% sui computer) sulle pagine del sito; i testi più piccoli crescono un po' di più.
+- **Icone**: le favicon mostrano il dado intero con gli angoli arrotondati (prima era tagliato); aggiunte le misure 16 e 96 px.
+
 ## 2.1.1 · Catalogo pubblico sempre aggiornato, controlli su GitHub più solidi (1 novembre 2026)
 
 **Perché 2.1.1 (PATCH)**: una correzione e i controlli automatici, nessuna funzione nuova. Niente da cambiare in Firebase oltre a quanto chiesto dalla 2.1.0. La release dell'app Android da pubblicare è `v2.1.1` (comprende tutta la 2.1).

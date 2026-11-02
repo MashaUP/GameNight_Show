@@ -1,9 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
 // A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '2.1.1';
+const VERSION = '2.2.0';
 // Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261101c';
+const BUILD = '20261102a';
 const CACHE = `gnr-${VERSION}-${BUILD}`;
 const SHELL = [
   "./",
@@ -136,6 +136,8 @@ const SHELL = [
   "vendor/qrcode.js",
   "assets/favicon-32.png",
   "assets/favicon-48.png",
+  "assets/favicon-16.png",
+  "assets/favicon-96.png",
   "assets/brand/logo-256.webp",
   "assets/brand/logo-512.webp",
   "assets/icon-192.png",

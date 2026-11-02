@@ -246,6 +246,14 @@ Poi la suite e2e completa.
 `fb.js` usa un `await import()` al livello del modulo per scegliere tra SDK vero e demo: tutte le pagine che
 importano `fb.js` aspettano quella scelta (supportato da tutti i browser moderni e dalla WebView Android).
 
+## Novità della 2.2
+
+- **Rivelazione dei voti** (`host.js › SCREENS.voting`, `revealGame`): `meta/manualReveal = true` (Strumenti › Timer del voto, anche nei modelli `templates/*/s`) spegne la rivelazione automatica quando tutti hanno votato. Senza il campo resta il comportamento di prima (2 secondi dopo l'ultimo voto). Lo stato si rilegge a ogni aggiornamento della stanza, quindi un cambio a votazione aperta vale subito: acceso con tutti i voti già arrivati → parte la rivelazione; spento prima del timer → il timer si annulla. `revealGame` parte solo se la stanza è ancora in `voting` su quel gioco e una sola volta alla volta (insieme `revealing`). Gli aventi diritto sono quelli di prima (`expectedVoters`: presenti, non via, senza chi è offline oltre il periodo di grazia o saltato dalla regia). Le regole permettono `manualReveal` solo alla regia (`meta/hostUid`). Sul telefono `play.js` mostra «Tutti hanno votato…» con il testo giusto.
+- **Gioca anche tu** (`host.js › openPlayerHere`): `play.html?room=` dello stesso sito in una finestra a parte. La TV usa la sessione `gn-regia`, la pagina del giocatore quella normale (account incluso): nella stanza sono due ruoli distinti (`meta/hostUid` e `players/<uid>`), un voto per `uid`.
+- **Lobby partita** (`tv-screens.js › IdleScreen`): `.idle--v22` con `.ng-hero` (copertina in `#dropzone`, `object-fit: contain`) e `.ng-side`; l'azione principale cambia in `paintTimer` (classe `ng-primary`). Stili in fondo a `css/style.css` (sezione 2.2).
+- **Checklist «Pronti?»** (`tv-prep.js › readyView/setReadyView`): `localStorage gnr_ready_view` = `full` (predefinito), `mini`, `off`. Solo aspetto, per TV.
+- **Chi vede l'armadio** (`armadio.js › registerViewer`, Strumenti › Persone): `armadi/<id>/viewers/<uid> = { name, at, acct }` scritto da chi apre l'armadio (al massimo una volta al giorno), letto da proprietario e collaboratori. «Rimuovi accesso» scrive `armadi/<id>/blocked/<uid> = true` (solo il proprietario, mai sé stesso) e toglie `viewers`, `admins`, `adminInfo` di quell'uid. Le letture di `info`, `library`, `images`, `admins`, `uids`, `adminInfo` e l'auto-iscrizione ad `admins` (chiave o invito) negano gli uid in `blocked`. Limite: un dispositivo senza account che cancella i dati del browser ha un uid nuovo (lo spiega la pagina).
+
 ## Libreria Firebase
 
 `vendor/firebase.js` è un unico file costruito con esbuild da firebase 10.14.1 (app, auth con Google/email/anonimo, database). Per ricostruirlo: `npx esbuild fb-entry.js --bundle --format=esm --minify --outfile=vendor/firebase.js` con un `fb-entry.js` che riesporta le funzioni usate da `js/fb.js`.

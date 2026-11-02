@@ -582,5 +582,14 @@ export default {
   'ins.tl.k.newcomer': '{name}\'s first night',
   'ins.tl.k.rediscovered': '{name} is back on the table after {days} days',
   'ins.tl.k.record': 'Record: {name} gets {avg} (before: {prev})',
-  'ins.tl.k.leader': '{name} becomes the most loved game ever (instead of {prev})'
+  'ins.tl.k.leader': '{name} becomes the most loved game ever (instead of {prev})',
+
+  // ---------------------------------------------------------------- 2.2 checklist nascondibile
+  'prep.ck.hide': 'Hide',
+  'prep.ck.hideAria': 'Collapse the “Ready?” checklist to one line',
+  'prep.ck.show': 'Show',
+  'prep.ck.setting': '“Ready?” checklist in the lobby',
+  'prep.ck.setFull': 'Full',
+  'prep.ck.setMini': 'One line',
+  'prep.ck.setOff': 'Hidden'
 };

@@ -17,7 +17,7 @@
 import { t } from './i18n.js';
 
 export const TEMPLATE_MAX = 20;
-export const SETTING_KEYS = ['voting', 'chaos', 'voteSeconds', 'voteAuto', 'atmosphere', 'atmoLevel', 'atmoSound', 'maxPlayers', 'music', 'opening', 'award', 'maxMinutes', 'maxGames'];
+export const SETTING_KEYS = ['voting', 'chaos', 'voteSeconds', 'voteAuto', 'manualReveal', 'atmosphere', 'atmoLevel', 'atmoSound', 'maxPlayers', 'music', 'opening', 'award', 'maxMinutes', 'maxGames'];
 export const AWARD_EMOJI = ['🎖️', '🏅', '🎗️', '👑', '🔥', '🧠', '🤝', '😂', '🎭', '🍕', '🐢', '⚡', '🎯', '🌟'];
 const CRIT_KEYS = ['coinv', 'sempl', 'rigioc'];
 const ATMO = ['auto', 'pioggia', 'candele', 'neon', 'stelle', 'festa', 'nebbia', 'palco'];
@@ -40,6 +40,7 @@ export function cleanSettings(raw) {
   if (r.chaos === true) s.chaos = true;
   if (VOTE_SECS.includes(Number(r.voteSeconds))) s.voteSeconds = Number(r.voteSeconds);
   if (r.voteAuto === true) s.voteAuto = true;
+  if (r.manualReveal === true) s.manualReveal = true;
   if (ATMO.includes(r.atmosphere)) s.atmosphere = r.atmosphere;
   if (['soft', 'strong'].includes(r.atmoLevel)) s.atmoLevel = r.atmoLevel;
   if (r.atmoSound === true) s.atmoSound = true;

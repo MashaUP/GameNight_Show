@@ -692,7 +692,6 @@ export default {
   'tv.lb.scan': 'Scan to join',
   'tv.lb.lockedText': 'No new arrivals. Anyone already playing can rejoin from their phone.',
   'tv.lb.group': 'Group: {name}',
-  'tv.lb.regia': 'Host code <b>{code}</b> (take a photo of it: you’ll need it if the PC switches off)',
   'tv.lb.who': 'Who’s here tonight',
   'tv.lb.seats': 'Seats in the room',
   'tv.lb.demo': '🧪 <b>Test mode:</b> the pretend players join, predict and vote by themselves. Nothing is saved to a group. You can let a real phone join too.',
@@ -1074,5 +1073,28 @@ export default {
   'qc.k.ambient': 'Ambient screen',
   'qc.k.public': 'Audience mode',
   'qc.k.interval': 'Break',
-  'qc.k.check': 'Night check'
+  'qc.k.check': 'Night check',
+
+  // ---------------------------------------------------------------- 2.2 rivelazione dei voti
+  'tv.tl.revealAll': 'Reveal the votes automatically when everyone has voted',
+  'tv.tl.revealAllText': 'Off: once everyone has voted, the votes stay hidden until the host presses “Reveal the votes”. You can change it during a vote too.',
+  'tv.vo.allManual': 'Everyone has voted · ready to reveal',
+  'tv.vo.left': { one: '{n} vote missing', other: '{n} votes missing' },
+
+  // ---------------------------------------------------------------- 2.2 intestazione e gioca dalla regia
+  'tv.hdr.infoGroup': 'Room information',
+  'tv.hdr.actionsGroup': 'Host actions',
+  'tv.hdr.playHere': 'Play too',
+  'tv.hdr.playHereTitle': 'Opens the player page in a separate window: votes and stats like everyone else, hosting stays here',
+  'tv.hdr.playHereOpened': 'Player page opened in another window: join with your profile. Hosting stays in this one.',
+  'tv.hdr.playHereBlocked': 'The browser blocked the window: allow pop-ups for this site or open play.html in another tab.',
+
+  // ---------------------------------------------------------------- 2.2 lobby partita
+  'tv.idle.toolbar': 'Night actions',
+
+  // ---------------------------------------------------------------- 2.2 codice regia
+  'tv.lb.regiaLabel': 'Host code · needed if the PC turns off',
+  'tv.lb.regiaHint': 'Take a photo or copy it: you need it to resume hosting if the PC turns off.',
+  'tv.lb.regiaCopy': 'Copy',
+  'tv.lb.regiaCopied': 'Host code copied'
 };

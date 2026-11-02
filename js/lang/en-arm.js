@@ -552,5 +552,20 @@ export default {
   'coll.err.tooManyRows': 'Too many rows in one file (2000 max).',
   'coll.why.notOwned': 'not owned on BoardGameGeek',
   'coll.err.generic': 'error',
-  'coll.err.otherArm': 'Choose a different cupboard.'
+  'coll.err.otherArm': 'Choose a different cupboard.',
+
+  // ---------------------------------------------------------------- 2.2 chi può vedere l'armadio
+  'arm.blocked.title': 'You no longer have access to this shelf',
+  'arm.blocked.text': 'The owner removed access for this profile. If you think it\'s a mistake, ask them: they can let you back in from the shelf\'s Tools.',
+  'arm.viewers.title': 'People who can view this shelf',
+  'arm.viewers.account': 'with an account',
+  'arm.viewers.device': 'device without an account',
+  'arm.viewers.since': 'since {date}',
+  'arm.viewers.remove': 'Remove access',
+  'arm.viewers.none': 'Nobody has opened it with the code yet (owner and collaborators are above).',
+  'arm.viewers.blockedN': { one: '{n} access removed', other: '{n} accesses removed' },
+  'arm.viewers.readmit': 'Let back in',
+  'arm.viewers.note': 'Anyone who opens the shelf with the code appears here. With “Remove access” that profile can no longer see the games, not even with the code or another link; collaborators also lose editing. Someone without an account who clears the browser data becomes a new device: for private shelves, share the code only with people who have an account.',
+  'arm.viewers.removeAsk': 'Remove access for {who}? They won\'t see this shelf anymore, not even with the code. You can let them back in at any time.',
+  'arm.viewers.removed': 'Access removed for {who}'
 };

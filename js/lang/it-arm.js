@@ -552,5 +552,20 @@ export default {
   'coll.err.tooManyRows': 'Troppe righe in un solo file (massimo 2000).',
   'coll.why.notOwned': 'non posseduto su BoardGameGeek',
   'coll.err.generic': 'errore',
-  'coll.err.otherArm': 'Scegli un altro armadio.'
+  'coll.err.otherArm': 'Scegli un altro armadio.',
+
+  // ---------------------------------------------------------------- 2.2 chi può vedere l'armadio
+  'arm.blocked.title': 'Non hai più accesso a questo armadio',
+  'arm.blocked.text': 'Il proprietario ha tolto l\'accesso a questo profilo. Se pensi sia un errore, chiediglielo: può riammetterti dagli Strumenti dell\'armadio.',
+  'arm.viewers.title': 'Persone che possono visualizzare questo armadio',
+  'arm.viewers.account': 'con account',
+  'arm.viewers.device': 'dispositivo senza account',
+  'arm.viewers.since': 'dal {date}',
+  'arm.viewers.remove': 'Rimuovi accesso',
+  'arm.viewers.none': 'Ancora nessuno l\'ha aperto con il codice (proprietario e collaboratori sono sopra).',
+  'arm.viewers.blockedN': { one: '{n} accesso rimosso', other: '{n} accessi rimossi' },
+  'arm.viewers.readmit': 'Riammetti',
+  'arm.viewers.note': 'Compare qui chi apre l\'armadio con il codice. Con «Rimuovi accesso» quel profilo non vede più i giochi, nemmeno con il codice o da un altro link; se era collaboratore perde anche la modifica. Chi non ha un account e cancella i dati del browser diventa un dispositivo nuovo: per gli armadi riservati condividi il codice solo con chi ha un account.',
+  'arm.viewers.removeAsk': 'Togliere l\'accesso a {who}? Non vedrà più questo armadio, nemmeno con il codice. Potrai riammetterlo in qualsiasi momento.',
+  'arm.viewers.removed': 'Accesso tolto a {who}'
 };

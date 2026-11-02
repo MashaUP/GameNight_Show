@@ -47,7 +47,7 @@ import { settingsFromMeta, settingsPatch, settingsDiff, settingLabel, makeTempla
 import { isNightCreator } from './nights.js';
 import { saveGame, newGameId, fullImage, trashGame as armTrash, logEvent as armLog } from './collection.js';
 import { downloadPageUrl, getRelease, fmtSize, MIN_ANDROID } from './updates.js';
-import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel } from './tv-prep.js';
+import { bindPrep, onTable, poolIds, wishes, prepHTML, planNextHTML, PlanPanel, RulesPanel, setReadyView } from './tv-prep.js';
 import { nightStory, storyText, gameSessions, durationInfo } from './insights.js';
 import { bindVotes, LateVotePanel, processLate, lateCount } from './tv-votes.js';
 import { Tips } from './tips.js';
@@ -159,6 +159,7 @@ bindVotes({
 // Regia dello show (2.1): scene, audio per categoria, profili, vista da lontano, imprevisti, domande per
 // modalità, tema della TV, pacchetti di atmosfera, anteprima del reveal, presenze.
 bindShow({
+  refreshLobby: () => { if (S.screen === SCREENS.lobby) { SCREENS.lobby.prepSig = ''; SCREENS.lobby.update(); } },
   S, roomRef, groupRef, update, set, explainError,
   canWriteGroup: () => Boolean(S.meta?.groupId && S.groupAdmin),
   Music, syncMusic: () => syncMusic(), syncAtmo: () => { applyPack(); syncAtmo(); }, logEvent: (...a) => logEvent(...a)
@@ -1958,7 +1959,9 @@ const ToolsPanel = {
           <section class="tool"><h3>⏱️ ${esc(tr('timer.title'))}</h3><p class="muted">${esc(tr('timer.lead'))}</p><button type="button" class="btn-sec" id="tlTimer">${esc(tr('amb.openTimer'))}</button></section>
           <section class="tool"><h3>${tr('tv.tl.voteTimer')}</h3><p class="muted">${tr('tv.tl.voteTimerText')}</p>
             <select class="input select select--sm" id="tlVoteTimer" aria-label="${tr('tv.tl.voteTimerAria')}">${opts(VOTE_TIMERS(), String(Number(S.meta?.voteSeconds) || 0))}</select>
-            <label class="quick-toggle"><input type="checkbox" id="tlVoteAuto" ${S.meta?.voteAuto ? 'checked' : ''}><span>${tr('tv.tl.voteAuto')}</span></label></section>
+            <label class="quick-toggle"><input type="checkbox" id="tlVoteAuto" ${S.meta?.voteAuto ? 'checked' : ''}><span>${tr('tv.tl.voteAuto')}</span></label>
+            <label class="quick-toggle"><input type="checkbox" id="tlRevealAll" ${S.meta?.manualReveal ? '' : 'checked'}><span>${tr('tv.tl.revealAll')}</span></label>
+            <p class="muted small">${tr('tv.tl.revealAllText')}</p></section>
           <section class="tool"><h3>${tr('tv.tl.theme')}</h3>${themeSwitchHTML('tlTheme')}
             <h3>${tr('common.language')}</h3>${langSwitchHTML('tlLang')}
             <label class="field-label" for="tlAtmo">${tr('tv.tl.atmo')}</label>
@@ -2146,6 +2149,7 @@ const ToolsPanel = {
         }).catch((err) => toast(explainError(err), 'error'));
       }
       if (t.id === 'tlVoteAuto') metaFlag('voteAuto', t.checked || null);
+      if (t.id === 'tlRevealAll') metaFlag('manualReveal', t.checked ? null : true);
       if (t.id === 'tlBoard') metaFlag('soundboard', t.checked || null);
       if (t.id === 'tlTicker') metaFlag('ticker', t.checked || null);
       if (t.id === 'tlComment') { setCommentatorMode(t.value); if (t.value !== 'off') speak(t.value === 'roast' ? tr('tv.tl.commentRoast') : tr('tv.tl.commentReady')); }
@@ -2358,6 +2362,24 @@ function setPhase(phase, gameId = null, extra = {}) {
   // Un cambio di schermata non toglie la pausa.
   if (S.state?.paused) { state.paused = true; state.pausedAt = S.state.pausedAt || null; state.pauseReason = S.state.pauseReason || null; }
   return set(roomRef(S.code, 'state'), state).catch((err) => toast(explainError(err), 'error'));
+}
+
+/**
+ * 2.2: la regia gioca anche lei dallo stesso PC. La pagina del giocatore si apre in una finestrella a parte
+ * (stesso sito, quindi stesso account se è collegato): la regia resta in questa scheda con la sua sessione
+ * (fb.js, "gn-regia"), il giocatore ha la sua. Nella stanza è un giocatore come gli altri: un voto, le sue
+ * statistiche, nessun permesso di regia in più (le regole del database distinguono hostUid e players/<uid>).
+ */
+function openPlayerHere() {
+  const url = new URL('play.html', location.href);
+  url.search = '';
+  url.searchParams.set('room', S.code);
+  const w = Math.min(460, Math.round(screen.availWidth * 0.32));
+  const h = Math.min(900, screen.availHeight - 40);
+  const win = window.open(url.href, 'gnPlayerHere', `popup,width=${w},height=${h},left=${screen.availWidth - w - 16},top=16`)
+    || window.open(url.href, 'gnPlayerHere');
+  if (win) { try { win.focus(); } catch { /* niente */ } toast(tr('tv.hdr.playHereOpened')); }
+  else toast(tr('tv.hdr.playHereBlocked'), 'warn');
 }
 
 function playUrl(extra = {}) {
@@ -3240,18 +3262,23 @@ function shellHTML(phase) {
           ${S.meta?.groupName ? `<span class="topbar-group">${esc(S.meta.groupName)}</span>` : ''}
         </div>
         <div class="topbar-right">
+          <div class="tb-group tb-info" role="group" aria-label="${esc(tr('tv.hdr.infoGroup'))}">
           <a class="chip chip-btn hdr-home" id="hdrHome" href="index.html" title="${tr('tv.hdr.homeTitle')}">🏠 <span>Home</span></a>
           <span class="chip chip--clock" id="hdrClock" title="${tr('tv.hdr.clockTitle')}"></span>
           ${S.meta?.demo ? `<span class="chip chip--demo" title="${tr('tv.hdr.demoTitle')}">🧪 ${tr('tv.hdr.demo')}</span>` : ''}
           <button class="chip chip-btn chip--safe" type="button" id="hdrSafe" hidden title="${tr('tv.hdr.safeTitle')}">🚨 <span>Safe Mode</span></button>
           <span class="chip">${tr('tv.tr.room')} <b class="code-text">${esc(S.code)}</b><span id="hdrLock" class="hdr-lock" title="${tr('tv.hdr.locked')}" hidden> 🔒</span></span>
           <button class="chip chip-btn" type="button" id="hdrPlayers" aria-haspopup="dialog" title="${tr('tv.hdr.playersTitle')}">${ICONS.users}<span id="hdrPlayersTxt"></span></button>
+          </div>
+          <div class="tb-group tb-actions" role="group" aria-label="${esc(tr('tv.hdr.actionsGroup'))}">
+          ${isApp() ? '' : `<button class="chip chip-btn hdr-play" type="button" id="hdrPlayHere" title="${esc(tr('tv.hdr.playHereTitle'))}">🎮 <span>${esc(tr('tv.hdr.playHere'))}</span></button>`}
           <button class="chip chip-btn chip--end" type="button" id="hdrEnd" ${['awards', 'alltime'].includes(phase) ? 'hidden' : ''} title="${tr('tv.hdr.endTitle')}">🏁 <span>${tr('tv.endNight')}</span></button>
           <span class="quick-bar" id="quickBar" role="toolbar" aria-label="${esc(tr('qc.title'))}"></span>
           <button class="chip chip-btn" type="button" id="hdrTools" aria-haspopup="dialog" title="${tr('tv.hdr.toolsTitle')}">${ICONS.edit}<span>${tr('tv.tl.title')}</span></button>
           ${hasLib() ? `<button class="chip chip-btn" type="button" id="hdrLib" aria-haspopup="dialog" title="${tr('tv.hdr.libTitle')}">${ICONS.books}<span>${tr('tv.armadio')}</span></button>` : ''}
           <button class="icon-btn" type="button" id="fsBtn" aria-label="${tr('tv.hdr.fs')}" title="${tr('tv.hdr.fsTitle')}">${ICONS.expand}</button>
           <button class="text-btn" type="button" id="newNightBtn">${tr('tv.create.title')}</button>
+          </div>
         </div>
       </header>
       <main id="screen" class="screen screen--${phase}"></main>
@@ -3295,6 +3322,7 @@ function bindShell() {
   $('#hdrTools')?.addEventListener('click', () => ToolsPanel.open());
   $('#pubExit')?.addEventListener('click', () => setPublicTv(false).catch((err) => toast(explainError(err), 'error')));
   $('#hdrEnd')?.addEventListener('click', () => endNight());
+  $('#hdrPlayHere')?.addEventListener('click', openPlayerHere);
   $('#newNightBtn').addEventListener('click', newNight);
   $('#hdrSafe').addEventListener('click', () => { if (confirm(tr('tv.safe.offConfirm'))) applySafeMode(false); });
 }
@@ -4320,7 +4348,7 @@ SCREENS.lobby = {
           </div>
           <p class="qr-url" id="lobbyUrl">${esc(joinUrl.replace(/^https?:\/\//, ''))}</p>
           ${S.meta.groupName ? `<p class="lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
-          ${regiaCode() ? `<p class="lobby-regia">${tr('tv.lb.regia', { code: esc(prettyRegia(regiaCode())) })}</p>` : ''}
+          ${regiaCode() ? `<div class="lobby-regia" id="lobbyRegia" title="${esc(tr('tv.lb.regiaHint'))}"><small>${esc(tr('tv.lb.regiaLabel'))}</small><b class="regia-code" id="regiaCodeTxt">${esc(prettyRegia(regiaCode()))}</b><button type="button" class="link-btn" id="regiaCopy">📋 ${esc(tr('tv.lb.regiaCopy'))}</button></div>` : ''}
         </div>
         <div class="lobby-right">
           <div class="lobby-head">
@@ -4351,7 +4379,13 @@ SCREENS.lobby = {
       if (kick) { confirmKick(kick.dataset.kick); return; }
       if (e.target.closest('#lobbyLock')) setLocked(!S.meta?.locked).catch((err) => toast(explainError(err), 'error'));
       if (e.target.closest('#addBot')) Demo.addBot();
+      if (e.target.closest('#regiaCopy')) {
+        const txt = prettyRegia(regiaCode());
+        (navigator.clipboard?.writeText(txt) || Promise.reject(new Error('no'))).then(() => toast(tr('tv.lb.regiaCopied'))).catch(() => toast(txt));
+      }
       if (e.target.closest('#openPlan')) PlanPanel.open();
+      const rv = e.target.closest('[data-ready-view]');
+      if (rv) { setReadyView(rv.dataset.readyView); this.prepSig = ''; this.update(); }
     });
     $('#startBtn', el).addEventListener('click', () => setPhase('idle'));
     $('#lobbyLib', el)?.addEventListener('click', () => LibPanel.open());
@@ -4900,7 +4934,13 @@ async function reopenVoting(gameId) {
 // Votazione in corso
 // ---------------------------------------------------------------------------
 
+// Una sola rivelazione per gioco (2.2): anche se più eventi in tempo reale arrivano insieme
+// (voti, cambio dell'impostazione, comando dal telefono della regia), la rivelazione parte una volta.
+const revealing = new Set();
 async function revealGame(gameId) {
+  if (!gameId || revealing.has(gameId)) return;
+  if (S.state?.phase !== 'voting' || S.state?.gameId !== gameId) return;
+  revealing.add(gameId);
   try {
     await Save.snap(tr('tv.snap.beforeReveal', { name: S.games[gameId]?.name || tr('tv.aGame') }), 'phase');
     await update(roomRef(S.code, `games/${gameId}`), { status: 'revealed', revealedAt: serverTimestamp() });
@@ -4908,6 +4948,8 @@ async function revealGame(gameId) {
     saveNight();
   } catch (err) {
     toast(explainError(err), 'error');
+  } finally {
+    revealing.delete(gameId);
   }
 }
 
@@ -5013,7 +5055,11 @@ SCREENS.voting = {
     }
 
     const all = total > 0 && voted === total;
-    $('#voteCount').textContent = all ? tr('tv.vo.all') : tr('tv.vo.count', { n: `${voted} / ${total}` });
+    // 2.2: rivelazione automatica (predefinita) o decisa dalla regia (Strumenti › "Rivela automaticamente")
+    const manual = Boolean(S.meta?.manualReveal);
+    $('#voteCount').textContent = all ? tr(manual ? 'tv.vo.allManual' : 'tv.vo.all')
+      : `${tr('tv.vo.count', { n: `${voted} / ${total}` })}${total - voted > 0 ? ` · ${tr('tv.vo.left', { n: total - voted })}` : ''}`;
+    $('#revealBtn').classList.toggle('is-ready', all && manual);
     const missing = ps.filter((p) => !votes[p.uid] && !isOnline(p.uid));
     const waiting = missing.filter((p) => graceLeft(p.uid) > 0);
     const gone = missing.filter((p) => graceLeft(p.uid) === 0).map((p) => p.name);
@@ -5031,8 +5077,8 @@ SCREENS.voting = {
     $('#voteCount').classList.toggle('is-done', all);
     $('#revealBtn').disabled = voted === 0;
 
-    if (all && !S.state?.paused) {
-      if (!this.timer) this.timer = setTimeout(() => revealGame(S.state.gameId), 2000);
+    if (all && !S.state?.paused && !manual) {
+      if (!this.timer) this.timer = setTimeout(() => { this.timer = null; if (!S.meta?.manualReveal) revealGame(S.state.gameId); }, 2000);
     } else if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;

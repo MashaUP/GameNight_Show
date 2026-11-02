@@ -779,3 +779,56 @@ html[data-fx="off"] .reveal[class*="finale--"] .avg-badge, html[data-fx="off"] .
 .ins-timeline li { display: grid; grid-template-columns: 2rem 9rem 1fr; gap: .5rem; align-items: baseline; }
 .tl-when { opacity: .7; font-size: .9em; }
 @media (max-width: 600px) { .ins-timeline li { grid-template-columns: 2rem 1fr; } .tl-when { grid-column: 2; } .tl-text { grid-column: 2; } }
+
+/* ---------------------------------------------------------------------------------------------
+   2.2 · Home su PC più ordinata e testi un po' più grandi
+   - una griglia sola: la riga "collezione / gruppi" e quella in basso seguono le colonne di quella in alto
+   - banner dei risultati meno pesante (scuro con bordo giallo), "Crea la stanza" azione principale
+   - testo base leggermente più grande; i testi più piccoli crescono un po' di più
+   --------------------------------------------------------------------------------------------- */
+html:has(> body.ui-body) { font-size: 103%; }
+@media (min-width: 1024px) { html:has(> body.ui-body) { font-size: 106.25%; } }
+.ui-body .tile-sub, .ui-body .muted, .ui-body .join-label { line-height: 1.45; }
+.ui-body .stat span { font-size: 0.84rem; }
+.ui-body .tabbar a { font-size: 0.8rem; }
+.ui-body .join-label { font-size: 0.95rem; }
+.ui-body .mini-text small, .ui-body .row small { font-size: 0.86rem; }
+.ui-body small { line-height: 1.4; }
+
+/* Banner "Risultati della serata": scuro con bordo giallo invece del blocco giallo pieno */
+.hub-body .back-link {
+  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface));
+  color: var(--ui-text); border: 1px solid color-mix(in srgb, var(--ui-primary) 70%, transparent);
+  box-shadow: none;
+}
+.hub-body .back-link small { color: var(--ui-text-2) !important; }
+.hub-body .back-link:hover, .hub-body .back-link:focus-visible { background: color-mix(in srgb, var(--ui-primary) 20%, var(--ui-surface)); }
+html[data-theme="day"] .hub-body .back-link { color: var(--ui-text); }
+
+/* Gerarchia: "Crea la stanza" è l'azione principale, "Entra" la secondaria */
+.tile--join .join-row .ui-btn:not(.ui-btn--primary) {
+  background: var(--ui-surface-3); color: var(--ui-text); border: 1px solid var(--ui-line-strong); box-shadow: none;
+}
+
+/* Griglia allineata su PC */
+@media (min-width: 1024px) {
+  .grid--top > .tile { min-height: 100%; }
+  .hub-body .tile { padding: 1.2rem 1.35rem; }
+}
+@media (min-width: 1400px) {
+  .hub-body .main { max-width: 88rem; margin-left: auto; margin-right: auto; }
+  .grid--top { grid-template-columns: 1.1fr 1fr 1.2fr; }
+  .grid--mid { grid-template-columns: 2.1fr 1.2fr; }
+  .grid--bottom { grid-template-columns: 1.1fr 1fr 1.2fr; }
+  .grid--bottom .tile--app { grid-column: span 2; grid-row: span 2; }
+  .grid--bottom.no-app { grid-template-columns: 2.1fr 1.2fr; }
+  .grid--bottom.no-app .tile--donate { grid-column: auto; }
+  .grid--bottom .tile { padding: 1.4rem 1.6rem; }
+  .tile--coll .coll { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1500px) {
+  .hub-body .main { max-width: 90rem; }
+}
+@media (min-width: 1850px) {
+  .hub-body .main { max-width: 96rem; }
+}
