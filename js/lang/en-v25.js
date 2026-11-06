@@ -1,0 +1,28 @@
+// 2.5 texts: multi-device stability, room manager, ROOM.
+export default {
+  'fb.err.timeout': 'The database is not responding. Check your connection and try again: no data is lost.',
+  'room.joinArea': "How to join the room",
+  'room.canStart': "You can start: latecomers can join once the night has begun",
+  // Gestore della stanza
+  'ph.dock.manage': "Manage",
+  'mgr.pick': "Room manager",
+  'mgr.none': "Nobody",
+  'mgr.pickHint': "A player who can close entry, change seats, remove someone and close the night from their phone, even with the TV off. They can’t see your profile or your shelves.",
+  'mgr.gone': "This player is no longer in the room.",
+  'mgr.set': "{name} is now the room manager.",
+  'mgr.off': "No room manager.",
+  'mgr.log.set': "Room manager: {name}",
+  'mgr.log.off': "Room manager removed",
+  'mgr.chip': "Manager: {name}",
+  'mgr.youAre': "You are the room manager: the controls are under “Manage”.",
+  'mgr.youNot': "You are no longer the room manager.",
+  'mgr.title': "Room management",
+  'mgr.lead': "Manager controls: they only apply to this room, even with the TV off.",
+  'mgr.players': "Players",
+  'mgr.kick': "Remove",
+  'mgr.nobody': "Nobody else is here.",
+  'mgr.kickAsk': "Remove {name}? They won’t be able to rejoin this room.",
+  'mgr.kicked': "{name} has been removed.",
+  'mgr.end': "Close the night",
+  'mgr.endAsk': "Close the night? It moves to the awards and voting stops. Nothing is deleted.",
+};

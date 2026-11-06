@@ -42,6 +42,6 @@ I browser di prova partono in italiano (`it-IT`): le prove dell'inglese stanno i
 
 ## Cosa non si prova qui
 
-- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v2.4.0`); controlla la spunta verde su GitHub.
+- La costruzione dell'APK (serve l'Android SDK): la fa il workflow `android.yml` quando si pubblica una release (tag `v2.5.0`); controlla la spunta verde su GitHub.
 - Firebase vero: lo prova il **tavolo di verifica** `test.html` sul sito pubblicato.
 - Fotocamera, installazione dell'APK, Android TV: vanno provati a mano su un dispositivo vero (elenco in `TODO.md`, sezione "Da provare a mano").

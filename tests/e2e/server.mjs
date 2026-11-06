@@ -40,7 +40,16 @@ function makeDb({ rules = false } = {}) {
     let c = tree;
     for (let i = 0; i < segs.length - 1; i++) { if (c[segs[i]] == null || typeof c[segs[i]] !== 'object') c[segs[i]] = {}; c = c[segs[i]]; }
     const last = segs[segs.length - 1];
-    if (v === null || v === undefined) delete c[last]; else c[last] = JSON.parse(JSON.stringify(v));
+    if (v === null || v === undefined) {
+      delete c[last];
+      // Come Firebase vero: un nodo rimasto vuoto non esiste più (es. presence/<uid> senza dispositivi).
+      for (let i = segs.length - 2; i >= 0; i--) {
+        let parent = tree;
+        for (let j = 0; j < i; j++) parent = parent[segs[j]];
+        const node = parent[segs[i]];
+        if (node && typeof node === 'object' && !Object.keys(node).length) delete parent[segs[i]]; else break;
+      }
+    } else c[last] = JSON.parse(JSON.stringify(v));
   };
   const at = (p) => { let c = tree; for (const s of String(p || '').split('/').filter(Boolean)) { c = c && typeof c === 'object' ? c[s] : undefined; } return c === undefined ? null : c; };
   // Dispositivi scollegati da più di 2,5 secondi: si applicano le loro operazioni "onDisconnect".

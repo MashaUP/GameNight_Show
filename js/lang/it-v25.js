@@ -1,0 +1,28 @@
+// Testi della 2.5: stabilità multi-dispositivo, gestore della stanza, ROOM.
+export default {
+  'fb.err.timeout': 'Il database non risponde. Controlla la connessione e riprova: i dati non sono persi.',
+  'room.joinArea': "Come entrare nella stanza",
+  'room.canStart': "Si può iniziare: chi arriva dopo entra anche a serata iniziata",
+  // Gestore della stanza
+  'ph.dock.manage': "Gestisci",
+  'mgr.pick': "Gestore della stanza",
+  'mgr.none': "Nessuno",
+  'mgr.pickHint': "Un giocatore che può chiudere l’ingresso, cambiare i posti, allontanare qualcuno e chiudere la serata dal suo telefono, anche se la TV è spenta. Non vede il tuo profilo né i tuoi armadi.",
+  'mgr.gone': "Questo giocatore non è più nella stanza.",
+  'mgr.set': "{name} ora è il gestore della stanza.",
+  'mgr.off': "Nessun gestore della stanza.",
+  'mgr.log.set': "Gestore della stanza: {name}",
+  'mgr.log.off': "Gestore della stanza tolto",
+  'mgr.chip': "Gestore: {name}",
+  'mgr.youAre': "Sei il gestore della stanza: trovi i comandi in «Gestisci».",
+  'mgr.youNot': "Non sei più il gestore della stanza.",
+  'mgr.title': "Gestione della stanza",
+  'mgr.lead': "Comandi del gestore: valgono solo per questa stanza, anche se la TV è spenta.",
+  'mgr.players': "Giocatori",
+  'mgr.kick': "Allontana",
+  'mgr.nobody': "Non c’è nessun altro.",
+  'mgr.kickAsk': "Allontanare {name}? Non potrà rientrare in questa stanza.",
+  'mgr.kicked': "{name} è stato allontanato.",
+  'mgr.end': "Chiudi la serata",
+  'mgr.endAsk': "Chiudere la serata? Si passa alla premiazione e non si vota più. Non si cancella niente.",
+};

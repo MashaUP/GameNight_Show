@@ -13,7 +13,7 @@
 // - gruppi: si sommano; se nello stesso gruppo ci sono due profili, il secondo diventa un "alias"
 //   (alts) e i suoi traguardi si sommano a quelli del primo;
 // - armadi: si sommano (con le chiavi per modificarli).
-import { connect, dbRef, memberRef, get, set, update, remove } from './fb.js';
+import { connect, dbRef, memberRef, get, set, update, remove, accountInfo } from './fb.js';
 import { randomCode, normalizeCode, cleanName } from './util.js';
 import { publicUrl } from './native.js';
 import { t } from './i18n.js';
@@ -84,7 +84,7 @@ export const Person = {
    * Carica il profilo dal database. Restituisce null se su questo dispositivo non c'è.
    * Se il database non lo fa leggere (dispositivo scollegato da un altro) lo dice con { revoked: true }.
    */
-  async load() {
+  async load(retry = true) {
     const loc = this.local();
     if (!loc) { this.data = null; return null; }
     await this.ready();
@@ -94,7 +94,8 @@ export const Person = {
     } catch (err) {
       if (String(err?.code || err?.message || '').toLowerCase().includes('permission')) {
         // Proviamo a ricollegarci con la chiave (per esempio dopo una pulizia dei dati dell'app).
-        if (await this.claim(loc.pid, loc.key).catch(() => false)) return this.load();
+        // 2.5: un solo tentativo (prima, se la lettura restava negata, ricominciava all'infinito).
+        if (retry && await this.claim(loc.pid, loc.key).catch(() => false)) return this.load(false);
         return { revoked: true, pid: loc.pid };
       }
       throw err;
@@ -232,7 +233,11 @@ export const Person = {
     try {
       await this.claim(pid, key);
     } catch (err) {
-      throw Object.assign(new Error(t('person.err.badCode')), { user: true, cause: err });
+      // 2.5: con un account lo stesso uid è già autorizzato dagli altri dispositivi. Se la chiave salvata
+      // nell'account è vecchia (rinnovata altrove) il "claim" fallisce, ma il profilo si legge lo stesso:
+      // prima l'accesso all'account su un secondo dispositivo si fermava qui con "codice non valido".
+      const ok = await get(dbRef(`people/${pid}/info`)).then((x) => x.exists()).catch(() => false);
+      if (!ok) throw Object.assign(new Error(t('person.err.badCode')), { user: true, cause: err });
     }
     const target = (await get(dbRef(`people/${pid}`))).val();
     if (!target?.info) throw Object.assign(new Error(t('person.err.gone')), { user: true });
@@ -283,6 +288,8 @@ export const Person = {
     const key = randomCode(8);
     await set(dbRef(`personKeys/${loc.pid}`), key);
     write(LS, { pid: loc.pid, key });
+    // 2.5: l'account ricorda la chiave nuova, così gli altri dispositivi dello stesso account entrano ancora.
+    if (isAccount()) await set(dbRef(`accounts/${this.uid}`), { pid: loc.pid, key, at: Date.now() }).catch(() => {});
     return key;
   },
 
@@ -296,7 +303,9 @@ export const Person = {
   /** Scollega questo dispositivo (il profilo resta sugli altri). */
   async signOut() {
     const loc = this.local();
-    if (loc && this.uid) await remove(dbRef(`people/${loc.pid}/uids/${this.uid}`)).catch(() => {});
+    // 2.5: con un account l'uid è lo stesso su PC, telefono e tablet. Togliendolo si scollegavano TUTTI
+    // i dispositivi dell'account (e la loro pagina restava senza profilo). Qui si scollega solo questo.
+    if (loc && this.uid && !isAccount()) await remove(dbRef(`people/${loc.pid}/uids/${this.uid}`)).catch(() => {});
     write(LS, null);
     write(CACHE, null);
     this.data = null;
@@ -347,6 +356,9 @@ export const Person = {
     return this.create(look, { groups: Object.fromEntries(entries), armadi });
   }
 };
+
+/** Sessione con un account (Google o email): lo stesso uid può essere su più dispositivi. */
+function isAccount() { const a = accountInfo(); return Boolean(a && !a.anonymous); }
 
 function cleanArm(a = {}) {
   const out = { name: cleanName(a.name || '', 40) || t('person.armadio'), at: Number(a.at) || Date.now() };

@@ -1,23 +1,21 @@
 {
-  "version": "2.4.0",
-  "date": "2026-11-02",
+  "version": "2.5.0",
+  "date": "2026-11-06",
   "minAndroid": "7.0",
   "notes": [
-    "Si può chiudere una serata ancora in corso dalla pagina «Serate» (diverso da Elimina, con conferma).",
-    "Niente più limite fisso di 12 giocatori: decide il master (fino a 100).",
-    "Stanza della TV ridisegnata: i partecipanti al centro, griglia che si adatta da 1 a più di 12, Strumenti ordinati per categoria.",
-    "Lobby a scelta (Standard, Minimal, Informativa) con checklist, «Sul tavolo stasera» e scaletta da accendere.",
-    "«Silenzioso» ferma davvero tutti i suoni, si vede quando è attivo e si comanda anche dal telefono della regia.",
-    "Impostazioni a sezioni, densità (Compatta, Bilanciata, Spaziosa), traguardi per categoria e pagine pensate anche per i monitor grandi.",
-    "Le serate di prova con giocatori finti ora si possono eliminare."
+    "Stesso account su PC, telefono, tablet e app insieme: chiudere un dispositivo non scollega gli altri dalla serata.",
+    "Niente più caricamenti infiniti: se il database non risponde compare un messaggio con «Ricarica».",
+    "App Android: avvio più affidabile con la rete lenta (niente più dado che gira all'infinito).",
+    "Nuovo gestore della stanza: un giocatore scelto dalla TV gestisce ingresso, posti e giocatori dal telefono, anche a TV spenta.",
+    "Stanza della TV: colonna del QR senza scorrimento, X dei giocatori sempre visibile, avviso dei giocatori minimi in alto.",
+    "Barra laterale più leggibile, pulsanti del profilo che non sbordano, icona della scheda con il dado intero."
   ],
   "notesEn": [
-    "You can close a night still in progress from the “Nights” page (different from Delete, with confirmation).",
-    "No more fixed 12-player limit: the host decides (up to 100).",
-    "Redesigned TV room: participants at the centre, a grid that adapts from 1 to more than 12, Tools grouped by category.",
-    "Lobby to your taste (Standard, Minimal, Info) with checklist, “On the table tonight” and plan you can switch on.",
-    "“Mute” really stops every sound, shows when it's on and can be controlled from the host's phone too.",
-    "Settings in sections, density (Compact, Balanced, Spacious), achievements by category and pages built for big monitors too.",
-    "Demo nights with fake players can now be deleted."
+    "Same account on PC, phone, tablet and app at once: closing one device no longer disconnects the others from the night.",
+    "No more endless loading: if the database doesn't answer you get a message with “Reload”.",
+    "Android app: more reliable start-up on slow networks (no more endlessly spinning die).",
+    "New room manager: a player chosen by the TV handles entry, seats and players from their phone, even with the TV off.",
+    "TV room: QR column without scrolling, player X always visible, minimum-players notice at the top.",
+    "More readable sidebar, profile buttons that stay inside, browser tab icon with the whole die."
   ]
 }

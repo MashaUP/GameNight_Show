@@ -105,7 +105,7 @@ async def main():
         if await host.is_visible('#groupName'): await host.fill('#groupName', 'Prova app')
         await host.click('#createBtn'); await host.wait_for_selector('.lobby')
         code = host.url.split('room=')[1]
-        u = await host.inner_text('#lobbyUrl')
+        u = (await host.get_attribute('#qr', 'data-url') or '').replace('https://', '')
         ok(u.startswith('example.github.io/GameNight_Show/play.html?room=' + code), f'QR della TV punta al sito pubblico ({u})')
         # Phone in app joins
         ctx2, ph = await ctxp(b, 'phone')

@@ -1,19 +1,57 @@
 // Collegamento a Firebase: inizializzazione, accesso anonimo e helper del database.
 import { firebaseConfig } from './config.js';
 import { t } from './i18n.js';
+import { ErrLog } from './util.js';
+import { isApp } from './native.js';
 
 // 2.1 (idea 80): modalità dimostrativa. Con localStorage gnr_demo = '1' le stesse funzioni arrivano da
 // js/demo-db.js (database solo in questo browser, niente Firebase); altrimenti dal vero SDK.
 export const isDemo = (() => { try { return localStorage.getItem('gnr_demo') === '1'; } catch { return false; } })();
 const FB = isDemo ? await import('./demo-db.js') : await import('../vendor/firebase.js');
 const {
-  initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signOut,
+  initializeApp, getAuth, initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, signInAnonymously, onAuthStateChanged, signOut,
   GoogleAuthProvider, EmailAuthProvider, signInWithPopup, linkWithPopup, linkWithCredential, signInWithCredential,
   signInWithEmailAndPassword, sendPasswordResetEmail,
-  getDatabase, ref, onValue, get, set, update, remove, push, serverTimestamp, onDisconnect
+  getDatabase, ref, onValue, set, update, remove, push, serverTimestamp, onDisconnect
 } = FB;
 
-export { ref, onValue, get, set, update, remove, push, serverTimestamp };
+export { ref, onValue, set, update, remove, push, serverTimestamp };
+
+// 2.5: nessuna attesa senza fine. La lettura una tantum di Firebase (get) non ha un limite di tempo: se la
+// connessione resta appesa (rete che cambia, app Android ripresa dallo sfondo, WebView con il socket fermo)
+// la promessa non finisce mai e la pagina resta sul dado che gira. Qui ogni lettura ha un tetto: allo scadere
+// arriva un errore "db/timeout" che le pagine mostrano con "Ricarica"/"Riprova", e resta nel registro errori.
+export const DB_TIMEOUT = 20000;
+function timeoutError(what) {
+  const e = new Error(`timeout: ${what}`);
+  e.code = 'db/timeout';
+  return e;
+}
+/** Promessa con un tetto di tempo (ms). Allo scadere: errore db/timeout, annotato nel registro errori. */
+export function withTimeout(p, ms, what) {
+  if (!ms) return p;
+  let tm;
+  const guard = new Promise((_, rej) => { tm = setTimeout(() => { ErrLog.add('timeout', `${what} > ${ms} ms`); rej(timeoutError(what)); }, ms); });
+  return Promise.race([p, guard]).finally(() => clearTimeout(tm));
+}
+/** Come get() di Firebase, ma con un limite di tempo (0 = nessun limite). */
+export function get(r, ms = DB_TIMEOUT) {
+  const path = String(r?._path?.toString?.() || r?.path || '').replace(/[A-Z0-9]{4,}/g, '…');
+  return withTimeout(FB.get(r), ms, `get ${path}`.trim());
+}
+
+/**
+ * 2.5: identificativo di QUESTO dispositivo (browser o app), diverso dall'uid. Con un account lo stesso uid è
+ * su PC, telefono e tablet insieme: la presenza in una stanza va tenuta per dispositivo, altrimenti chi si
+ * scollega (es. il PC con "Gioca anche tu") cancella anche la presenza del telefono ancora collegato.
+ */
+export function deviceId() {
+  try {
+    let d = localStorage.getItem('gnr_dev');
+    if (!/^[a-z0-9]{10}$/.test(d || '')) { d = Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join(''); localStorage.setItem('gnr_dev', d); }
+    return d;
+  } catch { return 'nodevice00'; }
+}
 
 export const isConfigured = isDemo || Boolean(
   firebaseConfig.apiKey &&
@@ -85,6 +123,20 @@ export function useSession(name) {
 }
 export const currentSession = () => session;
 
+/**
+ * 2.5: nell'app Android (WebView di Capacitor, pagine su https://localhost) getAuth() prepara anche l'accesso
+ * con finestra/redirect di Google, che carica un iframe da <progetto>.firebaseapp.com e ASPETTA quell'iframe
+ * prima di dire chi è l'utente salvato. Con la rete lenta o assente l'attesa non finisce: la prima risposta di
+ * onAuthStateChanged non arriva e la pagina resta sul dado che gira. Nell'app Google non si usa (finestra non
+ * permessa), quindi lì l'accesso si inizializza senza quel pezzo: utente salvato in IndexedDB (o localStorage).
+ */
+function authFor(a) {
+  if (isApp() && initializeAuth && indexedDBLocalPersistence) {
+    try { return initializeAuth(a, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] }); } catch { /* già inizializzato */ }
+  }
+  return getAuth(a);
+}
+
 /** Primo stato dell'accesso (dopo aver letto l'utente salvato sul dispositivo). */
 function firstUser(a) {
   return new Promise((resolve, reject) => {
@@ -101,8 +153,9 @@ export async function connect() {
     ready = (async () => {
       app = session === 'regia' ? initializeApp(firebaseConfig, 'gn-regia') : initializeApp(firebaseConfig);
       db = getDatabase(app);
-      auth = getAuth(app);
-      const user = await firstUser(auth);
+      auth = authFor(app);
+      // 2.5: anche la lettura dell'utente salvato ha un tetto (memoria del browser bloccata o lenta).
+      const user = await withTimeout(firstUser(auth), DB_TIMEOUT, 'auth');
       if (!user) await signInAnonymously(auth);
       onAuthStateChanged(auth, (u) => { for (const cb of userListeners) { try { cb(accountInfo(u)); } catch { /* niente */ } } });
     })();
@@ -208,7 +261,9 @@ export function trackConnection(onStatus, code = null, uid = null) {
     const online = snap.val() === true;
     onStatus?.(online);
     if (!online || !code || !uid) return;
-    const pres = roomRef(code, `presence/${uid}`);
+    // 2.5: presenza per dispositivo (presence/<uid>/<dispositivo>): lo stesso account su due dispositivi
+    // non si cancella a vicenda. Chi legge controlla solo che presence/<uid> esista.
+    const pres = roomRef(code, `presence/${uid}/${deviceId()}`);
     onDisconnect(pres).remove()
       .then(() => set(pres, true))
       .catch(() => {});
@@ -263,6 +318,7 @@ export function explainError(err) {
   const code = String(err?.code || err?.message || err || '');
   if (code.includes('admin-restricted-operation') || code.includes('operation-not-allowed')) return t('fb.err.anon');
   if (code.includes('unauthorized-domain')) return t('fb.err.domain');
+  if (code.includes('db/timeout') || code.startsWith('timeout')) return t('fb.err.timeout');
   if (code.toLowerCase().includes('permission')) return t('fb.err.permission');
   if (code.includes('network')) return t('fb.err.network');
   return t('fb.err.other', { code });

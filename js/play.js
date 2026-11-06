@@ -7,8 +7,10 @@ import {
   $, esc, fmt, param, normalizeCode, sortedPlayers, activePlayers, compressImage, gameImage, gameImageHTML, toast,
   installImageFallback, showFatal, showNotConfigured, ICONS, PLAYER_COLORS, safeColor, nameKey, cleanName, asList, libInfo, libFits, connectionStatus,
   keepAwake, watchVersion, registerSW, randomCode, userError, applyTheme, themeSwitchHTML, watchBattery, compressPhoto, dbKey, qrSVG,
-  ErrLog, a11yHTML, voteTimer, timerColor, buzz, squarePhoto, rememberNight, pollChoices, pollValue, exportName
+  ErrLog, a11yHTML, voteTimer, timerColor, buzz, squarePhoto, rememberNight, pollChoices, pollValue, exportName,
+  MIN_PLAYERS, MAX_PLAYERS
 } from './util.js';
+import { closeNight } from './nights.js';
 import { avatarHTML, avatarUri, avatarOptions, avatarParts, Seasonal } from './avatars.js';
 import {
   CRITERIA, gameStats, verdict, buildBoard, buildAwards, buildAllTime, personalStats, personKey, trophies, affinities,
@@ -1127,14 +1129,17 @@ const Dock = {
   items() {
     const me = P.players?.[P.uid];
     const phase = P.state?.phase;
-    if (!me || me.away || P.state?.paused || P.showProfile || P.addingGame || P.profileEdit) return [];
-    if (!['lobby', 'idle', 'board', 'alltime', 'reveal'].includes(phase)) return [];
+    if (!me || P.showProfile || P.addingGame || P.profileEdit) return [];
+    // 2.5: il gestore della stanza ha il suo pulsante in ogni fase (anche in pausa e durante il voto)
+    const mgr = isManager() ? [{ k: 'manage', icon: '🛡️', label: t('ph.dock.manage') }] : [];
+    if (me.away || P.state?.paused) return mgr;
+    if (!['lobby', 'idle', 'board', 'alltime', 'reveal'].includes(phase)) return mgr;
     const st = P.state || {};
     const playing = phase === 'idle' && st.playStart && st.playId;
     const imPlayer = playing && (!st.playPlayers || st.playPlayers[P.uid]);
     const b = betState();
     const board = Boolean(P.meta?.soundboard || P.cohost);
-    const out = [];
+    const out = [...mgr];
     if (b) out.push({ k: 'bet', icon: '🔮', label: t('ph.dock.bet'), badge: b.open && !b.mine ? '!' : (b.open ? '' : '🔒') });
     if (imPlayer) out.push({ k: 'score', icon: '🧮', label: t('ph.dock.score') });
     if (board && phase !== 'lobby') out.push({ k: 'sfx', icon: '🔊', label: t('ph.dock.sfx') });
@@ -1144,6 +1149,10 @@ const Dock = {
     return out;
   },
   sync() {
+    // 2.5: il telefono sa subito se è diventato (o non è più) gestore della stanza
+    const mgrNow = isManager();
+    if (this.mgr !== undefined && mgrNow !== this.mgr) toast(mgrNow ? t('mgr.youAre') : t('mgr.youNot'));
+    this.mgr = mgrNow;
     const items = this.items();
     this.visible = items.length > 0;
     document.body.classList.toggle('has-dock', this.visible);
@@ -1177,6 +1186,8 @@ const Dock = {
       if (e.target === el || e.target.closest('[data-dockclose]')) { this.closeSheet(); return; }
       const fx = e.target.closest('[data-sfx]');
       if (fx) Buzz.sendSfx(fx);
+      const mg = e.target.closest('[data-mg]');
+      if (mg) manageAct(mg, el);
     });
     this.refresh(true);
     this.sig = '';
@@ -1197,6 +1208,7 @@ const Dock = {
     let html = '';
     if (sh.kind === 'bet') html = betHTML();
     else if (sh.kind === 'score') html = scoreHTML() || `<p class="muted">${esc(t('ph.score.notYet'))}</p>`;
+    else if (sh.kind === 'manage') html = manageHTML();
     else if (sh.kind === 'sfx') html = `<h2>🔊 ${esc(t('ph.sfx.title'))}</h2><p class="muted small">${esc(t('ph.sfx.lead'))}</p><div class="sfx-grid sfx-grid--big">${allSfx().map((m) => `<button type="button" class="sfx-btn" data-sfx="${esc(m.k)}"><span aria-hidden="true">${esc(m.icon)}</span><small>${esc(m.label)}</small></button>`).join('')}</div>`;
     const sig = sh.kind === 'bet' ? html.replace(/<b>\d+:\d\d<\/b>/, '') : html;
     if (sh.kind === 'bet') { const c = sh.el.querySelector('[data-betclock] b'); const b = betState(); if (c && b?.open) c.textContent = mmss(b.left); }
@@ -1205,6 +1217,61 @@ const Dock = {
     $('.dock-body', sh.el).innerHTML = html.replace(/^\s*<section class="card ph-card[^"]*">/, '').replace(/<\/section>\s*$/, '');
   }
 };
+
+// ---------------------------------------------------------------------------
+// 2.5: gestore della stanza (scelto dalla TV). Agisce direttamente sul database, quindi funziona anche se la
+// TV è chiusa o senza rete; le regole controllano meta/managerUid. Niente accesso ai dati del master.
+// ---------------------------------------------------------------------------
+function isManager() { return Boolean(P.uid && P.meta?.managerUid === P.uid && P.players?.[P.uid]); }
+function manageHTML() {
+  if (!isManager()) return `<p class="muted">${esc(t('mgr.youNot'))}</p>`;
+  const locked = Boolean(P.meta?.locked);
+  const max = Number(P.meta?.maxPlayers) || 8;
+  const pres = P.presence || {};
+  const others = sortedPlayers(P.players).filter((p) => p.uid !== P.uid && !p.away);
+  const ended = P.state?.phase === 'awards';
+  return `<h2>🛡️ ${esc(t('mgr.title'))}</h2>
+    <p class="muted small">${esc(t('mgr.lead'))}</p>
+    <div class="mg-row"><button type="button" class="btn-sec" data-mg="lock" aria-pressed="${locked}">${locked ? `🔓 ${esc(t('room.unlock'))}` : `🔒 ${esc(t('room.lock'))}`}</button></div>
+    <div class="mg-row mg-seats"><span>${esc(t('room.seats'))}</span>
+      <button type="button" class="step-btn" data-mg="seats" data-d="-1" aria-label="−">−</button><b>${max}</b><button type="button" class="step-btn" data-mg="seats" data-d="1" aria-label="+">+</button></div>
+    <h3>${esc(t('mgr.players'))}</h3>
+    <ul class="mg-list">${others.map((p) => `<li><span class="mg-name">${pres[p.uid] ? '🟢' : '⚪'} ${esc(p.name)}</span><button type="button" class="btn-sec btn-sec--sm" data-mg="kick" data-uid="${esc(p.uid)}">⛔ ${esc(t('mgr.kick'))}</button></li>`).join('') || `<li class="muted">${esc(t('mgr.nobody'))}</li>`}</ul>
+    ${ended ? '' : `<button type="button" class="btn-sec btn-sec--danger mg-end" data-mg="end">🏁 ${esc(t('mgr.end'))}</button>`}
+    <p class="form-error" data-mgerr role="alert"></p>`;
+}
+async function manageAct(b, sheet) {
+  if (!isManager() || b.disabled) return;
+  const err = sheet.querySelector('[data-mgerr]');
+  if (err) err.textContent = '';
+  const act = b.dataset.mg;
+  try {
+    b.disabled = true;
+    if (act === 'lock') {
+      const locked = Boolean(P.meta?.locked);
+      if (!locked && !confirm(t('room.lockAsk'))) return;
+      await set(roomRef(P.code, 'meta/locked'), !locked);
+    } else if (act === 'seats') {
+      const n = activePlayers(P.players).length;
+      const next = Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, n, (Number(P.meta?.maxPlayers) || 8) + Number(b.dataset.d)));
+      await set(roomRef(P.code, 'meta/maxPlayers'), next);
+    } else if (act === 'kick') {
+      const p = P.players?.[b.dataset.uid];
+      if (!p || !confirm(t('mgr.kickAsk', { name: p.name }))) return;
+      await update(roomRef(P.code, ''), { [`players/${b.dataset.uid}`]: null, [`meta/banned/${b.dataset.uid}`]: String(p.name).slice(0, 16) });
+      toast(t('mgr.kicked', { name: p.name }));
+    } else if (act === 'end') {
+      if (!confirm(t('mgr.endAsk'))) return;
+      await closeNight(P.code);
+      toast(t('report.close.done'));
+    }
+  } catch (e) {
+    if (err) err.textContent = explainError(e);
+  } finally {
+    b.disabled = false;
+    Dock.refresh(true);
+  }
+}
 
 document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-dock]');

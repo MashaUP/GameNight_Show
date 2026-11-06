@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.4.0** (stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.5.0** (stesso account su più dispositivi, gestore della stanza, ROOM senza tagli; 2.4: stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -17,6 +17,8 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 
 ## 🧩 Idee fatte solo in parte (con il motivo)
 
+- [ ] **Google nell'app Android (2.5).** Nella WebView Google non apre la sua finestra: nell'app si entra con email e password o collegando il dispositivo con il QR del profilo. Per l'accesso Google nativo serve un plugin (es. Capacitor Firebase Authentication) con le impronte SHA dell'app registrate in Firebase.
+
 - [ ] **Stanza sul telefono in verticale (2.4).** La pagina scorre: «Inizia la serata» è in fondo, non sempre a vista. Da valutare una barra fissa in basso.
 - [ ] **Sidebar richiudibile (2.4).** Sui monitor grandi la sidebar è a larghezza fissa; non si può ancora ridurre a sole icone.
 - [ ] **«Pronto» per giocatore (2.4).** La lobby mostra collegato/non collegato, non chi si dichiara pronto.
@@ -27,6 +29,10 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 - [ ] **Prove su Firefox e Safari (idea 75).** Il controllo "Altri browser" su GitHub (`.github/workflows/altri-browser.yml`, Firefox e WebKit) è pronto ma non è mai stato eseguito: avviarlo a mano (Actions › Altri browser › Run workflow), guardare il risultato e correggere le differenze. Non blocca la "Verifica".
 
 ## 🔌 Da configurare (fuori dal codice)
+
+- [ ] **Regole del database 2.5**: ricopiare `firebase/database.rules.json` e **Pubblica** (gestore della stanza, presenza per dispositivo).
+- [ ] **Release `v2.5.0`** su GitHub per l'APK.
+- [ ] **Prove a mano 2.5 con dispositivi veri**: stesso account su PC (regia) + telefono Android (app) + tablet; app Android ripresa dallo sfondo e con rete che cambia; gestore della stanza con la TV spenta.
 
 - [ ] **Regole del database 2.4**: ricopiare `firebase/database.rules.json` e **Pubblica** (chiusura della serata dal creatore, posti fino a 100, `meta/muted`).
 - [ ] **Release `v2.4.0`** su GitHub per l'APK.

@@ -392,17 +392,28 @@ html.tv-far .tvbar-acts .quick-bar, html.tv-far .tvbar-acts #fsBtn { display: no
   grid-template-areas: "side main" "foot foot";
   gap: 1rem 2rem;
 }
-.room-side { grid-area: side; display: flex; flex-direction: column; gap: 0.9rem; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 0.2rem; }
-.room-qr { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 1rem; text-align: center; }
-.room-qr .qr { width: min(100%, 34vh); }
-.room-qr .qr svg { border-radius: 0.6rem; }
+.room-side { grid-area: side; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* 2.5: la colonna contiene SOLO QR, "Inquadra per entrare", codice stanza e codice regia, in una card che occupa
+   l'altezza disponibile. Il QR è l'unico elemento elastico: prende lo spazio che resta (quadrato, largo al massimo
+   quanto la colonna) e si rimpicciolisce quando lo schermo è basso. Prima la colonna aveva un'altezza fissa
+   (riga della griglia) ma contenuti di altezza fissa più alti (QR a 34vh + link + gruppo + regia): da qui la
+   barra di scorrimento interna e il codice regia da cercare scorrendo. */
+.room-qr { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(0.35rem, 1.2vh, 0.8rem); padding: clamp(0.7rem, 1.6vh, 1.2rem); text-align: center; }
+.room-qr .qr { flex: none; width: 14rem; height: 14rem; max-width: 100%; } /* misura vera data da fitQr() */
+.room-qr .qr svg { width: 100%; height: 100%; border-radius: 0.6rem; }
+.room-qr > :not(.qr) { flex-shrink: 0; }
 .room-scan { font-family: var(--display); font-size: 1.55rem; line-height: 1.05; }
 .room-code { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; font-weight: 800; }
 .room-code .code-chip { font-size: 2.1rem; padding: 0.05em 0.5em; letter-spacing: 0.16em; }
 .room-qr--locked { border-style: dashed; }
-.room-url { font-size: 0.95rem; font-weight: 800; color: var(--ink-soft); overflow-wrap: anywhere; text-align: center; }
 .room-group { display: flex; align-items: center; gap: 0.6rem; font-weight: 900; font-size: 1.05rem; line-height: 1.2; }
+/* 2.5: avviso dei giocatori minimi e stato della stanza: piccolo, in alto accanto ai collegati */
+.room-status { font-size: 0.95rem; font-weight: 800; line-height: 1.25; padding: 0.3rem 0.75rem; border-radius: 999px; background: color-mix(in srgb, var(--paper) 75%, transparent); border: 0.1rem solid color-mix(in srgb, var(--ink-soft) 35%, transparent); max-width: 100%; }
+.room-status[data-kind="wait"] { border-color: var(--sun); color: var(--ink); }
+.room-status:empty { display: none; }
+.room-manager { font-size: 0.95rem; font-weight: 800; padding: 0.3rem 0.75rem; border-radius: 999px; background: color-mix(in srgb, var(--teal) 25%, transparent); border: 0.1rem solid var(--teal); }
 .room-regia {
+  width: 100%; text-align: left;
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.1rem 0.6rem;
   padding: 0.5rem 0.75rem; border-radius: 0.8rem; font-size: 0.95rem; line-height: 1.35;
   background: color-mix(in srgb, var(--paper) 80%, transparent);
@@ -412,7 +423,8 @@ html.tv-far .tvbar-acts .quick-bar, html.tv-far .tvbar-acts #fsBtn { display: no
 .room-regia small { color: var(--ink-soft); }
 .room-regia .link-btn { font-size: 0.9rem; grid-column: 2; grid-row: 1 / span 2; }
 .room-main { grid-area: main; display: flex; flex-direction: column; gap: 0.9rem; min-height: 0; min-width: 0; }
-.room-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem 1.2rem; }
+.room-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem 1rem; }
+.room-head .room-seats { margin-left: auto; }
 .room-count { font-size: 1.35rem; font-weight: 800; }
 .room-count b { font-family: var(--display); font-weight: 400; font-size: 2.2rem; vertical-align: -0.08em; margin-right: 0.15em; }
 .room-count small { font-size: 0.95rem; color: var(--ink-soft); font-weight: 700; }
@@ -453,7 +465,10 @@ html.tv-far .tvbar-acts .quick-bar, html.tv-far .tvbar-acts #fsBtn { display: no
 .pcard-status.is-off i { background: #8C87A6; box-shadow: 0 0 0 0.18rem var(--paper); }
 .pcard.is-offline .avatar { filter: grayscale(1); opacity: 0.5; }
 .pcard.is-offline .pcard-name { color: var(--ink-soft); }
-.pcard .kick { top: -0.7rem; right: -0.7rem; }
+/* 2.5: la X sta DENTRO l'angolo della card. Fuori (top/right negativi) veniva tagliata dal contenitore dei
+   partecipanti, che non scorre (overflow nascosto) e che la griglia riempie fino al bordo. */
+.pcard .kick { top: calc(var(--pc-size) * 0.045); right: calc(var(--pc-size) * 0.045); width: clamp(1.7rem, calc(var(--pc-size) * 0.15), 2.6rem); height: clamp(1.7rem, calc(var(--pc-size) * 0.15), 2.6rem); z-index: 2; }
+.pcard .kick svg { width: 55%; height: 55%; }
 .pcard:hover .kick, .pcard:focus-within .kick, .kick:focus-visible { opacity: 1; }
 html.tv-far .pcard .kick { display: none; }
 .pcard--free, .pcard--empty { background: transparent; border-style: dashed; border-color: color-mix(in srgb, var(--ink-soft) 45%, transparent); box-shadow: none; }
@@ -467,26 +482,26 @@ html.tv-far .pcard .kick { display: none; }
 .room-panels .prep-title { display: block; margin-bottom: 0.3rem; }
 .room-panels .ready-list { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
 .room-panels > .prep-plan { flex: 0 0 auto; align-self: center; }
-.room-foot { grid-area: foot; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.room-foot .hint-line { flex: 1 1 18rem; min-width: 0; max-width: none; }
+.room-foot { grid-area: foot; display: flex; align-items: center; justify-content: flex-end; gap: 1rem; flex-wrap: wrap; }
 .room-foot #lobbyLib { flex: 0 1 auto; min-width: 0; max-width: 26rem; white-space: nowrap; }
 .room-foot #lobbyLib span { overflow: hidden; text-overflow: ellipsis; }
 .room-foot #startBtn { flex: 0 0 auto; white-space: nowrap; }
 .room-foot #startBtn:disabled { opacity: 0.55; filter: saturate(0.6); }
 /* Modalità Minimal: niente gruppo né codice regia in colonna (il codice regia resta negli Strumenti) */
-.room[data-mode="minimal"] .room-group, .room[data-mode="minimal"] .room-regia { display: none; }
+.room[data-mode="minimal"] .room-group { display: none; }
 /* Schermi bassi o stretti (laptop, tablet): colonna più stretta, QR più piccolo */
 @media (max-height: 820px), (max-width: 1280px) {
   .room { grid-template-columns: clamp(12rem, 19vw, 17rem) minmax(0, 1fr); gap: 0.8rem 1.4rem; }
   .room-scan { font-size: 1.25rem; }
   .room-code .code-chip { font-size: 1.6rem; }
-  .room-url, .room-regia small { font-size: 0.85rem; }
+  .room-regia small { font-size: 0.85rem; }
 }
 /* Telefono o finestra in verticale: una colonna, la pagina scorre (niente tagli) */
 @media (max-width: 760px), (orientation: portrait) and (max-width: 1100px) {
   .room { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; grid-template-areas: "main" "side" "foot"; }
-  .room-side { overflow: visible; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; }
-  .room-qr { width: min(22rem, 100%); }
+  .room-side { align-items: center; }
+  .room-qr { width: min(22rem, 100%); flex: 0 0 auto; }
+  .room-qr .qr { height: auto; width: 100%; }
   .room-people { min-height: 18rem; overflow: visible; }
   .room-panels { max-height: none; }
   .screen--lobby { overflow-y: auto; }
@@ -5027,3 +5042,13 @@ html:not(.theme-show) .side-toolbar .side-end { color: #B23A12; }
 .am-viewer-ico { display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: rgba(127, 127, 160, 0.18); }
 .am-blocked { margin-top: 0.6rem; }
 .am-blocked summary { cursor: pointer; font-weight: 800; }
+
+/* 2.5: gestore della stanza (TV: scelta negli Strumenti; telefono: pannello «Gestisci») */
+.mgr-pick { display: flex; flex-direction: column; gap: 0.3rem; font-weight: 800; }
+.mgr-pick select { font: inherit; font-weight: 700; padding: 0.45rem 0.6rem; border-radius: 0.6rem; border: var(--bw) solid var(--ink); background: var(--paper); color: var(--ink); max-width: 100%; }
+.mg-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin: 0.6rem 0; }
+.mg-seats b { font-family: var(--display); font-size: 1.6rem; min-width: 2.6rem; text-align: center; }
+.mg-list { list-style: none; margin: 0.4rem 0 0.8rem; padding: 0; display: grid; gap: 0.4rem; }
+.mg-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.mg-name { font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+.mg-end { width: 100%; justify-content: center; }

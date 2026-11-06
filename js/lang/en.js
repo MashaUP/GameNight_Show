@@ -13,6 +13,7 @@ import tvx from './en-tvx.js';
 import mem from './en-mem.js';
 import v2 from './en-v2.js';
 import v24 from './en-v24.js';
+import v25 from './en-v25.js';
 
 export default {
   // ---------------------------------------------------------------- common
@@ -1047,4 +1048,5 @@ export default {
   ...mem,
   ...v2,
   ...v24,
+  ...v25,
 };

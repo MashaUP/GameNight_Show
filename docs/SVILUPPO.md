@@ -139,6 +139,15 @@ Il **racconto della serata** (`nightStory`) restituisce chiavi di testo e parame
 inventate: ogni frase corrisponde a un dato del riassunto (gioco più amato, consenso sotto il 60%, partita più lunga di
 45 minuti, vittorie, MVP, un commento se scelto).
 
+## Novità della 2.5
+
+- **Stesso account su più dispositivi**: con un account (Google o email) l'uid è lo stesso su PC, telefono e tablet. Per questo la presenza nella stanza è per dispositivo (`presence/<uid>/<id dispositivo>`, id in `localStorage gnr_dev`, `deviceId()` in `js/fb.js`) e `Person.signOut()` non toglie l'uid dell'account da `people/<pid>/uids` (scollegherebbe tutti i dispositivi). La regia (TV) usa sempre la sua sessione (`gn-regia`), quindi PC master e telefono giocatore con lo stesso account non si scontrano.
+- **Letture con tetto di tempo**: `get()` di `js/fb.js` è quella di Firebase con un limite (`DB_TIMEOUT`, 20 s; `get(ref, 0)` per nessun limite). Lo scadere dà l'errore `db/timeout` (messaggio `fb.err.timeout`) e una riga `timeout` nel registro errori. Anche la lettura dell'utente salvato all'avvio ha lo stesso tetto.
+- **App Android**: `authFor()` usa `initializeAuth` con persistenza IndexedDB/localStorage e senza `popupRedirectResolver` (non serve: Google nell'app non si usa). `getAuth()` avrebbe caricato un iframe da `<progetto>.firebaseapp.com` prima di rispondere.
+- **Gestore della stanza** (`meta/managerUid`): lo scrive solo la TV (validazione di `meta`). Il gestore ha permessi di scrittura solo su `meta/locked`, `meta/maxPlayers`, `meta/banned/<uid>` (non sé stesso), sulla rimozione di `players/<uid>` (non sé stesso) e sulla chiusura (`state` → premiazione con `remote: true`). Telefono: pannello «Gestisci» del dock (`manageHTML` / `manageAct` in `js/play.js`); TV: `setManager`, `checkManager`, `paintManager` in `js/host.js`.
+- **ROOM**: `SCREENS.lobby.fitQr()` misura lo spazio rimasto nella card del QR e lo rende quadrato; la colonna non scorre più.
+- `vendor/firebase.js` ora esporta anche `initializeAuth`, `indexedDBLocalPersistence`, `browserLocalPersistence`.
+
 ## Novità della 2.4
 
 - **Preferenze della lobby** (`js/lobby-prefs.js`, chiave `gnr_lobby`): modalità `standard` / `minimal` / `info`, checklist (voci in `CHECK_ITEMS`), «Sul tavolo», scaletta. Sono del dispositivo della regia (la TV), non della stanza: un'altra TV parte dai suoi valori. Si cambiano da Impostazioni › Partita e regia, dagli Strumenti e dal pannello profilo della TV; l'evento `gnr-lobby` ridisegna la lobby.
@@ -273,7 +282,7 @@ importano `fb.js` aspettano quella scelta (supportato da tutti i browser moderni
 
 ## Libreria Firebase
 
-`vendor/firebase.js` è un unico file costruito con esbuild da firebase 10.14.1 (app, auth con Google/email/anonimo, database). Per ricostruirlo: `npx esbuild fb-entry.js --bundle --format=esm --minify --outfile=vendor/firebase.js` con un `fb-entry.js` che riesporta le funzioni usate da `js/fb.js`.
+`vendor/firebase.js` è un unico file costruito con esbuild da firebase 10.14.1 (app, auth con Google/email/anonimo, database). Per ricostruirlo: `npx esbuild fb-entry.js --bundle --format=esm --minify --outfile=vendor/firebase.js` con un `fb-entry.js` che riesporta le funzioni usate da `js/fb.js` (dalla 2.5 anche `initializeAuth`, `indexedDBLocalPersistence`, `browserLocalPersistence`).
 
 ## BoardGameGeek
 

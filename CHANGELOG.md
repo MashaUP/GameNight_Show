@@ -1,5 +1,34 @@
 # Novità
 
+## 2.5.0 · Stesso account su più dispositivi, gestore della stanza, ROOM senza tagli (6 novembre 2026)
+
+> **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (gestore della stanza, presenza per dispositivo). Per l'app Android la release da pubblicare è `v2.5.0`.
+
+**Perché 2.5.0 (MINOR)**: una funzione nuova (gestore della stanza) e correzioni di stabilità retrocompatibili; nessun dato da convertire, le stanze aperte continuano a funzionare.
+
+**Stesso account su PC, telefono, tablet e app**
+- Presenza nella stanza per dispositivo (`presence/<uid>/<dispositivo>`): con lo stesso account su due dispositivi, chiudere il PC («Gioca anche tu») non fa più risultare scollegato il telefono.
+- «Scollega questo dispositivo» con un account non toglie più l'autorizzazione al profilo a tutti i dispositivi dell'account (l'uid è lo stesso ovunque).
+- Chiave del profilo rinnovata su un dispositivo: l'account ricorda la chiave nuova; un dispositivo che entra nell'account con la chiave vecchia ritrova comunque il profilo.
+- Niente più caricamenti infiniti: ogni lettura dal database ha un tetto di 20 secondi. Allo scadere compare un messaggio chiaro con «Ricarica», e l'evento resta nel registro errori della diagnostica.
+- App Android: l'accesso si prepara senza il componente di Google per finestre e redirect, che caricava un iframe da firebaseapp.com e poteva bloccare per sempre la lettura dell'utente salvato (dado che gira) con la rete lenta. Pacchetto `vendor/firebase.js` ricostruito (firebase 10.14.1, con `initializeAuth`).
+- Profilo: se la lettura resta negata, un solo tentativo di ricollegamento (prima poteva ripetersi all'infinito).
+
+**Gestore della stanza (nuovo)**
+- Dagli Strumenti della TV (Partecipazione) il master sceglie un giocatore come gestore, lo cambia o lo toglie. La TV mostra «Gestore: nome».
+- Il gestore ha «Gestisci» sul telefono, in ogni fase: chiude e riapre l'ingresso, cambia i posti, allontana un giocatore, chiude la serata. Funziona anche con la TV spenta.
+- Le regole del database lo verificano (`meta/managerUid`): niente accesso a profilo, armadi, gruppi o impostazioni del master; non può nominare altri né diventare la TV. Se il gestore esce dalla stanza il ruolo si toglie da solo.
+
+**ROOM**
+- Colonna sinistra con solo QR, «Inquadra per entrare», codice stanza e codice regia con «Copia»: niente link testuale né barra di scorrimento interna. Il QR prende lo spazio che resta (misurato), quadrato.
+- La X per allontanare un giocatore è dentro l'angolo della card: prima veniva tagliata dal contenitore.
+- «Servono almeno 2 giocatori» è un avviso piccolo in alto, accanto ai collegati, e si aggiorna da solo.
+
+**Grafica**
+- Barra laterale più leggibile al 100% (voci 1,125rem, icone più grandi, righe più alte).
+- Pulsanti Modifica / Traguardi / Dispositivi: il testo resta dentro anche con il carattere grande dell'app Android (uno sotto l'altro quando la card è stretta).
+- Icona della scheda del browser con il dado intero (prima tagliato).
+
 ## 2.4.0 · Stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente più tetto a 12 giocatori (2 novembre 2026)
 
 > **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (chiusura della serata da parte del creatore, `maxPlayers` fino a 100, `meta/muted`). Per l'app Android la release da pubblicare è `v2.4.0`.

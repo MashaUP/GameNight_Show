@@ -976,6 +976,7 @@ function openRoom(code) {
       render();
       if (key === 'state' || key === 'games' || key === 'votes') remoteCloseSave();
       if (key === 'meta') publishMute();
+      if (key === 'meta' || key === 'players') { checkManager(); paintManager(); }
     }, (err) => showFatal(app, tr('tv.boot.lost'), explainError(err)));
   }
   requestWakeLock();
@@ -1998,6 +1999,9 @@ const ToolsPanel = {
             <div class="acts-cat"><h4>${esc(tr('tools.cat.people'))}</h4>
               ${isApp() ? '' : `<button type="button" class="btn-sec hdr-play" id="hdrPlayHere" title="${esc(tr('tv.hdr.playHereTitle'))}">🎮 ${esc(tr('tv.hdr.playHere'))}</button>`}
               <button type="button" class="btn-sec" id="tlPlayers">${ICONS.users} ${esc(tr('tools.players'))}</button>
+              <label class="mgr-pick" for="tlManager"><span>🛡️ ${esc(tr('mgr.pick'))}</span>
+                <select id="tlManager">${managerOptions()}</select></label>
+              <p class="muted small">${esc(tr('mgr.pickHint'))}</p>
             </div>
             <div class="acts-cat"><h4>${esc(tr('tools.cat.content'))}</h4>
               ${hasLib() ? `<button type="button" class="btn-sec" id="hdrLib" title="${tr('tv.hdr.libTitle')}">${ICONS.books} ${tr('tv.armadio')}</button>` : ''}
@@ -2181,6 +2185,7 @@ const ToolsPanel = {
     const metaFlag = (key, val) => update(roomRef(S.code, 'meta'), { [key]: val }).catch((err) => toast(explainError(err), 'error'));
     el.addEventListener('change', (e) => {
       const t = e.target;
+      if (t.id === 'tlManager') { setManager(t.value).catch((err) => toast(explainError(err), 'error')); return; }
       if (t.dataset?.qc) {
         const chosen = [...el.querySelectorAll('[data-qc]:checked')].map((x) => x.dataset.qc);
         if (chosen.length > QUICK_MAX) { t.checked = false; toast(tr('qc.max', { n: QUICK_MAX }), 'warn'); return; }
@@ -4380,6 +4385,40 @@ function remoteCloseSave() {
   if (buildBoard(S.games, S.votes).length) saveNight();
 }
 
+/**
+ * 2.5: gestore della stanza. Il master (TV) sceglie un giocatore che può amministrare QUESTA stanza dal suo
+ * telefono anche quando la TV non è guardata o è scollegata: chiudere/riaprire l'ingresso, cambiare i posti,
+ * allontanare un giocatore, chiudere la serata. Le regole del database lo verificano (meta/managerUid): il
+ * ruolo non dà accesso a profilo, armadi, gruppi o impostazioni del master, e lo cambia solo la TV.
+ */
+function managerOptions() {
+  const cur = S.meta?.managerUid || '';
+  const ps = activePlayers(S.players);
+  return `<option value="">${esc(tr('mgr.none'))}</option>${ps.map((p) => `<option value="${esc(p.uid)}"${p.uid === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}`;
+}
+async function setManager(uid) {
+  if (!S.code) return;
+  const p = uid ? S.players?.[uid] : null;
+  if (uid && !p) throw userError(tr('mgr.gone'));
+  await update(roomRef(S.code, 'meta'), { managerUid: p ? uid : null });
+  logEvent(p ? tr('mgr.log.set', { name: p.name }) : tr('mgr.log.off'), '🛡️');
+  toast(p ? tr('mgr.set', { name: p.name }) : tr('mgr.off'));
+}
+/** Il gestore non c'è più (allontanato o uscito): il ruolo si toglie da solo. */
+function checkManager() {
+  const m = S.meta?.managerUid;
+  if (!m || !S.loaded.has('players') || S.meta?.hostUid !== S.uid) return;
+  if (!S.players?.[m]) update(roomRef(S.code, 'meta'), { managerUid: null }).catch(() => {});
+}
+function paintManager() {
+  const box = document.getElementById('lobbyManager');
+  if (!box) return;
+  const p = S.meta?.managerUid ? S.players?.[S.meta.managerUid] : null;
+  box.hidden = !p;
+  const h = p ? `🛡️ ${esc(tr('mgr.chip', { name: p.name }))}` : '';
+  if (box.innerHTML !== h) box.innerHTML = h;
+}
+
 /** Salva il riassunto della serata nel gruppo, per la classifica di sempre. */
 function saveNight() {
   const gid = S.meta?.groupId;
@@ -4456,24 +4495,25 @@ SCREENS.lobby = {
     const joinUrl = playUrl();
     el.innerHTML = `
       <section class="room lobby" data-mode="${esc(lobbyPrefs().mode)}">
-        <aside class="room-side">
+        <aside class="room-side" aria-label="${esc(tr('room.joinArea'))}">
           <div class="room-qr card" id="lobbyQr">
-            <div class="qr" id="qr"></div>
+            <div class="qr" id="qr" data-url="${esc(joinUrl)}"></div>
             <p class="room-scan">${esc(tr('room.scan'))}</p>
             <p class="room-code"><span>${esc(tr('room.codeLabel'))}</span><b class="code-chip">${esc(S.code)}</b></p>
+            ${regiaCode() ? `<div class="room-regia lobby-regia" id="lobbyRegia" title="${esc(tr('tv.lb.regiaHint'))}"><small>${esc(tr('tv.lb.regiaLabel'))}</small><b class="regia-code" id="regiaCodeTxt">${esc(prettyRegia(regiaCode()))}</b><button type="button" class="link-btn" id="regiaCopy">📋 ${esc(tr('tv.lb.regiaCopy'))}</button></div>` : ''}
           </div>
           <div class="room-qr room-qr--locked card" id="lobbyLocked" hidden>
             <p class="lock-big" aria-hidden="true">🔒</p>
             <p class="room-scan">${tr('tv.hdr.locked')}</p>
             <p class="muted">${tr('tv.lb.lockedText')}</p>
           </div>
-          <p class="room-url" id="lobbyUrl">${esc(joinUrl.replace(/^https?:\/\//, ''))}</p>
-          ${S.meta.groupName ? `<p class="room-group lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
-          ${regiaCode() ? `<div class="room-regia lobby-regia" id="lobbyRegia" title="${esc(tr('tv.lb.regiaHint'))}"><small>${esc(tr('tv.lb.regiaLabel'))}</small><b class="regia-code" id="regiaCodeTxt">${esc(prettyRegia(regiaCode()))}</b><button type="button" class="link-btn" id="regiaCopy">📋 ${esc(tr('tv.lb.regiaCopy'))}</button></div>` : ''}
         </aside>
         <div class="room-main">
           <div class="room-head">
             <p class="room-count" id="lobbyConnected" aria-live="polite"></p>
+            <p class="room-status" id="lobbyHint" role="status"></p>
+            ${S.meta.groupName ? `<p class="room-group lobby-group" id="lobbyIdentity">${tr('tv.lb.group', { name: esc(S.meta.groupName) })}</p>` : ''}
+            <p class="room-manager" id="lobbyManager" hidden></p>
             ${S.meta.demo ? `<p class="demo-note">${tr('tv.lb.demo')} <button type="button" class="btn-sec btn-sec--sm" id="addBot">${tr('tv.lb.addBot')}</button></p>` : ''}
             <div class="room-seats" role="group" aria-label="${esc(tr('room.seats'))}" title="${esc(tr('room.seatsHint'))}">
               <span class="room-seats-label">${esc(tr('room.seats'))}</span>
@@ -4488,7 +4528,6 @@ SCREENS.lobby = {
           <div class="room-panels prep" id="lobbyPrep" aria-label="${esc(tr('room.panels'))}" hidden></div>
         </div>
         <div class="room-foot lobby-foot">
-          <p id="lobbyHint" class="hint-line"></p>
           ${hasLib() ? `<button class="btn-sec" type="button" id="lobbyLib">${ICONS.books}<span id="lobbyLibTxt">${tr('tv.armadio')}</span></button>` : ''}
           <button class="btn btn-big" type="button" id="startBtn">${ICONS.play}<span id="startLabel">${tr('tv.lb.start')}</span></button>
         </div>
@@ -4512,6 +4551,7 @@ SCREENS.lobby = {
     // La griglia si ricalcola quando cambia lo spazio (finestra, schermo intero, pannelli accesi o spenti)
     this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.layout()) : null;
     this.ro?.observe($('#peopleBox', el));
+    this.ro?.observe($('.room-side', el));
     this.onPrefs = () => { this.prepSig = null; this.sig = ''; this.update(); };
     window.addEventListener('gnr-lobby', this.onPrefs);
     this.onStorage = (e) => { if (e.key === 'gnr_lobby') this.onPrefs(); };
@@ -4525,7 +4565,28 @@ SCREENS.lobby = {
   },
 
   /** Colonne e misura delle card: la più grande che fa stare tutto, con un minimo sotto il quale si scorre. */
+  /**
+   * 2.5: il QR prende tutto lo spazio che resta nella card della colonna (quadrato), sottratti testo, codice
+   * stanza e codice regia. Calcolato sulle misure vere: niente altezze fisse che su uno schermo basso
+   * spingono il codice regia fuori dalla colonna. In verticale (telefono) decide il CSS: largo quanto la card.
+   */
+  fitQr() {
+    const card = $('#lobbyQr');
+    const qr = $('#qr');
+    if (!card || !qr || card.hidden) return;
+    if (matchMedia('(max-width: 760px), (orientation: portrait) and (max-width: 1100px)').matches) { qr.style.width = ''; qr.style.height = ''; return; }
+    const cs = getComputedStyle(card);
+    const kids = [...card.children].filter((c) => c !== qr && !c.hidden);
+    const others = kids.reduce((h, c) => h + c.getBoundingClientRect().height, 0);
+    const gap = parseFloat(cs.rowGap) || 0;
+    const room = card.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - others - gap * kids.length;
+    const wide = card.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const size = Math.max(112, Math.floor(Math.min(room, wide, 30 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16))));
+    qr.style.width = `${size}px`;
+    qr.style.height = `${size}px`;
+  },
   layout() {
+    this.fitQr();
     const box = $('#peopleBox');
     const grid = $('#slots');
     if (!box || !grid) return;
@@ -4592,7 +4653,6 @@ SCREENS.lobby = {
     }
     const locked = Boolean(S.meta?.locked);
     $('#lobbyQr').hidden = locked;
-    $('#lobbyUrl').hidden = locked;
     $('#lobbyLocked').hidden = !locked;
 
     const sig = JSON.stringify([max, ps.map((p) => [p.uid, p.name, p.style, p.seed, p.color, p.opts, (p.photo || '').length, p.motto, isOnline(p.uid)]), Object.keys(S.nights || {}).length]);
@@ -4633,18 +4693,21 @@ SCREENS.lobby = {
       const nSel = selectedIds().length;
       libTxt.textContent = nLib ? `${armadioName()}: ${tr('tv.ic.nGames', { n: nLib })}${nSel ? ` · ⭐ ${nSel}` : ''}` : tr('tv.lb.libEmpty', { name: armadioName() });
     }
+    paintManager();
     const hint = $('#lobbyHint');
     const btn = $('#startBtn');
+    // 2.5: avviso discreto in alto, accanto ai collegati (prima era una riga grande in fondo, vicino a "Inizia").
+    const setHint = (kind, text) => { hint.dataset.kind = kind; if (hint.textContent !== text) hint.textContent = text; };
     if (n < MIN_PLAYERS) {
-      hint.textContent = tr('tv.lb.needMin', { n: MIN_PLAYERS });
+      setHint('wait', `⏳ ${tr('tv.lb.needMin', { n: MIN_PLAYERS })}`);
       btn.disabled = true;
       $('#startLabel').textContent = tr('tv.lb.start');
     } else if (n < max) {
-      hint.textContent = tr('tv.lb.missing', { n: max - n });
+      setHint('ok', tr('room.canStart', { n: max - n }));
       btn.disabled = false;
       $('#startLabel').textContent = tr('tv.lb.startWith', { n });
     } else {
-      hint.textContent = tr('tv.lb.allIn');
+      setHint('ok', `✅ ${tr('tv.lb.allIn')}`);
       btn.disabled = false;
       $('#startLabel').textContent = tr('tv.lb.start');
     }

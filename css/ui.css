@@ -409,17 +409,19 @@ html[data-theme="day"] .tabbar a.is-on { color: var(--ui-accent); }
   .side .brand-lockup { padding: 0 0.2rem; gap: 0.55rem; max-width: 100%; }
   .side .brand-die { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; }
   .side .brand-word { font-size: 1.28rem; }
-  .side-nav { display: flex; flex-direction: column; gap: 0.25rem; }
+  /* 2.5: voci più leggibili già al 100%: testo 1,125rem (prima 1rem, piccolo nella colonna larga), riga più alta,
+     icona più grande e allineata al centro della riga; il testo lungo va a capo invece di uscire. */
+  .side-nav { display: flex; flex-direction: column; gap: 0.3rem; }
   .side-nav a, .side-nav button {
-    display: flex; align-items: center; gap: 0.75rem; width: 100%;
-    min-height: var(--ui-ctl); padding: 0 0.85rem; border-radius: var(--ui-r);
-    border: 1px solid transparent; background: none; cursor: pointer;
-    font: inherit; font-weight: 700; font-size: var(--ui-fs-md); color: var(--ui-text-2); text-decoration: none; text-align: left;
+    display: flex; align-items: center; gap: 0.85rem; width: 100%;
+    min-height: calc(var(--ui-ctl) + 0.35rem); padding: 0.35rem 0.95rem; border-radius: var(--ui-r);
+    border: 1px solid transparent; background: none; cursor: pointer; line-height: 1.2;
+    font: inherit; font-weight: 750; font-size: 1.125rem; color: var(--ui-text-2); text-decoration: none; text-align: left;
     transition: background-color var(--ui-fast) ease, color var(--ui-fast) ease;
   }
   .side-nav a:hover, .side-nav button:hover { background: var(--ui-surface-2); color: var(--ui-text); }
   .side-nav a.is-on { background: var(--ui-primary); color: var(--ui-primary-ink); box-shadow: 0 0.35rem 1.1rem rgba(255, 210, 63, 0.18); }
-  .nav-ico { width: 1.6rem; text-align: center; font-size: 1.15rem; }
+  .nav-ico { flex: none; width: 1.9rem; text-align: center; font-size: 1.35rem; line-height: 1; }
   .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.6rem; }
   .side-me, .side-ver {
     display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.8rem;
@@ -428,8 +430,9 @@ html[data-theme="day"] .tabbar a.is-on { color: var(--ui-accent); }
   }
   .side-me > span:last-child, .side-ver { display: flex; flex-direction: column; min-width: 0; }
   .side-me b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .side-me small, .side-ver small { color: var(--ui-text-2); font-size: var(--ui-fs-xs); font-weight: 600; }
-  .side-ver span { font-weight: 800; font-size: var(--ui-fs-sm); }
+  .side-me b { font-size: 1.05rem; }
+  .side-me small, .side-ver small { color: var(--ui-text-2); font-size: var(--ui-fs-sm); font-weight: 600; }
+  .side-ver span { font-weight: 800; font-size: var(--ui-fs-md); }
   .side-ver:hover, .side-me:hover { border-color: var(--ui-line-strong); }
   html[data-theme="day"] .side { background: var(--ui-surface); }
   .topbar { grid-column: 2; background: transparent; border-bottom: 0; -webkit-backdrop-filter: none; backdrop-filter: none; justify-content: flex-end; padding: 1rem 1.6rem 0; position: static; }
@@ -475,6 +478,16 @@ html[data-theme="day"] .sec-link { color: var(--ui-accent); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .btn-row > * { flex: 1 1 auto; }
 .btn-row--3 > * { flex: 1 1 0; min-width: 0; }
+/* 2.5: pulsanti affiancati (Modifica, Traguardi, Dispositivi…): il testo resta dentro. Si misura la card, non
+   lo schermo: nell'app Android il testo può essere ingrandito dal sistema e tre pulsanti non ci stanno più.
+   Sotto ~30 caratteri di larghezza vanno uno sotto l'altro, a tutta larghezza; altrove il testo va a capo. */
+.btn-row .ui-btn { white-space: normal; overflow-wrap: anywhere; text-align: center; }
+.btn-row .ui-btn > span { min-width: 0; }
+.tile--me, #hubMeFull { container-type: inline-size; }
+@container (max-width: 30rem) {
+  .btn-row--3 { flex-direction: column; }
+  .btn-row--3 > * { flex: none; width: 100%; justify-content: flex-start; font-size: var(--ui-fs-md); padding-left: 1rem; padding-right: 1rem; }
+}
 .empty { color: var(--ui-text-2); padding: 1rem; border-radius: var(--ui-r); border: 1px dashed var(--ui-line-strong); text-align: center; }
 .empty--sm { padding: 0.75rem; font-size: var(--ui-fs-sm); }
 
@@ -825,7 +838,6 @@ html[data-theme="day"] .ui-body .input, html[data-theme="day"] body.ui-body .inp
   .tile { padding: 0.95rem; }
   .join-row .ui-btn { min-width: 5rem; padding-left: 0.8rem; padding-right: 0.8rem; }
   .code-field { letter-spacing: 0.22em; font-size: 1.5rem; }
-  .btn-row--3 > * { font-size: 0.82rem; padding-left: 0.3rem; padding-right: 0.3rem; }
 }
 
 /* ---------------------------------------------------------------- go.html (collegamenti stabili) */

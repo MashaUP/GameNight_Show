@@ -571,5 +571,34 @@ check('posti: un giocatore NON cambia i posti', base(), 'p1', 'set', `${R}/meta/
 check('silenzioso: la TV pubblica lo stato per la regia', base(), 'host', 'set', `${R}/meta/muted`, true, true);
 check('silenzioso: solo vero/falso', base(), 'host', 'set', `${R}/meta/muted`, 'si', false);
 check('silenzioso: un giocatore NON lo cambia', base(), 'p1', 'set', `${R}/meta/muted`, true, false);
+
+// 2.5 · Gestore della stanza (meta/managerUid): scelto dalla TV, amministra solo questa stanza
+const mg = () => base({ managerUid: 'p1' });
+check('gestore: la TV lo sceglie tra i giocatori', base(), 'host', 'set', `${R}/meta/managerUid`, 'p1', true);
+check('gestore: NON uno che non è nella stanza', base(), 'host', 'set', `${R}/meta/managerUid`, 'estraneo', false);
+check('gestore: un giocatore NON si nomina da solo', base(), 'p1', 'set', `${R}/meta/managerUid`, 'p1', false);
+check('gestore: NON passa il ruolo a un altro', mg(), 'p1', 'set', `${R}/meta/managerUid`, 'p2', false);
+check('gestore: NON diventa la TV', mg(), 'p1', 'set', `${R}/meta/hostUid`, 'p1', false);
+check('gestore: chiude l\'ingresso', mg(), 'p1', 'set', `${R}/meta/locked`, true, true);
+check('gestore: lo riapre', base({ managerUid: 'p1', locked: true }), 'p1', 'set', `${R}/meta/locked`, false, true);
+check('gestore: cambia i posti', mg(), 'p1', 'set', `${R}/meta/maxPlayers`, 12, true);
+check('gestore: NON cambia altre impostazioni della stanza', mg(), 'p1', 'set', `${R}/meta/safeMode`, true, false);
+check('gestore: NON cambia il gruppo', mg(), 'p1', 'set', `${R}/meta/groupId`, 'ALTRO1', false);
+check('gestore: allontana un giocatore (posto + blocco)', mg(), 'p1', 'update', R, { 'players/p2': null, 'meta/banned/p2': 'Bruno' }, true);
+check('gestore: NON modifica un altro giocatore', mg(), 'p1', 'set', `${R}/players/p2/name`, 'Pippo', false);
+check('gestore: NON blocca sé stesso', mg(), 'p1', 'set', `${R}/meta/banned/p1`, 'Anna', false);
+check('gestore: chiude la serata (premiazione)', mg(), 'p1', 'set', `${R}/state`, CLOSE, true);
+check('gestore: NON cambia la fase in altro', mg(), 'p1', 'set', `${R}/state`, { phase: 'idle' }, false);
+check('gestore: NON cancella la stanza', mg(), 'p1', 'set', R, null, false);
+check('gestore: NON tocca i voti degli altri', mg(), 'p1', 'set', `${R}/votes/g1/p2`, null, false);
+check('gestore: NON legge la chiave del profilo né scrive nel gruppo', mg(), 'p1', 'set', '/groups/GRP123/info/name', 'Mio', false);
+check('gestore revocato: non può più chiudere l\'ingresso', base({ managerUid: 'p2' }), 'p1', 'set', `${R}/meta/locked`, true, false);
+check('non gestore: un giocatore NON allontana nessuno', base(), 'p1', 'set', `${R}/players/p2`, null, false);
+check('la TV revoca il gestore', mg(), 'host', 'set', `${R}/meta/managerUid`, null, true);
+// 2.5 · Presenza per dispositivo: lo stesso account su due dispositivi non si cancella a vicenda
+check('presenza: per dispositivo', base(), 'p1', 'set', `${R}/presence/p1/abcdefghij`, true, true);
+check('presenza: formato vecchio ancora accettato', base(), 'p1', 'set', `${R}/presence/p1`, true, true);
+check('presenza: NON quella di un altro', base(), 'p2', 'set', `${R}/presence/p1/abcdefghij`, true, false);
+check('presenza: identificativo del dispositivo non valido', base(), 'p1', 'set', `${R}/presence/p1/X`, true, false);
 console.log(`\n${n - fail}/${n} regole come previsto`);
 process.exit(fail ? 1 : 0);

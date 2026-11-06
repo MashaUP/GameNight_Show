@@ -7,11 +7,16 @@
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
         "meta": {
           ".write": "auth != null && (!data.exists() || root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (root.child('secrets').child($code).exists() && root.child('rooms').child($code).child('takeover').child(auth.uid).val() === root.child('secrets').child($code).val()))",
-          ".validate": "newData.child('hostUid').val() === auth.uid",
+          ".validate": "newData.child('hostUid').val() === auth.uid || (data.exists() && newData.child('hostUid').val() === data.child('hostUid').val() && data.child('managerUid').val() === auth.uid && newData.child('managerUid').val() === auth.uid)",
           "maxPlayers": {
+            ".write": "auth != null && root.child('rooms').child($code).child('meta').child('managerUid').val() === auth.uid",
             ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 100"
           },
+          "managerUid": {
+            ".validate": "newData.isString() && root.child('rooms').child($code).child('players').child(newData.val()).exists()"
+          },
           "locked": {
+            ".write": "auth != null && root.child('rooms').child($code).child('meta').child('managerUid').val() === auth.uid",
             ".validate": "newData.isBoolean()"
           },
           "safeMode": {
@@ -31,6 +36,7 @@
           },
           "banned": {
             "$uid": {
+              ".write": "auth != null && root.child('rooms').child($code).child('meta').child('managerUid').val() === auth.uid && $uid !== auth.uid",
               ".validate": "newData.isString() && newData.val().length <= 16"
             }
           },
@@ -109,11 +115,11 @@
           }
         },
         "state": {
-          ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (data.exists() && newData.child('phase').val() === 'awards' && newData.child('done').val() === true && newData.child('remote').val() === true && (root.child('rooms').child($code).child('meta').child('creatorUid').val() === auth.uid || (root.child('rooms').child($code).child('meta').child('creatorPid').isString() && root.child('people').child(root.child('rooms').child($code).child('meta').child('creatorPid').val()).child('uids').child(auth.uid).exists()))))"
+          ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (data.exists() && newData.child('phase').val() === 'awards' && newData.child('done').val() === true && newData.child('remote').val() === true && (root.child('rooms').child($code).child('meta').child('managerUid').val() === auth.uid || root.child('rooms').child($code).child('meta').child('creatorUid').val() === auth.uid || (root.child('rooms').child($code).child('meta').child('creatorPid').isString() && root.child('people').child(root.child('rooms').child($code).child('meta').child('creatorPid').val()).child('uids').child(auth.uid).exists()))))"
         },
         "players": {
           "$uid": {
-            ".write": "auth != null && ((auth.uid === $uid && !root.child('rooms').child($code).child('meta').child('banned').child(auth.uid).exists() && (data.exists() || !(root.child('rooms').child($code).child('meta').child('locked').val() === true))) || root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid)",
+            ".write": "auth != null && ((auth.uid === $uid && !root.child('rooms').child($code).child('meta').child('banned').child(auth.uid).exists() && (data.exists() || !(root.child('rooms').child($code).child('meta').child('locked').val() === true))) || root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (!newData.exists() && $uid !== auth.uid && root.child('rooms').child($code).child('meta').child('managerUid').val() === auth.uid))",
             ".validate": "newData.hasChildren(['name', 'style', 'seed', 'color']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 16 && newData.child('style').isString() && newData.child('style').val().length <= 20 && newData.child('seed').isString() && newData.child('seed').val().length <= 40 && newData.child('color').isString() && newData.child('color').val().matches(/^#[0-9A-Fa-f]{6}$/)",
             "away": {
               ".validate": "newData.isBoolean()"
@@ -185,7 +191,10 @@
         "presence": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && (!newData.exists() || root.child('rooms').child($code).child('meta').exists())",
-            ".validate": "newData.isBoolean()"
+            ".validate": "newData.isBoolean() || newData.hasChildren()",
+            "$dev": {
+              ".validate": "$dev.matches(/^[a-z0-9]{10}$/) && newData.isBoolean()"
+            }
           }
         },
         "takeover": {

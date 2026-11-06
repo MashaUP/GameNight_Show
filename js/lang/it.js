@@ -14,6 +14,7 @@ import tvx from './it-tvx.js';
 import mem from './it-mem.js';
 import v2 from './it-v2.js';
 import v24 from './it-v24.js';
+import v25 from './it-v25.js';
 
 export default {
   // ---------------------------------------------------------------- comuni
@@ -1048,4 +1049,5 @@ export default {
   ...mem,
   ...v2,
   ...v24,
+  ...v25,
 };
