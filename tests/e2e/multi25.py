@@ -46,7 +46,7 @@ async def until(cond, timeout=10):
 async def google(pg, torna=''):
     await pg.goto(f'{BASE}/index.html'); await asyncio.sleep(0.6)
     await pg.evaluate(f"localStorage.setItem('fake_google', '{MAIL}')")
-    await pg.goto(f'{BASE}/index.html?accedi=1{torna}'); await pg.wait_for_selector('[data-act="acc-google"]', timeout=8000)
+    await pg.goto(f'{BASE}/index.html?accedi=1{torna}'); await pg.wait_for_selector('[data-act="acc-google"]', timeout=15000)
     await pg.click('[data-act="acc-google"]')
     # l'accesso è finito quando il dispositivo ha il profilo dell'account
     for _ in range(60):
@@ -85,7 +85,7 @@ async def main():
         await PH.fill('#nameInput', 'Anna'); await PH.click('.av-opt[data-pick="0"]'); await PH.click('#joinBtn'); await PH.wait_for_selector('#waitList')
         old_uid = await uid_of(PH)
         await google(PH)
-        await until(lambda: at(f'accounts/{old_uid}'))
+        await until(lambda: at(f'accounts/{old_uid}'), 20)
         acc = at(f'accounts/{old_uid}') or {}
         uid = old_uid; pid = acc.get('pid')
         ok(bool(pid), f'telefono: account collegato al profilo ({pid})')
@@ -93,34 +93,44 @@ async def main():
         # ---------------- PC: stesso account nella home (la TV resta in regia) ----------------
         PC = await pctx.new_page(); watch(PC, 'pc-home')
         await google(PC)
-        await until(lambda: True, 2.5)
+        for _ in range(60):
+            try:
+                if await uid_of(PC) == uid: break
+            except Exception: pass
+            await asyncio.sleep(0.25)
         ok(await uid_of(PC) == uid, 'PC: stesso account, stesso uid del telefono')
         ok(await me_name(PC), 'PC: profilo caricato con il telefono ancora collegato')
         ok(await TV.is_visible('.lobby'), 'PC: la TV della serata non è stata toccata dall\'accesso')
-        await PH.goto(f'{BASE}/play.html?room={code}'); await PH.wait_for_selector('#waitList', timeout=8000)
+        await PH.goto(f'{BASE}/play.html?room={code}'); await PH.wait_for_selector('#waitList', timeout=15000)
         ok(True, 'telefono: dopo l\'accesso sul PC resta in serata come giocatore')
 
         # ---------------- "Gioca anche tu" dal PC con lo stesso account ----------------
         PP = await pctx.new_page(); watch(PP, 'pc-play')
         await PP.goto(f'{BASE}/play.html?room={code}')
-        try: await PP.wait_for_selector('#waitList, #movedBack', timeout=8000)
+        try: await PP.wait_for_selector('#waitList, #movedBack', timeout=15000)
         except Exception:
             await PP.screenshot(path='/tmp/pp.png'); print('PP:', (await PP.inner_text('body'))[:600]); raise
         anna = [u for u, pl in (at(f'rooms/{code}/players') or {}).items() if pl.get('name') == 'Anna']
         ok(len(anna) == 1, f'stesso account da PC e telefono: un solo giocatore ({len(anna)})')
-        await until(lambda: len(at(f'rooms/{code}/presence/{uid}') or {}) >= 2, 6)
+        await until(lambda: len(at(f'rooms/{code}/presence/{uid}') or {}) >= 2, 15)
         devs = at(f'rooms/{code}/presence/{uid}') or {}
         ok(isinstance(devs, dict) and len(devs) >= 2, f'presenza per dispositivo ({len(devs) if isinstance(devs, dict) else devs})')
         await PP.close()
-        await asyncio.sleep(4)
+        # il server toglie la presenza di un dispositivo sparito dopo 2,5 s: si aspetta che resti solo il telefono
+        await until(lambda: isinstance(at(f'rooms/{code}/presence/{uid}'), dict) and len(at(f'rooms/{code}/presence/{uid}')) == 1, 15)
         ok(bool(at(f'rooms/{code}/presence/{uid}')), 'PC chiuso: il telefono risulta ancora collegato')
+        await asyncio.sleep(0.8)
         dot = await TV.evaluate("() => { const c = [...document.querySelectorAll('#slots .pcard')].find((x) => x.innerText.includes('Anna')); return c ? c.className : ''; }")
         ok('offline' not in dot, f'la TV vede Anna collegata ({dot})')
 
         # ---------------- Tablet: consulta profilo, gruppi e resoconto ----------------
         tctx, TB = await browser(b, 'tablet', mobile=False, w=768, h=1024)
         await google(TB)
-        await until(lambda: True, 2.5)
+        for _ in range(60):
+            try:
+                if await uid_of(TB) == uid: break
+            except Exception: pass
+            await asyncio.sleep(0.25)
         ok(await uid_of(TB) == uid and await me_name(TB), 'tablet: terzo dispositivo con lo stesso account, profilo caricato')
         await TB.goto(f'{BASE}/index.html#gruppi')
         g = False
@@ -130,7 +140,7 @@ async def main():
         ok(g, 'tablet: il gruppo della serata compare in Gruppi')
         await TB.goto(f'{BASE}/resoconto.html?room={code}');
         try:
-            await TB.wait_for_selector('.rs-hero', timeout=8000); r = True
+            await TB.wait_for_selector('.rs-hero', timeout=15000); r = True
         except Exception: r = False
         ok(r and not await TB.is_visible('.loading-die'), 'tablet: resoconto della serata in corso caricato')
 
@@ -142,11 +152,11 @@ async def main():
         ok(await me_name(PC), 'PC: profilo ancora caricato dopo lo scollegamento del tablet')
 
         # ---------------- Esci dall'account sul telefono: PC e TV continuano ----------------
-        await PH.goto(f'{BASE}/index.html#altro'); await PH.wait_for_selector('[data-act="acc-out"]', timeout=8000)
+        await PH.goto(f'{BASE}/index.html#altro'); await PH.wait_for_selector('[data-act="acc-out"]', timeout=15000)
         await PH.click('[data-act="acc-out"]'); await asyncio.sleep(1.5)
         ok(await uid_of(PH) != uid, 'telefono: uscito dall\'account (sessione nuova)')
         ok(await me_name(PC), 'PC: profilo ancora caricato dopo l\'uscita dal telefono')
-        await TV.reload(); await TV.wait_for_selector('.lobby', timeout=8000)
+        await TV.reload(); await TV.wait_for_selector('.lobby', timeout=15000)
         ok(True, 'TV ricaricata: la serata riparte')
 
         # ---------------- Chiave rinnovata su un dispositivo, nuovo accesso altrove ----------------
@@ -154,7 +164,12 @@ async def main():
         await asyncio.sleep(0.6)
         ok((at(f'accounts/{uid}') or {}).get('key') == at(f'personKeys/{pid}'), 'chiave rinnovata: l\'account la ricorda')
         nctx, NW = await browser(b, 'nuovo')
-        await google(NW); await until(lambda: True, 2.5)
+        await google(NW)
+        for _ in range(60):
+            try:
+                if await uid_of(NW) == uid: break
+            except Exception: pass
+            await asyncio.sleep(0.25)
         ok(await NW.evaluate("JSON.parse(localStorage.getItem('gnr_person') || '{}').pid") == pid, 'quarto dispositivo: entra nell\'account e ritrova il profilo')
 
         # ---------------- Nessuna attesa infinita ----------------

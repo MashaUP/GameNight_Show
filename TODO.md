@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.5.0** (stesso account su più dispositivi, gestore della stanza, ROOM senza tagli; 2.4: stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato alla **2.5.1** (stesso account su più dispositivi, gestore della stanza, ROOM senza tagli; 2.4: stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -31,7 +31,7 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 ## 🔌 Da configurare (fuori dal codice)
 
 - [ ] **Regole del database 2.5**: ricopiare `firebase/database.rules.json` e **Pubblica** (gestore della stanza, presenza per dispositivo).
-- [ ] **Release `v2.5.0`** su GitHub per l'APK.
+- [ ] **Release `v2.5.1`** su GitHub per l'APK.
 - [ ] **Prove a mano 2.5 con dispositivi veri**: stesso account su PC (regia) + telefono Android (app) + tablet; app Android ripresa dallo sfondo e con rete che cambia; gestore della stanza con la TV spenta.
 
 - [ ] **Regole del database 2.4**: ricopiare `firebase/database.rules.json` e **Pubblica** (chiusura della serata dal creatore, posti fino a 100, `meta/muted`).

@@ -1,8 +1,9 @@
 {
-  "version": "2.5.0",
+  "version": "2.5.1",
   "date": "2026-11-06",
   "minAndroid": "7.0",
   "notes": [
+    "Armadio, scheda Strumenti: «Importa» non ignora più il file scelto quando la pagina si aggiorna nello stesso momento.",
     "Stesso account su PC, telefono, tablet e app insieme: chiudere un dispositivo non scollega gli altri dalla serata.",
     "Niente più caricamenti infiniti: se il database non risponde compare un messaggio con «Ricarica».",
     "App Android: avvio più affidabile con la rete lenta (niente più dado che gira all'infinito).",
@@ -11,6 +12,7 @@
     "Barra laterale più leggibile, pulsanti del profilo che non sbordano, icona della scheda con il dado intero."
   ],
   "notesEn": [
+    "Shelf, Tools tab: “Import” no longer ignores the chosen file when the page refreshes at the same moment.",
     "Same account on PC, phone, tablet and app at once: closing one device no longer disconnects the others from the night.",
     "No more endless loading: if the database doesn't answer you get a message with “Reload”.",
     "Android app: more reliable start-up on slow networks (no more endlessly spinning die).",

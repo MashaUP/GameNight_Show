@@ -1,5 +1,12 @@
 # Novità
 
+## 2.5.1 · Correzione: importazione nell'armadio (6 novembre 2026)
+
+**Perché 2.5.1 (PATCH)**: solo una correzione, nessuna regola del database da ripubblicare oltre a quelle della 2.5.0.
+
+- Armadio › Strumenti: i controlli della scheda (Importa, Annulla importazione, accessi, inviti) si collegavano un istante dopo il disegno. Se in quell'istante un aggiornamento dal database ridisegnava la scheda (spettatori, collaboratori, inviti), il file scelto per l'importazione veniva ignorato e l'anteprima non compariva. È la causa del test `am12` fallito su GitHub. Ora il collegamento avviene subito.
+- Prove nel browser più tolleranti ai runner lenti: `multi25` e `room25` aspettano le condizioni invece di pause fisse.
+
 ## 2.5.0 · Stesso account su più dispositivi, gestore della stanza, ROOM senza tagli (6 novembre 2026)
 
 > **Le regole del database sono cambiate**: ricopia `firebase/database.rules.json` in Firebase e premi **Pubblica** (gestore della stanza, presenza per dispositivo). Per l'app Android la release da pubblicare è `v2.5.0`.

@@ -31,6 +31,18 @@ async def until(cond, timeout=10):
         await asyncio.sleep(0.25)
     return False
 
+async def poll(pg, js, timeout=12):
+    """Aspetta che un'espressione nella pagina diventi vera (senza wait_for_function: la CSP blocca eval)."""
+    end = asyncio.get_event_loop().time() + timeout
+    last = None
+    while asyncio.get_event_loop().time() < end:
+        try:
+            last = await pg.evaluate(js)
+            if last: return last
+        except Exception: pass
+        await asyncio.sleep(0.25)
+    return last
+
 async def phone(b, name, uid):
     ctx = await b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
     await ctx.add_init_script(f"try {{ sessionStorage.setItem('fake_uid', '{uid}'); localStorage.setItem('gnr_tour_phone', '1'); localStorage.setItem('gnr_intro_done', '1'); localStorage.setItem('gnr_lite', 'off'); }} catch (e) {{}}")
@@ -60,52 +72,57 @@ async def main():
 
         actx, A = await phone(b, 'anna', 'anna25'); await join(A, code, 'Anna', 0)
         bctx, B = await phone(b, 'bruno', 'bruno25'); await join(B, code, 'Bruno', 1)
-        await asyncio.sleep(1.2)
+        await poll(TV, "document.querySelectorAll('#slots .pcard:not(.pcard--free):not(.pcard--empty)').length === 2 && !document.getElementById('lobbyHint').textContent.includes('almeno 2')")
         hint2 = await TV.inner_text('#lobbyHint')
         ok('almeno 2' not in hint2, f'avviso aggiornato con 2 giocatori ({hint2})')
-        kick = await TV.evaluate("() => { const box = document.getElementById('peopleBox').getBoundingClientRect(); return [...document.querySelectorAll('#slots .kick')].map((k) => { const r = k.getBoundingClientRect(); const c = k.closest('.pcard').getBoundingClientRect(); return r.top >= c.top && r.right <= c.right && r.top >= box.top; }); }")
-        ok(kick and all(kick), f'X dentro la card e non tagliata ({kick})')
+        # misurate a card ferme (l'ingresso ha una piccola animazione)
+        KICK = "(() => { if (document.getAnimations().some((a) => a.playState === 'running' && a.effect?.target?.closest?.('#slots'))) return null; const box = document.getElementById('peopleBox').getBoundingClientRect(); const r = [...document.querySelectorAll('#slots .kick')].map((k) => { const x = k.getBoundingClientRect(); const c = k.closest('.pcard').getBoundingClientRect(); return x.top >= c.top - 0.5 && x.right <= c.right + 0.5 && x.top >= box.top - 0.5; }); return r.length === 2 && r.every(Boolean) ? r : null; })()"
+        kick = await poll(TV, KICK, 10)
+        ok(bool(kick), f'X dentro la card e non tagliata ({kick})')
 
         # ---------------- La TV sceglie il gestore ----------------
         await TV.click('#hdrTools'); await TV.wait_for_selector('#tlManager', state='visible')
-        await TV.select_option('#tlManager', 'anna25'); await asyncio.sleep(0.8)
+        await TV.select_option('#tlManager', 'anna25'); await until(lambda: at(f'rooms/{code}/meta/managerUid') == 'anna25', 10)
         ok(at(f'rooms/{code}/meta/managerUid') == 'anna25', 'la TV nomina Anna gestore')
-        await TV.click('#tlClose'); await asyncio.sleep(0.5)
-        chip = await TV.inner_text('#lobbyManager') if await TV.is_visible('#lobbyManager') else ''
-        ok('Anna' in chip, f'la TV mostra chi è il gestore ({chip})')
-        await A.wait_for_selector('[data-dock="manage"]', timeout=6000)
+        await TV.click('#tlClose')
+        chip = await poll(TV, "(() => { const b = document.getElementById('lobbyManager'); return b && !b.hidden && b.textContent.includes('Anna') ? b.textContent : null; })()")
+        ok(bool(chip), f'la TV mostra chi è il gestore ({chip})')
+        await A.wait_for_selector('[data-dock="manage"]', timeout=15000)
         ok(not await B.is_visible('[data-dock="manage"]'), 'solo il gestore ha «Gestisci»')
 
         # ---------------- Comandi del gestore ----------------
         await A.click('[data-dock="manage"]'); await A.wait_for_selector('[data-mg="lock"]')
-        await A.click('[data-mg="lock"]'); await until(lambda: at(f'rooms/{code}/meta/locked') is True, 5)
+        await A.click('[data-mg="lock"]'); await until(lambda: at(f'rooms/{code}/meta/locked') is True, 10)
         ok(at(f'rooms/{code}/meta/locked') is True, 'il gestore chiude l\'ingresso')
-        await A.click('[data-mg="lock"]'); await until(lambda: at(f'rooms/{code}/meta/locked') is False, 5)
+        await poll(A, "document.querySelector('[data-mg=\"lock\"]')?.getAttribute('aria-pressed') === 'true' && !document.querySelector('[data-mg=\"lock\"]').disabled")
+        await A.click('[data-mg="lock"]'); await until(lambda: at(f'rooms/{code}/meta/locked') is False, 10)
         ok(at(f'rooms/{code}/meta/locked') is False, 'e lo riapre')
         before = at(f'rooms/{code}/meta/maxPlayers')
-        await A.click('[data-mg="seats"][data-d="1"]'); await until(lambda: at(f'rooms/{code}/meta/maxPlayers') == before + 1, 5)
+        await poll(A, "document.querySelector('[data-mg=\"lock\"]')?.getAttribute('aria-pressed') === 'false'")
+        await A.click('[data-mg="seats"][data-d="1"]'); await until(lambda: at(f'rooms/{code}/meta/maxPlayers') == before + 1, 10)
         ok(at(f'rooms/{code}/meta/maxPlayers') == before + 1, 'il gestore cambia i posti')
-        await A.click('[data-mg="kick"][data-uid="bruno25"]'); await until(lambda: not at(f'rooms/{code}/players/bruno25'), 5)
+        await A.wait_for_selector('[data-mg="kick"][data-uid="bruno25"]', timeout=10000)
+        await A.click('[data-mg="kick"][data-uid="bruno25"]'); await until(lambda: not at(f'rooms/{code}/players/bruno25'), 10)
         ok(not at(f'rooms/{code}/players/bruno25') and at(f'rooms/{code}/meta/banned/bruno25'), 'il gestore allontana Bruno (e non può rientrare)')
         bad = await B.evaluate(f"import('./js/fb.js').then((m) => m.set(m.roomRef('{code}', 'players/bruno25'), {{ name: 'Bruno', style: 'adventurer', seed: 'x', color: '#2EC4B6' }}).then(() => 'scritto', (e) => e.code))")
         ok(bad != 'scritto', f'Bruno non rientra da solo ({bad})')
 
         # ---------------- Revoca ----------------
         await TV.click('#hdrTools'); await TV.wait_for_selector('#tlManager', state='visible')
-        await TV.select_option('#tlManager', ''); await asyncio.sleep(0.8); await TV.click('#tlClose')
+        await TV.select_option('#tlManager', ''); await until(lambda: at(f'rooms/{code}/meta/managerUid') is None, 10); await TV.click('#tlClose')
         ok(at(f'rooms/{code}/meta/managerUid') is None, 'la TV revoca il gestore')
-        await asyncio.sleep(1)
-        ok(not await A.is_visible('[data-dock="manage"]'), 'il telefono perde «Gestisci»')
+        gone = await poll(A, "!document.querySelector('[data-dock=\"manage\"]')")
+        ok(bool(gone), 'il telefono perde «Gestisci»')
         den = await A.evaluate(f"import('./js/fb.js').then((m) => m.set(m.roomRef('{code}', 'meta/locked'), true).then(() => 'scritto', (e) => e.code))")
         ok(den != 'scritto', f'dopo la revoca il database rifiuta i comandi ({den})')
 
         # ---------------- TV chiusa: il gestore chiude la serata ----------------
         await TV.click('#hdrTools'); await TV.wait_for_selector('#tlManager', state='visible')
-        await TV.select_option('#tlManager', 'anna25'); await asyncio.sleep(0.8)
+        await TV.select_option('#tlManager', 'anna25'); await until(lambda: at(f'rooms/{code}/meta/managerUid') == 'anna25', 10)
         await tctx.close()
-        await A.wait_for_selector('[data-dock="manage"]', timeout=6000)
+        await A.wait_for_selector('[data-dock="manage"]', timeout=15000)
         await A.click('[data-dock="manage"]'); await A.wait_for_selector('[data-mg="end"]')
-        await A.click('[data-mg="end"]'); await until(lambda: (at(f'rooms/{code}/state') or {}).get('phase') == 'awards', 6)
+        await A.click('[data-mg="end"]'); await until(lambda: (at(f'rooms/{code}/state') or {}).get('phase') == 'awards', 12)
         st = at(f'rooms/{code}/state') or {}
         ok(st.get('phase') == 'awards' and st.get('remote') is True, f'TV chiusa: il gestore chiude la serata ({st.get("phase")})')
 

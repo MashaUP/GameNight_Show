@@ -400,7 +400,10 @@ function paintTab() {
   if (A.tab === 'loans') b.innerHTML = loansHTML();
   else if (A.tab === 'log') b.innerHTML = logHTML();
   else if (A.tab === 'trash') b.innerHTML = trashHTML();
-  else if (A.tab === 'tools') b.innerHTML = toolsHTML();
+  // 2.5.1: i pulsanti della scheda Strumenti si collegano SUBITO dopo il disegno. Prima il collegamento partiva
+  // al giro successivo (setTimeout): se nel frattempo un aggiornamento dal database ridisegnava la scheda,
+  // per un istante «Importa» e gli altri controlli non rispondevano (file scelto e ignorato).
+  else if (A.tab === 'tools') { b.innerHTML = toolsHTML(); bindTools(); }
   else if (A.tab === 'props') { b.innerHTML = proposalsHTML(A.props, A.lib); bindProposals(b); }
 }
 
@@ -1707,7 +1710,6 @@ function toolsHTML() {
   const viewers = Object.entries(A.viewers || {}).filter(([u, v]) => v?.at && !A.admins?.[u] && !A.blocked?.[u]).sort((a, b) => b[1].at - a[1].at);
   const blocked = Object.keys(A.blocked || {}).filter((u) => A.blocked[u] === true);
   const avatarFor = () => '<span class="am-viewer-ico" aria-hidden="true">👤</span>';
-  setTimeout(bindTools, 0);
   return `<div class="am-pane am-tools">
     <section class="card am-tool"><h2>${esc(t('arm.f.incomplete'))}</h2>
       <ul class="am-mini-list">${CHECK_FIELDS.map((f) => `<li>${miss[f.k] ? `<b>${miss[f.k]}</b>` : '✓'} ${esc(t('arm.tools.without', { label: f.label }))}</li>`).join('')}</ul>

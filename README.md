@@ -21,7 +21,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licenza-MIT-FFD23F" alt="Licenza MIT"></a>
 </p>
 
-**Versione 2.5.0** · [Novità](CHANGELOG.md) · [Guida](docs/GUIDA.md) · [Installa la tua copia](docs/INSTALLAZIONE.md) · [App Android](docs/ANDROID.md)
+**Versione 2.5.1** · [Novità](CHANGELOG.md) · [Guida](docs/GUIDA.md) · [Installa la tua copia](docs/INSTALLAZIONE.md) · [App Android](docs/ANDROID.md)
 
 ## Che cos'è
 
