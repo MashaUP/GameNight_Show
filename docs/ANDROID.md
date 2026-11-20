@@ -13,12 +13,13 @@ Nella cartella `android-app/` c'è l'app Android vera e propria (fatta con [Capa
 
 Non serve installare niente sul computer: l'APK la prepara GitHub, **solo quando pubblichi tu una release**. I caricamenti di file (codice, link, documenti) non la ricostruiscono e non toccano le Releases, quindi non fanno partire i webhook o le notifiche delle release.
 
-1. Aggiorna lo stesso numero in `version.json` (con data e novità in italiano e inglese), `js/version.js` e `sw.js`, e carica i file su GitHub.
-2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v2.5.1`, scegli **Create new tag: v2.5.1 on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
-3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`v2.5.1` per la versione `2.5.1`; `v2.5` varrebbe come `2.5.1`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
+1. Scrivi il numero nuovo in `version.json` (con data e novità in italiano e inglese), poi `cd tests && npm run sync-version` (copia il numero in `js/version.js` e `sw.js`) e carica i file su GitHub.
+2. Pubblica la release: **Releases › Draft a new release › Choose a tag**, scrivi `v` seguito dalla versione di `version.json` (per esempio `vX.Y.Z`), scegli **Create new tag: vX.Y.Z on publish**, scrivi titolo e testo come vuoi e premi **Publish release**. Lascia spuntato **Set as the latest release**.
+3. Nella scheda **Actions** parte **App Android** (5-8 minuti). Controlla che il tag corrisponda a `version.json` (`vX.Y.Z` per la versione `X.Y.Z`) e rifà i controlli automatici: se qualcosa non va, si ferma senza pubblicare l'APK.
 4. Alla fine aggiunge **GameNight-Show.apk** alla tua release. Carica solo il file: la release non viene modificata (il tuo testo resta com'è e non partono altri eventi). L'impronta SHA-256 la calcola GitHub.
+5. Subito dopo parte **Annuncio Discord** (`discord.yml`): manda titolo e testo della release su Discord con il link all'APK. Serve il segreto `DISCORD_WEBHOOK_URL` (**Settings › Secrets and variables › Actions › New repository secret**); senza, il lavoro finisce con un avviso. Le pre-release non si annunciano. Per rilanciarlo: **Actions › Annuncio Discord › Run workflow** con il tag.
 
-Un tag creato da terminale (`git push origin v2.5.1`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
+Un tag creato da terminale (`git push origin vX.Y.Z`) **non** basta: serve la release pubblicata. Una release segnata come **pre-release** riceve l'APK, ma l'app non la propone (utile per le prove).
 
 Nei minuti tra la pubblicazione e la fine del lavoro, le app vedono la nuova versione come **in preparazione**: è normale, basta aspettare. Se il tag non corrisponde a `version.json`, cancella la release e il tag, correggi e pubblica di nuovo.
 

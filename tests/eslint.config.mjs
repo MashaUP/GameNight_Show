@@ -19,4 +19,8 @@ export default [{
     'no-dupe-args': 'error',
     'no-unreachable': 'error'
   }
+}, {
+  // Script di Node usati dai workflow (annuncio Discord, copia della versione)
+  files: ['tests/discord-release.mjs', 'tests/sync-version.mjs'],
+  languageOptions: { globals: { ...globals.node } }
 }];

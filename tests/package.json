@@ -3,8 +3,9 @@
   "private": true,
   "description": "Controlli automatici di GameNight Show (file, codice, regole del database, link)",
   "scripts": {
-    "lint": "cd .. && eslint -c tests/eslint.config.mjs --no-config-lookup js sw.js",
-    "test": "node check.mjs && npm run lint && node rules.test.js && node --test links.test.mjs nightclock.test.mjs features.test.mjs pdf.test.mjs insights.test.mjs show.test.mjs v2.test.mjs v21.test.mjs"
+    "lint": "cd .. && eslint -c tests/eslint.config.mjs --no-config-lookup js sw.js tests/discord-release.mjs tests/sync-version.mjs",
+    "test": "node check.mjs && npm run lint && node rules.test.js && node --test links.test.mjs nightclock.test.mjs features.test.mjs pdf.test.mjs insights.test.mjs show.test.mjs v2.test.mjs v21.test.mjs discord.test.mjs",
+    "sync-version": "node sync-version.mjs"
   },
   "devDependencies": {
     "axe-core": "^4.10.2",

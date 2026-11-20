@@ -16,7 +16,25 @@ const ok = (cond, m) => { checks++; if (!cond) fail(m); };
 const v1 = JSON.parse(read('version.json')).version;
 const v2 = (read('js/version.js').match(/APP_VERSION = '([^']+)'/) || [])[1];
 const v3 = (read('sw.js').match(/const VERSION = '([^']+)'/) || [])[1];
-ok(v1 && v1 === v2 && v2 === v3, `Versioni diverse: version.json ${v1}, js/version.js ${v2}, sw.js ${v3}`);
+ok(v1 && v1 === v2 && v2 === v3, `Versioni diverse: version.json ${v1}, js/version.js ${v2}, sw.js ${v3} (fonte: version.json; allinea con "npm run sync-version")`);
+// 1b. Fonte unica: formato x.y.z, sezione nel CHANGELOG, e nessun numero di versione scritto nei documenti
+//     (si aggiornerebbe a mano e resterebbe indietro: i documenti rimandano a version.json).
+ok(/^\d+\.\d+\.\d+$/.test(v1 || ''), `version.json: versione "${v1}" non nel formato x.y.z`);
+ok(new RegExp(`^## ${(v1 || '').replace(/\./g, '\\.')}\\b`, 'm').test(read('CHANGELOG.md')), `CHANGELOG.md non ha la sezione "## ${v1}"`);
+for (const f of ['README.md', 'TODO.md', 'docs/ANDROID.md', 'tests/README.md', 'docs/INSTALLAZIONE.md', 'docs/GUIDA.md']) {
+  if (!fs.existsSync(path.join(ROOT, f))) continue;
+  ok(!new RegExp(`(^|[^\\d.])v?${(v1 || 'x').replace(/\./g, '\\.')}(?![\\d.])`).test(read(f)), `${f} scrive la versione ${v1}: togli il numero (la fonte è version.json)`);
+}
+ok(!/const BUILD = /.test(read('sw.js')), 'sw.js: niente BUILD a parte, la cache segue la versione');
+// 1c. Nessun indirizzo di webhook vero nel repository (id + token lungo): va solo nel segreto DISCORD_WEBHOOK_URL
+{
+  const r = spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' });
+  const files = (r.status === 0 ? r.stdout.split('\n') : []).filter((f) => /\.(js|mjs|json|ya?ml|md|html|txt)$/.test(f) && !f.startsWith('vendor/'));
+  for (const f of files) {
+    if (!fs.existsSync(path.join(ROOT, f))) continue;
+    ok(!/discord(app)?\.com\/api\/webhooks\/\d{17,20}\/[\w-]{60,}/.test(read(f)), `${f} contiene un indirizzo di webhook di Discord: mettilo solo nel segreto DISCORD_WEBHOOK_URL`);
+  }
+}
 
 // 2. Ogni file nella lista del service worker esiste, e ogni modulo js è nella lista
 const shell = [...read('sw.js').matchAll(/^\s*"([^"]+)",?$/gm)].map((m) => m[1]).filter((f) => f !== './');

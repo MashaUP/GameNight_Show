@@ -1,5 +1,13 @@
 # Novità
 
+## 2.5.2 · Annuncio su Discord e versione in un solo file (20 novembre 2026)
+
+**Perché 2.5.2 (PATCH)**: nessuna funzione nuova nell'app; cambia `sw.js` (file pubblicato), quindi serve una versione nuova. Nessuna regola del database da ripubblicare.
+
+- **Annuncio delle release su Discord** (`.github/workflows/discord.yml`, script `tests/discord-release.mjs`): parte da solo quando «App Android» ha finito di allegare l'APK, quindi il link all'APK nell'annuncio funziona già. Manda titolo e testo della release più i link ad APK, sito e release; nessuna menzione può notificare qualcuno. Serve il segreto `DISCORD_WEBHOOK_URL`: senza, avviso e nessun errore. Le pre-release non si annunciano da sole; si può rilanciare a mano con il tag. Il flusso dell'APK (`android.yml`) non è cambiato.
+- **Versione in un solo file**: la fonte è `version.json`. Le due copie che servono al browser (`js/version.js`, `sw.js`) le scrive `cd tests && npm run sync-version`; `check.mjs` ferma tutto se non coincidono, se il CHANGELOG non ha la sezione della versione, o se README, TODO, `docs/ANDROID.md`, `tests/README.md` riscrivono il numero. Tolto `BUILD` da `sw.js`: la cache offline cambia con la versione (ogni modifica ai file pubblicati è una versione nuova).
+- `check.mjs` segnala anche un indirizzo di webhook di Discord finito per errore nel repository.
+
 ## 2.5.1 · Correzione: importazione nell'armadio (6 novembre 2026)
 
 **Perché 2.5.1 (PATCH)**: solo una correzione, nessuna regola del database da ripubblicare oltre a quelle della 2.5.0.

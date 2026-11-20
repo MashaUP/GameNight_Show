@@ -1,10 +1,9 @@
 // Service worker: rende l'app installabile e tiene una copia dei file per quando la rete va e viene.
 // Strategia "prima la rete": online si usa sempre la versione più recente, offline la copia salvata.
-// A ogni rilascio aumenta VERSION (insieme a js/version.js e version.json).
-const VERSION = '2.5.1';
-// Cambia a ogni pubblicazione anche senza cambiare versione: così il telefono e la TV prendono sempre i file nuovi.
-const BUILD = '20261106b';
-const CACHE = `gnr-${VERSION}-${BUILD}`;
+// VERSION è una copia di version.json (la fonte): la scrive `cd tests && npm run sync-version`.
+// Ogni cambiamento ai file pubblicati è una versione nuova, quindi basta la versione per rinnovare la cache.
+const VERSION = '2.5.2';
+const CACHE = `gnr-${VERSION}`;
 const SHELL = [
   "./",
   "index.html",

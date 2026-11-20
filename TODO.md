@@ -2,7 +2,7 @@
 
 L'unico file con quello che manca. Le novità già fatte sono in [CHANGELOG.md](CHANGELOG.md); come funziona il codice in [docs/SVILUPPO.md](docs/SVILUPPO.md).
 
-Stato alla **2.5.1** (stesso account su più dispositivi, gestore della stanza, ROOM senza tagli; 2.4: stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi). Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
+Stato (versione in [version.json](version.json)): stesso account su più dispositivi, gestore della stanza, ROOM senza tagli; 2.4: stanza della TV ridisegnata, serate chiudibili dalla pagina Serate, niente tetto a 12 giocatori; 2.3: sistema di design, eliminazione anche dell'ultima serata; prima 2.2: lobby, rivelazione a scelta, regia che gioca, accessi agli armadi. Delle 84 idee del backlog (1.11–2.1) **81 sono fatte**, **3 sono possibili solo in parte** (sotto, con il motivo).
 
 ---
 
@@ -30,21 +30,14 @@ Aggiungi qui quello che vuoi: una riga per voce, `[ ]` da fare, `[x]` fatto. Chi
 
 ## 🔌 Da configurare (fuori dal codice)
 
-- [ ] **Regole del database 2.5**: ricopiare `firebase/database.rules.json` e **Pubblica** (gestore della stanza, presenza per dispositivo).
-- [ ] **Release `v2.5.1`** su GitHub per l'APK.
-- [ ] **Prove a mano 2.5 con dispositivi veri**: stesso account su PC (regia) + telefono Android (app) + tablet; app Android ripresa dallo sfondo e con rete che cambia; gestore della stanza con la TV spenta.
+- [ ] **Regole del database**: dopo ogni versione che le cambia (lo dice il CHANGELOG), ricopiare `firebase/database.rules.json` e **Pubblica**.
+- [ ] **Segreto `DISCORD_WEBHOOK_URL`** per l'annuncio delle release su Discord (vedi [docs/ANDROID.md](docs/ANDROID.md)).
+- [ ] **Prove a mano con dispositivi veri (multi-dispositivo)**: stesso account su PC (regia) + telefono Android (app) + tablet; app Android ripresa dallo sfondo e con rete che cambia; gestore della stanza con la TV spenta.
 
-- [ ] **Regole del database 2.4**: ricopiare `firebase/database.rules.json` e **Pubblica** (chiusura della serata dal creatore, posti fino a 100, `meta/muted`).
-- [ ] **Release `v2.4.0`** su GitHub per l'APK.
-- [ ] **Prove a mano 2.4**: TV vera (Android TV / Fire TV), telefono verticale in regia, Firefox e Safari; serata con più di 20 telefoni veri.
+- [ ] **Prove a mano della stanza della TV**: TV vera (Android TV / Fire TV), telefono verticale in regia, Firefox e Safari; serata con più di 20 telefoni veri.
 
-- [ ] **Regole del database**: ricopiare `firebase/database.rules.json` in Firebase e premere **Pubblica** (cambiate nella 2.0 e nella 2.1).
 - [ ] **Account**: in Firebase › Authentication attivare **Google** ed **Email/password** (lasciare attivo **Anonimo**) — `docs/INSTALLAZIONE.md`, passo 2.4.1.
 - [x] **BoardGameGeek**: proxy pubblicato su `https://gamenight-bgg.mashaup.workers.dev` con il token (`/health` → `token: true`), indirizzo in `js/services.js`. Si attiva sul sito con la prossima pubblicazione.
-- [ ] **Regole del database 2.2**: ricopiare di nuovo `firebase/database.rules.json` e **Pubblica** (nuovi `manualReveal`, `viewers`, `blocked` degli armadi).
-- [ ] **App Android 2.2**: pubblicare la release `v2.2.0` (comprende tutta la 2.1; serve per i promemoria con le notifiche).
-- [ ] **Regole del database 2.3**: ricopiare `firebase/database.rules.json` e **Pubblica** (presenza nella stanza solo se la stanza esiste).
-- [ ] **App Android 2.3**: pubblicare la release `v2.3.0` (comprende la 2.2).
 
 ## ✋ Da provare a mano (serve un dispositivo vero)
 

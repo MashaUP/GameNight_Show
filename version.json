@@ -1,23 +1,13 @@
 {
-  "version": "2.5.1",
-  "date": "2026-11-06",
+  "version": "2.5.2",
+  "date": "2026-11-20",
   "minAndroid": "7.0",
   "notes": [
-    "Armadio, scheda Strumenti: «Importa» non ignora più il file scelto quando la pagina si aggiorna nello stesso momento.",
-    "Stesso account su PC, telefono, tablet e app insieme: chiudere un dispositivo non scollega gli altri dalla serata.",
-    "Niente più caricamenti infiniti: se il database non risponde compare un messaggio con «Ricarica».",
-    "App Android: avvio più affidabile con la rete lenta (niente più dado che gira all'infinito).",
-    "Nuovo gestore della stanza: un giocatore scelto dalla TV gestisce ingresso, posti e giocatori dal telefono, anche a TV spenta.",
-    "Stanza della TV: colonna del QR senza scorrimento, X dei giocatori sempre visibile, avviso dei giocatori minimi in alto.",
-    "Barra laterale più leggibile, pulsanti del profilo che non sbordano, icona della scheda con il dado intero."
+    "Le nuove versioni vengono annunciate anche sul Discord di GameNight, con il link all'app Android.",
+    "Aggiornamento più pulito della copia offline: il telefono e la TV prendono i file nuovi a ogni versione."
   ],
   "notesEn": [
-    "Shelf, Tools tab: “Import” no longer ignores the chosen file when the page refreshes at the same moment.",
-    "Same account on PC, phone, tablet and app at once: closing one device no longer disconnects the others from the night.",
-    "No more endless loading: if the database doesn't answer you get a message with “Reload”.",
-    "Android app: more reliable start-up on slow networks (no more endlessly spinning die).",
-    "New room manager: a player chosen by the TV handles entry, seats and players from their phone, even with the TV off.",
-    "TV room: QR column without scrolling, player X always visible, minimum-players notice at the top.",
-    "More readable sidebar, profile buttons that stay inside, browser tab icon with the whole die."
+    "New versions are also announced on the GameNight Discord, with the link to the Android app.",
+    "Cleaner update of the offline copy: phones and TV pick up the new files with every version."
   ]
 }

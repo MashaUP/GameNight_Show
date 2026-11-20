@@ -26,7 +26,7 @@ play.html                  il telefono durante la serata
 armadio.html, ludoteca.html  l'armadio dei giochi (computer e telefono)
 resoconto.html, scarica.html, test.html, go.html  resoconto, download dell'app, verifica di Firebase, collegamenti stabili
 sw.js, manifest.webmanifest  service worker (deve stare nella radice) e installazione come app
-version.json               versione pubblicata e novità (letta dagli aggiornamenti dell'app: indirizzo fisso)
+version.json               FONTE UNICA della versione, con novità (letta dagli aggiornamenti dell’app: indirizzo fisso)
 README.md, CHANGELOG.md, LICENSE, .nojekyll
 config/links.json          link ufficiali (unica fonte, aggiornabile senza nuove versioni)
 firebase/database.rules.json  regole di sicurezza da incollare in Firebase
@@ -44,7 +44,7 @@ vendor/, assets/           librerie incluse; icone, marchio, font
 
 ```
 config.js        configurazione Firebase (da compilare)          services.js     indirizzi dei servizi facoltativi (BGG, link)
-site.js          indirizzi pubblici dell'app Android (workflow)   version.js      numero di versione
+site.js          indirizzi pubblici dell'app Android (workflow)   version.js      copia della versione (fonte: version.json)
 i18n.js          lingue: t('chiave'), plurali, date, numeri        lang/           dizionari it/en per area
 links-core.js    link ufficiali: nucleo riutilizzabile            links-policy.js domini ammessi per i link
 links.js         link ufficiali: adattatore web e interfaccia     go.js           collegamenti stabili (go.html)

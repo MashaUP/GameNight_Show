@@ -1,0 +1,77 @@
+# Annuncio delle release su Discord.
+# Parte DOPO "App Android" (android.yml, che non viene toccato): così il link all'APK nell'annuncio funziona
+# già. Se "App Android" fallisce, niente annuncio: si corregge, si rilancia l'APK, poi si rilancia questo
+# lavoro a mano (Actions › Annuncio Discord › Run workflow, con il tag).
+#
+# Segreto: DISCORD_WEBHOOK_URL (Settings › Secrets and variables › Actions). Senza segreto: avviso, non errore.
+# Le release segnate come pre-release non si annunciano da sole (a mano sì).
+name: Annuncio Discord
+
+on:
+  workflow_run:
+    workflows: ["App Android"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag della release da annunciare (es. v2.5.2)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: annuncio-discord
+  cancel-in-progress: false
+
+jobs:
+  annuncio:
+    runs-on: ubuntu-24.04
+    # Automatico: solo dopo un APK riuscito per una release pubblicata. A mano: sempre.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release')
+    steps:
+      - name: Quale release
+        id: tag
+        env:
+          TAG_IN: ${{ inputs.tag }}
+          TAG_RUN: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          tag="${TAG_IN:-$TAG_RUN}"
+          case "$tag" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::Tag non valido: '$tag' (serve vX.Y.Z)"; exit 1;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Stesso controllo di android.yml: il tag deve essere la versione di version.json.
+      - name: Tag e versione
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          ver="$(node -p "require('./version.json').version")"
+          if [ "${TAG#v}" != "$ver" ]; then
+            echo "::error::Il tag $TAG non corrisponde alla versione $ver di version.json."
+            exit 1
+          fi
+
+      - name: Pre-release?
+        id: pre
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: echo "pre=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease -q .isPrerelease)" >> "$GITHUB_OUTPUT"
+
+      - name: Annuncio
+        if: github.event_name == 'workflow_dispatch' || steps.pre.outputs.pre != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: node tests/discord-release.mjs "$TAG"
